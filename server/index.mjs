@@ -62,11 +62,13 @@ async function sendApi(req, res) {
   if(response.ok&&['/api/login','/api/check','/api/guest/redeem','/api/guest/validate'].includes(url.pathname)) {
     const result=await response.clone().json();
     if(result.ok) {
-      const input=body?JSON.parse(body):{};
-      if(result.status==='approved'&&result.t){
-        const email=url.pathname==='/api/check'?Buffer.from(url.searchParams.get('e')||'','base64url').toString():String(input.email||'').trim().toLowerCase();
-        if(await sessOk(env,email,result.t))out['Set-Cookie']=accountCookie(env,sqlite,email);
-      }else if(result.role==='guest')out['Set-Cookie']=mediaCookie(env,{guest:result.token||input.token},Math.max(0,Math.floor((result.expires-Date.now())/1000)));
+      // The API names the canonical account, so the cookie never depends on how the request spelled it.
+      if(result.status==='approved'&&result.t&&result.email){
+        if(await sessOk(env,result.email,result.t))out['Set-Cookie']=accountCookie(env,sqlite,result.email);
+      }else if(result.role==='guest'){
+        const input=body?JSON.parse(body):{};
+        out['Set-Cookie']=mediaCookie(env,{guest:result.token||input.token},Math.max(0,Math.floor((result.expires-Date.now())/1000)));
+      }
     }
   }
   res.writeHead(response.status, out);

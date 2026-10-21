@@ -42,8 +42,18 @@ test('sign-in endpoints do not reveal which emails have accounts', { timeout: 30
     assert.deepEqual(JSON.parse(answers[0][1]), { ok: true, status: 'none', role: '' });
 
     const valid = await install.call('/api/check?e=' + b64(PARENT.email) + '&t=' + encodeURIComponent(parent.t));
-    assert.deepEqual(await valid.json(), { ok: true, status: 'approved', role: 'super', t: parent.t });
+    assert.deepEqual(await valid.json(), { ok: true, email: PARENT.email, status: 'approved', role: 'super', t: parent.t });
     assert.match(valid.headers.get('set-cookie'), /^kid_access=.*HttpOnly/);
+  });
+
+  await t.test('login returns the canonical email and the cookie follows it', async () => {
+    const response = await install.call('/api/login', { body: { email: '  Parent@Example.COM ', pass: PARENT.pass } });
+    const json = await response.json();
+    assert.equal(json.email, PARENT.email);
+    const cookie = response.headers.get('set-cookie').split(';')[0];
+    const viewer = JSON.parse(Buffer.from(cookie.slice('kid_access='.length).split('.')[0], 'base64url'));
+    assert.equal(viewer.email, PARENT.email);
+    assert.equal((await install.call('/api/clips', { cookie })).status, 200);
   });
 
   await t.test('the retired PIN admin and database upload endpoints are gone', async () => {

@@ -138,7 +138,7 @@ async function login(req, env) {
   /* hash against a decoy so a missing account takes as long as a wrong password */
   const matches = await passwordMatches(pass, row || DECOY);
   if (!row || !matches) return BAD_LOGIN();
-  return J({ ok: true, status: row.status, role: String(row.role || ''), t: await sessToken(env, email) });
+  return J({ ok: true, email, status: row.status, role: String(row.role || ''), t: await sessToken(env, email) });
 }
 
 /* ---------- status check: without a valid session it says nothing about the email ---------- */
@@ -146,7 +146,7 @@ async function check(url, env) {
   const email = unb64uSafe(url.searchParams.get('e')).trim().toLowerCase();
   const t = url.searchParams.get('t') || '';
   if (!await sessOk(env, email, t)) return J({ ok: true, status: 'none', role: '' });
-  return J({ ok: true, status: 'approved', role: await roleOf(env, email), t });
+  return J({ ok: true, email, status: 'approved', role: await roleOf(env, email), t });
 }
 
 /* Sessions expire after seven days and password changes invalidate them. */
