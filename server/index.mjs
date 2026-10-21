@@ -9,7 +9,8 @@ import { createVideoNotifications } from './notifications.mjs';
 import { publishClip } from './publish.mjs';
 import { sendFile } from './static.mjs';
 import { initializeSchema } from './schema.mjs';
-import { BRAND_NAME } from './settings.mjs';
+import { BRAND_NAME, createSettings } from './settings.mjs';
+import { createSite } from './site.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const publicDir = resolve(process.env.PUBLIC_DIR || 'public');
@@ -25,6 +26,7 @@ if(!['disabled','brevo'].includes(process.env.MAIL_MODE||'disabled'))throw new E
 if(process.env.MAIL_MODE==='brevo')for(const key of ['BREVO_API_KEY','NOTIFY_EMAIL','SENDER_EMAIL'])if(!process.env[key])throw new Error(key+' is required for email');
 const { sqlite, DB } = openDatabase(dbFile, { allowEmpty: process.env.ALLOW_EMPTY_DB === '1' });
 initializeSchema(sqlite);
+const settings = createSettings(sqlite);
 const env = {
   DB,
   SIGN_SECRET: process.env.SIGN_SECRET,
@@ -33,6 +35,8 @@ const env = {
   SENDER_EMAIL: process.env.SENDER_EMAIL,
   SITE_URL: site.origin,
   MAIL_MODE: process.env.MAIL_MODE || 'disabled',
+  settings,
+  site: createSite({ sqlite, settings }),
 };
 const notifications = createVideoNotifications({ sqlite, env });
 env.publishClip = clip => publishClip(sqlite, notifications, clip);
@@ -88,7 +92,7 @@ const server = http.createServer((req, res) => {
     const limit=attempts.get(ip)||{n:0,until:now+600000};limit.n++;attempts.set(ip,limit);
     if(limit.n>20){res.writeHead(429,{'Content-Type':'application/json'}).end('{"ok":false,"error":"Too many attempts. Try again in ten minutes."}');return;}
   }
-  if(pathname==='/api/clips'||pathname==='/api/likes'||pathname==='/api/comments'||pathname.startsWith('/api/video/')||pathname.startsWith('/api/media/')){
+  if(['/api/clips','/api/likes','/api/comments','/api/channels'].includes(pathname)||pathname.startsWith('/api/video/')||pathname.startsWith('/api/media/')){
     if(!viewer(req,sqlite,env)){res.writeHead(401,{'Content-Type':'application/json','Cache-Control':'no-store'}).end('{"ok":false,"error":"Log in to view this channel."}');return;}
     res.setHeader('Cache-Control','private, no-store');
   }

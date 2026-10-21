@@ -9,6 +9,8 @@ export default {
     const p = url.pathname.replace(/\/+$/, '');
     try {
       if (p === '/api/health') return J({ ok: true, mode: 'server' });
+      if (p === '/api/site') return J(env.site.info());
+      if (p === '/api/channels') return J(env.site.channels());
       if (p === '/api/notifications/unsubscribe' && env.handleVideoUnsubscribe) return env.handleVideoUnsubscribe(req);
 
       if (req.method === 'POST' && p === '/api/signup') return await signup(req, env);
@@ -61,7 +63,9 @@ async function db(env, q, params) {
 }
 
 /* ---------- signup ---------- */
+const CLOSED403 = (what) => J({ ok: false, error: 'This family is not taking new ' + what + ' right now.' }, 403);
 async function signup(req, env) {
+  if (!env.settings.get('signups')) return CLOSED403('accounts');
   const b = await req.json().catch(() => null);
   if (!b) return J({ ok: false, error: 'bad body' }, 400);
   const first = String(b.first || '').trim().slice(0, 40);
@@ -165,7 +169,7 @@ async function sessOk(env, email, t) {
 const dispName = (first, last) => (String(first || '').trim() +
   (String(last || '').trim() ? ' ' + String(last).trim().charAt(0).toUpperCase() + '.' : '')).trim();
 
-/* ---------- roles: '' viewer, 'admin' (Family), 'super' (the owner) ---------- */
+/* ---------- roles: '' viewer, 'kid' (uploads to one channel), 'admin' (Family), 'super' (the owner) ---------- */
 async function roleOf(env, email) {
   const r = await db(env, 'SELECT role, status FROM accounts WHERE email = ?', [email]);
   const row = r.results && r.results[0];
@@ -177,7 +181,15 @@ async function asStaff(env, email, t) {
   const role = await roleOf(env, e);
   return (role === 'admin' || role === 'super') ? { email: e, role: role } : null;
 }
-export { asStaff, sessOk };
+/* staff, plus kid accounts that upload to their own channel */
+async function asCreator(env, email, t) {
+  const e = await sessOk(env, email, t);
+  if (!e) return null;
+  const r = await db(env, 'SELECT role, channel_id FROM accounts WHERE email = ?', [e]);
+  const row = r.results && r.results[0];
+  return row && ['admin', 'super', 'kid'].includes(row.role) ? { email: e, role: row.role, channelId: row.channel_id } : null;
+}
+export { asStaff, asCreator, sessOk };
 async function staffFrom(req, env) {
   const b = await req.json().catch(() => null);
   if (!b) return null;
@@ -201,6 +213,7 @@ function freshGuestCode() {
 async function guestGenerate(req, env) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
+  if (!env.settings.get('guestCodes')) return CLOSED403('guest passes');
   const now = Date.now();
   for (let attempt = 0; attempt < 20; attempt++) {
     const code = freshGuestCode();
@@ -215,6 +228,7 @@ async function guestGenerate(req, env) {
   return J({ ok: false, error: 'Could not create a code. Try again.' }, 503);
 }
 async function guestRedeem(req, env) {
+  if (!env.settings.get('guestCodes')) return CLOSED403('guest passes');
   const payload = await req.json().catch(() => null);
   if (!payload) return J({ ok: false, error: 'Invalid request.' }, 400);
   const code = String(payload.code || '').trim().toUpperCase();
@@ -258,11 +272,15 @@ async function superFrom(req, env) {
 
 /* ---------- server-owned clip catalog (the admin panel edits it) ---------- */
 
+/* viewers only ever see live, unhidden clips */
 async function clipsList(env) {
-  const r = await db(env, 'SELECT id, title, src, poster, kind, blurb, published, duration, position FROM clips WHERE hidden = 0 ORDER BY position ASC');
+  const r = await db(env, `SELECT c.id, c.title, c.src, c.poster, c.kind, c.blurb, c.published, c.duration, c.position, ch.slug AS channel
+    FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id
+    WHERE c.hidden = 0 AND c.review = 'live' ORDER BY c.position ASC`);
   const clips = (r.results || []).map((c) => ({
     id: c.id, title: c.title, src: c.src, poster: c.poster || '', kind: c.kind || 'video',
     blurb: c.blurb || '', publishedAt: c.published || '', duration: c.duration || 0, seq: c.position,
+    channel: c.channel || '',
   }));
   return J({ ok: true, clips: clips });
 }
@@ -400,10 +418,11 @@ async function adminOverview(url, env) {
   const s = await asStaff(env, unb64uSafe(url.searchParams.get('e') || ''), url.searchParams.get('t') || '');
   if (!s) return DENY403();
   const acc = await db(env, 'SELECT email, first, last, status, role, created FROM accounts ORDER BY created ASC');
-  const cpl = await db(env, 'SELECT id, title, position FROM clips ORDER BY position ASC');
+  const cpl = await db(env, `SELECT c.id, c.title, c.position, c.review, c.hidden, ch.slug AS channel
+    FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id ORDER BY c.position ASC`);
   const lk = await db(env, 'SELECT clip_id, email FROM likes');
   const cmAgg = await db(env, 'SELECT clip_id, COUNT(*) AS n FROM comments GROUP BY clip_id');
-  const cm = await db(env, 'SELECT clip_id, name, body, created FROM comments ORDER BY created DESC LIMIT 40');
+  const cm = await db(env, 'SELECT clip_id, name, body, created, hidden FROM comments ORDER BY created DESC LIMIT 40');
   const byName = {};
   for (const a of (acc.results || [])) byName[a.email] = dispName(a.first, a.last) || a.email;
   const likesByClip = {}, likesByFan = {}, likers = {};
@@ -416,6 +435,7 @@ async function adminOverview(url, env) {
   for (const c of (cmAgg.results || [])) cmCount[c.clip_id] = c.n;
   const clips = (cpl.results || []).map((c) => ({
     id: c.id, title: c.title, position: c.position,
+    review: c.review, hidden: !!c.hidden, channel: c.channel || '',
     likes: likesByClip[c.id] || 0, comments: cmCount[c.id] || 0,
     likers: (likers[c.id] || []).slice(0, 24),
   }));
@@ -426,7 +446,7 @@ async function adminOverview(url, env) {
     ok: true, role: s.role,
     accounts: acc.results || [],
     clips: clips, topFans: fans,
-    recent: (cm.results || []).map((c) => ({ clip: c.clip_id, name: c.name, body: c.body, at: c.created })),
+    recent: (cm.results || []).map((c) => ({ clip: c.clip_id, name: c.name, body: c.body, at: c.created, hidden: !!c.hidden })),
   });
 }
 
@@ -452,9 +472,12 @@ async function adminRole(req, env) {
   if (!ctx) return SUPER403();
   const email = String(ctx.body.target || '').trim().toLowerCase();
   const role = String(ctx.body.role || '');
-  if (!EMAIL_OK(email) || ['', 'admin'].indexOf(role) < 0) return J({ ok: false, error: 'bad' }, 400);
+  if (!EMAIL_OK(email) || ['', 'admin', 'kid'].indexOf(role) < 0) return J({ ok: false, error: 'bad' }, 400);
   if (email === ctx.staff.email) return J({ ok: false, error: 'cannot change your own role' }, 400);
-  const r = await db(env, 'UPDATE accounts SET role = ? WHERE email = ?', [role, email]);
+  /* a kid account belongs to exactly one channel */
+  const ch = role === 'kid' ? await db(env, 'SELECT id FROM channels WHERE slug = ?', [String(ctx.body.channel || '')]) : null;
+  if (ch && !ch.results.length) return J({ ok: false, error: 'Choose the kid\'s channel.' }, 400);
+  const r = await db(env, 'UPDATE accounts SET role = ?, channel_id = ? WHERE email = ?', [role, ch ? ch.results[0].id : null, email]);
   return J({ ok: true, changes: (r.meta && r.meta.changes) || 0 });
 }
 
@@ -502,7 +525,7 @@ async function commentsList(url, env) {
   let email = '';
   try { email = unb64u(url.searchParams.get('e') || '').trim().toLowerCase(); } catch (e) { /* bad b64 */ }
   const known = EMAIL_OK(email) && !!(await sessOk(env, email, url.searchParams.get('t') || ''));
-  const r = await db(env, 'SELECT id, email, name, body, created FROM comments WHERE clip_id = ? ORDER BY created ASC LIMIT 500', [clip]);
+  const r = await db(env, 'SELECT id, email, name, body, created FROM comments WHERE clip_id = ? AND hidden = 0 ORDER BY created ASC LIMIT 500', [clip]);
   const rows = (r.results || []).map((m) => ({
     id: m.id, name: m.name, body: m.body, at: m.created,
     mine: !!(known && m.email === email),
@@ -529,9 +552,11 @@ async function commentAdd(req, env) {
   const name = dispName(acc && acc.first, acc && acc.last) || 'A viewer';
   const id = crypto.randomUUID();
   const created = Date.now();
-  await db(env, 'INSERT INTO comments (id, clip_id, email, name, body, created) VALUES (?,?,?,?,?,?)',
-    [id, b.clipId, email, name, body, created]);
-  return J({ ok: true, row: { id: id, name: name, body: body, at: created, mine: true } });
+  /* with comment review on, a parent unhides each comment before others see it */
+  const held = env.settings.get('reviewComments');
+  await db(env, 'INSERT INTO comments (id, clip_id, email, name, body, created, hidden) VALUES (?,?,?,?,?,?,?)',
+    [id, b.clipId, email, name, body, created, held ? 1 : 0]);
+  return J({ ok: true, row: { id: id, name: name, body: body, at: created, mine: true, ...(held ? { hidden: true } : {}) } });
 }
 
 async function commentDelete(req, env) {
