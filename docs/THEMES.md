@@ -101,16 +101,16 @@ export function pause(host, ctx) {
 | `number` | The channel number as two digits, `"01"`. |
 | `slug` | A short lowercase id for labels such as `MILO-TAPES-T-01`. |
 | `accent`, `accentInk` | The accent as `#RRGGBB`, and the text colour that reads best on it (ink `#0B0C10` for every brand accent). |
-| `logoUrl` | The kid's badge image, or `null`: then draw initials. |
+| `logoUrl` | The kid's badge image (a same-site path, `blob:` or `data:image/…`), or `null`: then draw initials. |
 | `reducedMotion` | Show a finished still frame. The system setting always wins. |
 | `lowPower` | The device looks low-powered; draw less. |
 | `preview` | Mounted in a small gallery frame: no page-level listeners, no focus, no sound. The host is inert. |
-| `sound.allowed()`, `sound.context()` | Whether sound may play right now, and a shared `AudioContext` (or `null`). Both are false/null until the viewer has tapped or pressed a key inside the splash, when the parent turned splash sound off, and in previews. |
+| `sound.allowed()`, `sound.context()` | Whether sound may play right now, and a shared `AudioContext` (or `null`). Both are false/null until the viewer presses the Enter button (`data-kt-enter`), when the parent turned splash sound off, and in previews. |
 | `enterLabel` | Optional override for the Enter button's text. |
 | `onEnter()`, `onSkip()` | Call these when the viewer taps Enter or presses Esc. The loader then calls `dismiss()`. |
 | `brand` | `{ name, endorsement }` from the server. Never write the product name into a theme. |
 | `h(tag, props, ...children)` | Builds DOM without `innerHTML`. `svg:` tags (`h('svg:path', …)`) are made in the SVG namespace. `on*` props take functions and are removed with the splash; `text` sets text, `style` takes an object (custom properties too), `dataset` an object. |
-| `url(rel)` | `/themes/<id>/<rel>`, for files in the theme folder. CSS can use plain relative URLs instead. |
+| `url(rel)` | `/themes/<id>/<rel>`, for files in the theme folder; anything resolving outside the folder gives the folder itself. CSS can use plain relative URLs instead. |
 | `signal` | An `AbortSignal` that fires when the splash goes. Pass it to every listener. |
 | `loop(fn, { fps })` | Calls `fn(seconds, dt)` up to `fps` times a second (never above 30; 24 in previews), only while the host is on screen and the tab is visible. Return `false` to stop. It stops by itself when the splash goes. |
 | `contract`, `id` | `1`, and the theme id. |
@@ -172,9 +172,11 @@ const detach = attachPause({ themeId: channel.themeId, title: channel.name, chan
 alwaysEnter(channel.slug, true); // skip this channel's intro next time
 ```
 
-- Fetches `/api/themes` once, loads the theme's CSS and module together, and gives up after 4 s. A theme
-  that fails or times out is replaced by Glass Gate; if that fails too, a plain built-in card still lets
-  the kid in.
+- Fetches `/api/themes` (4 s timeout; a failure is not cached), loads the theme's CSS and module
+  together, and gives up after 4 s. A theme that fails or times out is replaced by Glass Gate (from its
+  known paths even when `/api/themes` failed); if that fails too, a plain built-in card still lets the
+  kid in. Esc skips from the first moment, also while a theme is still loading.
+- One splash at a time: calling `showSplash()` again while one is up returns the same promise.
 - Heavy themes fall back to Glass Gate when `navigator.connection.saveData` is on, `deviceMemory` is
   under 4, or motion is reduced, unless `force: true`.
 - `window.__tzsplash` is set from the call until the splash is gone (recovery.js checks it).

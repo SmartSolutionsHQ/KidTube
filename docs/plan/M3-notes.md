@@ -67,6 +67,19 @@ it in. The theme contract for theme makers is `docs/THEMES.md`.
 - Manifests reject unknown fields, so a typo cannot silently pass.
 - An empty kicker is allowed: Glass Gate then shows none, and the other themes use their own default.
 
+## After review
+
+An independent review of the branch found races and leaks the tests could not see; all are fixed and
+re-checked in headless Chrome: Esc while a theme or the registry is still loading (the late theme is
+destroyed, `__tzsplash` cleared, nothing left mounted), a second `showSplash()` call (shares the first),
+a stalled `/api/themes` (4 s timeout, then Glass Gate from its known paths, failure not cached),
+concurrent mounts into one frame (abortable mounts plus host ownership), `ctx.loop` listeners released
+on `stop()`, pause overlays deduplicated per video and cleaned up when the feed re-renders, the
+registry skipping unreadable folders instead of throwing into the request handler, sound unlocking only
+on the Enter button, `ctx.url` and `logoUrl` confined to the site, Ember releasing WebGL when its
+shader fails to build, and a stricter CSS walker in the tests (strings, nesting, `:is()` lists,
+sibling combinators, protocol-relative URLs, keyframe stops counted toward the flash limit).
+
 ## For M8 (PWA)
 
 Theme CSS, JS and previews are fingerprinted (`?v=`), so the service worker can cache them
