@@ -1,0 +1,401 @@
+/* The parent side: calm on purpose. Inter Tight in sentence case, square panels, plain words,
+   one ember button per screen, no glitch and no motion beyond a focus ring. The setup wizard uses it
+   first; the parent dashboard (M7) reuses the same classes. Load after reset.css, fonts.css, base.css.
+
+   Classes are prefixed kp- ("kid parent"). Colours come from base.css tokens, so a family accent set
+   on --tz-flare flows through; the primary button stays ink-on-accent. */
+
+.kp {
+  --kp-ground: var(--tz-void);
+  --kp-panel: var(--tz-surface);
+  --kp-raised: var(--tz-surface-2);
+  --kp-field: var(--tz-ink);
+  --kp-text: var(--tz-paper);
+  --kp-soft: #D9D4CB;                       /* body copy that is not the main line */
+  --kp-dim: var(--tz-dim);
+  --kp-line: rgba(247, 244, 236, .14);
+  --kp-line-strong: rgba(247, 244, 236, .3);
+  --kp-accent: var(--tz-flare);
+  --kp-accent-ink: var(--tz-flare-ink);
+  --kp-good: #3DFFB0;
+  --kp-warn: #FFD23F;
+  --kp-bad: #FF8B6A;
+  --kp-gap: 24px;
+
+  min-height: 100dvh;
+  background: var(--kp-ground);
+  color: var(--kp-text);
+  font: 400 16px/1.5 var(--tz-ui);
+}
+
+.kp :where(h1, h2, h3, h4, p, ul, ol, dl, figure) { margin: 0; }
+.kp :where(ul, ol) { padding: 0; }
+
+.kp a {
+  color: #FF8B6A;
+  text-underline-offset: 3px;
+}
+
+.kp a:hover { color: #FFB4A1; }
+
+.kp :focus-visible {
+  outline: 2px solid var(--kp-text);
+  outline-offset: 2px;
+}
+
+/* type ------------------------------------------------------------------ */
+
+.kp-title {
+  font-size: clamp(26px, 6vw, 32px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -.01em;
+}
+
+.kp-title:focus { outline: none; }
+
+.kp-heading {
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.kp-lead {
+  color: var(--kp-dim);
+  font-size: 16px;
+}
+
+.kp-small {
+  color: var(--kp-dim);
+  font-size: 14px;
+}
+
+.kp-mono,
+.kp code {
+  font-family: var(--tz-mono);
+  font-size: .92em;
+  color: var(--kp-soft);
+}
+
+.kp-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--kp-gap);
+}
+
+.kp-stack-tight {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* panels ---------------------------------------------------------------- */
+
+.kp-panel {
+  background: var(--kp-panel);
+  border: 1px solid var(--kp-line);
+}
+
+.kp-box {
+  border: 1px solid rgba(247, 244, 236, .18);
+  padding: 20px;
+}
+
+.kp-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  background: var(--kp-raised);
+}
+
+.kp-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.kp-row-main strong { font-size: 17px; font-weight: 600; }
+.kp-row-main span { color: var(--kp-dim); font-size: 14px; overflow-wrap: anywhere; }
+.kp-row > :last-child:not(.kp-row-main) { margin-left: auto; }
+
+.kp-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--kp-line);
+}
+
+.kp-list > li {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--kp-line);
+}
+
+/* buttons --------------------------------------------------------------- */
+
+.kp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 1px solid var(--kp-line-strong);
+  border-radius: 0;
+  background: transparent;
+  color: var(--kp-text);
+  font: 500 16px/1.2 var(--tz-ui);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.kp-btn:hover:not(:disabled) { border-color: var(--kp-text); color: var(--kp-text); }
+.kp-btn:disabled { opacity: .5; }
+
+/* The one ember button on a screen. */
+.kp-btn-primary {
+  padding: 0 28px;
+  border-color: var(--kp-accent);
+  background: var(--kp-accent);
+  color: var(--kp-accent-ink);
+  font-weight: 600;
+}
+
+.kp-btn-primary:hover:not(:disabled) {
+  border-color: var(--kp-accent);
+  background: color-mix(in srgb, var(--kp-accent) 88%, white);
+  color: var(--kp-accent-ink);
+}
+
+.kp a.kp-btn { color: var(--kp-text); }
+.kp a.kp-btn-primary { color: var(--kp-accent-ink); }
+
+.kp-btn-small {
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 15px;
+}
+
+.kp-btn-quiet {
+  min-height: 44px;
+  padding: 0 4px;
+  border: 0;
+  color: var(--kp-dim);
+  font-size: 15px;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.kp-btn-quiet:hover:not(:disabled) { color: var(--kp-text); }
+
+.kp-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kp-actions-end { justify-content: flex-end; }
+
+/* fields ---------------------------------------------------------------- */
+
+.kp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.kp-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 48px;
+  padding: 0 12px;
+  border: 1px solid rgba(247, 244, 236, .25);
+  border-radius: 0;
+  background: var(--kp-field);
+  color: var(--kp-text);
+  font: 400 16px/1.3 var(--tz-ui);       /* 16px keeps iOS from zooming in */
+}
+
+.kp-input:focus,
+.kp-input:focus-visible {
+  outline: none;
+  border-color: var(--kp-accent);
+  box-shadow: 0 0 0 1px var(--kp-accent);
+}
+
+.kp-input[readonly] {
+  border-style: dashed;
+  color: var(--kp-soft);
+}
+
+.kp-input[aria-invalid="true"] { border-color: var(--kp-bad); }
+.kp-input-mono { font-family: var(--tz-mono); letter-spacing: .04em; }
+
+.kp-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.kp-input-row > .kp-input { flex: 1 1 auto; min-width: 0; }
+.kp-input-row > .kp-btn { flex: 0 0 auto; }
+
+.kp-hint {
+  color: var(--kp-dim);
+  font-size: 13px;
+  font-weight: 400;
+}
+
+.kp-grid-2 {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 18px;
+}
+
+/* checkboxes and radios: native controls, ember tick, 44px rows */
+.kp-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 0;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+.kp-check input {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  accent-color: var(--kp-accent);
+}
+
+.kp-check-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.kp-check-text .kp-hint { font-size: 14px; }
+
+.kp-fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.kp-fieldset > legend {
+  margin-bottom: 4px;
+  padding: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* swatches: round colour buttons, a ring on the chosen one */
+.kp-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.kp-swatch {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--kp-swatch);
+  cursor: pointer;
+}
+
+.kp-swatch[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--kp-panel), 0 0 0 4px var(--kp-text); }
+
+.kp-swatch-custom {
+  position: relative;
+  overflow: hidden;
+  background: conic-gradient(#FF5C2B, #FFD23F, #C6FF3D, #3DFFB0, #4DB8FF, #A98BFF, #FF6FB5, #FF5C2B);
+}
+
+.kp-swatch-custom input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* notes: one line of context, never shouting */
+.kp-note {
+  display: flex;
+  gap: 10px;
+  padding: 12px 14px;
+  border-left: 3px solid var(--kp-line-strong);
+  background: var(--kp-raised);
+  color: var(--kp-soft);
+  font-size: 14px;
+}
+
+.kp-note-warn { border-left-color: var(--kp-warn); }
+.kp-note-bad { border-left-color: var(--kp-bad); }
+.kp-note-good { border-left-color: var(--kp-good); }
+
+.kp-error {
+  color: var(--kp-bad);
+  font-size: 14px;
+}
+
+.kp-error:empty { display: none; }
+
+.kp-ok { color: var(--kp-good); }
+
+/* badges and pictures in lists */
+.kp-avatar {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--kp-swatch, var(--kp-accent));
+  color: var(--tz-ink);
+  font: 400 24px/1 var(--tz-display);
+}
+
+img.kp-avatar,
+svg.kp-avatar { border-radius: 0; background: none; }
+
+.kp-steps-list {
+  counter-reset: kp-step;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.kp-steps-list > li {
+  counter-increment: kp-step;
+  display: flex;
+  gap: 12px;
+}
+
+.kp-steps-list > li::before {
+  content: counter(kp-step);
+  flex: none;
+  width: 24px;
+  color: var(--kp-dim);
+  font-family: var(--tz-mono);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kp *, .kp *::before, .kp *::after { transition: none !important; animation: none !important; }
+}
