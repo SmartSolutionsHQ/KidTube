@@ -1,0 +1,213 @@
+/* The calm side: the about page and the parent dashboard.
+   Inter Tight in sentence case, plain panels, one accent button per screen, no effects. */
+
+.page {
+  min-height: 100dvh;
+  background: var(--tz-ink);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+/* about ---------------------------------------------------------------- */
+
+.page-head,
+.page-main,
+.page-foot {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding-left: 20px;
+  padding-right: 20px;
+}
+
+.page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-top: calc(var(--tz-safe-t) + 20px);
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--tz-line-soft);
+}
+
+.page-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  min-width: 0;
+  color: var(--tz-paper);
+  font: 400 20px/1.1 var(--tz-display);
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.page-brand img {
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+}
+
+.page-back,
+.page-link {
+  display: inline-grid;
+  place-items: center;
+  min-height: 44px;
+  color: var(--tz-dim);
+  font-size: 14px;
+  text-underline-offset: 4px;
+}
+
+.page-back:hover,
+.page-link:hover {
+  color: var(--tz-paper);
+}
+
+.page-main {
+  padding-top: 48px;
+  padding-bottom: 48px;
+}
+
+.page-kicker {
+  margin: 0 0 12px;
+  color: var(--tz-dim);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.page-title {
+  margin: 0 0 20px;
+  font: 600 clamp(30px, 6vw, 44px)/1.1 var(--tz-ui);
+  letter-spacing: -.01em;
+}
+
+.page-lead {
+  margin: 0 0 12px;
+  color: var(--tz-paper);
+  font-size: 18px;
+}
+
+.page-section {
+  margin-top: 36px;
+  padding-top: 24px;
+  border-top: 1px solid var(--tz-line-soft);
+}
+
+.page-section h2 {
+  margin: 0 0 8px;
+  font: 600 18px/1.3 var(--tz-ui);
+}
+
+.page-section p {
+  margin: 0;
+  color: color-mix(in srgb, var(--tz-paper) 82%, var(--tz-dim));
+}
+
+.page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 24px;
+  margin: 44px 0 0;
+}
+
+.page-button {
+  display: inline-grid;
+  place-items: center;
+  min-height: 46px;
+  padding: 0 22px;
+  border-radius: 8px;
+  background: var(--tz-flare);
+  color: var(--tz-flare-ink);
+  font: 600 15px/1 var(--tz-ui);
+  text-decoration: none;
+}
+
+.page-button:hover {
+  filter: brightness(1.08);
+}
+
+.page-foot {
+  padding-top: 20px;
+  padding-bottom: calc(var(--tz-safe-b) + 32px);
+  border-top: 1px solid var(--tz-line-soft);
+  color: var(--tz-dim);
+  font-size: 13px;
+}
+
+/* parent dashboard: the frame around admin.js ------------------------------------------ */
+
+.tza-wrap {
+  min-height: 100dvh;
+  padding: calc(var(--tz-safe-t) + 32px) 20px 56px;
+  background: var(--tz-ink);
+  color: var(--tz-paper);
+}
+
+.tza-shell {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.tza-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 16px;
+  margin-bottom: 22px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--tz-line);
+}
+
+.tza-brand {
+  margin: 0;
+  color: var(--tz-paper);
+  font: 600 24px/1.2 var(--tz-ui);
+}
+
+.tza-sub {
+  color: var(--tz-dim);
+  font-size: 14px;
+}
+
+.tza-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 20px;
+  margin-top: 36px;
+  padding-top: 16px;
+  border-top: 1px solid var(--tz-line-soft);
+  color: var(--tz-dim);
+  font-size: 13px;
+}
+
+.tza-foot a {
+  color: var(--tz-dim);
+  text-underline-offset: 4px;
+}
+
+.tza-foot a:hover {
+  color: var(--tz-paper);
+}
+
+#tza-root:empty::after {
+  content: "Loading the dashboard…";
+  color: var(--tz-dim);
+  font-size: 14px;
+}
+
+.tza-shell button,
+.tza-shell input,
+.tza-shell select {
+  min-height: 40px;
+}
+
+.tza-shell select {
+  background: var(--tz-surface);
+  color: var(--tz-paper);
+}
+
+.tza-shell .tzrow {
+  flex-wrap: wrap;
+}

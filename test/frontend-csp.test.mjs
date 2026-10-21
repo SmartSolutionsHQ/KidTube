@@ -28,14 +28,14 @@ test('every page is served with the policy header, assets are not, and signed-ou
     assert.equal(response.headers.get('content-security-policy'), POLICY, path);
     const html = await response.text();
     assert.doesNotMatch(html, /\{\{brand\./, `${path} has every brand token filled`);
-    assert.match(html, /href="\/css\/kid\.css\?v=[0-9a-f]{12}"/, `${path} stylesheets are hash-stamped`);
+    assert.match(html, /href="\/css\/base\.css\?v=[0-9a-f]{12}"/, `${path} stylesheets are hash-stamped`);
   }
   const page = await install.call('/');
   const cached = await install.call('/', { headers: { 'if-none-match': page.headers.get('etag') } });
   assert.equal(cached.status, 304);
   assert.equal(cached.headers.get('content-security-policy'), POLICY, 'a revalidated page keeps its policy');
 
-  const css = await install.call('/css/kid.css');
+  const css = await install.call('/css/base.css');
   assert.equal(css.status, 200);
   assert.equal(css.headers.get('content-security-policy'), null);
   const font = await install.call('/fonts/anton/anton-400.woff2');

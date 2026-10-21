@@ -1,0 +1,1186 @@
+/* The feed: a vertical, swipe-first reel on phones and a stage with a running order on wide screens.
+   Effects stay at the edges (entering, pausing, the end); the feed itself stays clean so videos read.
+   Tokens come from base.css. */
+
+:root {
+  /* scrims: text over footage is paper on at least a 75% scrim */
+  --tz-scrim-b: linear-gradient(to top, rgba(5, 6, 10, .92) 0%, rgba(5, 6, 10, .78) 26%, rgba(5, 6, 10, .34) 58%, transparent 86%);
+  --tz-scrim-t: linear-gradient(to bottom, rgba(5, 6, 10, .80) 0%, rgba(5, 6, 10, .34) 56%, transparent 100%);
+  --tz-rad-frame: 4px;
+  --tz-rad-sheet: 16px;
+  --tz-head-h: 52px;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  overscroll-behavior: none;
+}
+
+body[data-mode="immersive"] {
+  background: var(--tz-void);
+  overflow: hidden;
+}
+
+img,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tz-skip {
+  position: fixed;
+  top: -60px;
+  left: 12px;
+  z-index: 90;
+  padding: 10px 14px;
+  background: var(--tz-flare);
+  color: var(--tz-flare-ink);
+  font-weight: 600;
+  text-decoration: none;
+  transition: top var(--tz-t1) var(--tz-ease);
+}
+
+.tz-skip:focus {
+  top: calc(var(--tz-safe-t) + 12px);
+}
+
+/* shared atoms ------------------------------------------------------------ */
+
+.tz-label {
+  font: 600 11px/1 var(--tz-ui);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.tz-meta {
+  font: 400 12px/1.3 var(--tz-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+  color: var(--tz-dim);
+}
+
+.tz-ico {
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  background: currentColor;
+  -webkit-mask: var(--m) center / contain no-repeat;
+  mask: var(--m) center / contain no-repeat;
+}
+
+[data-ico="muted"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="black" d="M4 9h3l5-4v14l-5-4H4z"/><path stroke="black" stroke-width="2" d="M16 9l5 6M21 9l-5 6"/></svg>'); }
+[data-ico="sound"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="black" d="M4 9h3l5-4v14l-5-4H4z"/><path fill="none" stroke="black" stroke-width="2" d="M16 8a5 5 0 010 8M18.5 5.5a9 9 0 010 13"/></svg>'); }
+[data-ico="close"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path stroke="black" stroke-width="2" d="M5 5l14 14M19 5L5 19"/></svg>'); }
+[data-ico="heart"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="black" stroke-width="2" d="M12 20S3.5 14.4 3.5 8.9A4.4 4.4 0 0112 6.6a4.4 4.4 0 018.5 2.3C20.5 14.4 12 20 12 20z"/></svg>'); }
+[data-ico="heart-on"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="black" d="M12 20S3.5 14.4 3.5 8.9A4.4 4.4 0 0112 6.6a4.4 4.4 0 018.5 2.3C20.5 14.4 12 20 12 20z"/></svg>'); }
+[data-ico="chat"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="black" stroke-width="2" stroke-linejoin="round" d="M4 5h16v11H10l-5 4v-4H4z"/></svg>'); }
+[data-ico="list"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path stroke="black" stroke-width="2" d="M5 7h14M5 12h14M5 17h14"/></svg>'); }
+[data-ico="up"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="black" stroke-width="2" d="M6 15l6-6 6 6"/></svg>'); }
+[data-ico="down"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="none" stroke="black" stroke-width="2" d="M6 9l6 6 6-6"/></svg>'); }
+[data-ico="play"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="black" d="M7 4l13 8-13 8z"/></svg>'); color: var(--tz-flare); }
+[data-ico="pause"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="black" d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>'); }
+[data-ico="shuffle"] { --m: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path fill="black" d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>'); }
+
+/* top bar ------------------------------------------------------------------- */
+
+.tz-head {
+  position: fixed;
+  z-index: 40;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: calc(var(--tz-head-h) + var(--tz-safe-t));
+  padding: var(--tz-safe-t) 8px 0 14px;
+}
+
+body[data-mode="immersive"] .tz-head::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  height: calc(100% + 28px);
+  background: var(--tz-scrim-t);
+  pointer-events: none;
+}
+
+/* the mark (or the kid's badge) and the channel name; kid.css animates the name in and out */
+.tz-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  margin-right: auto;
+}
+
+.tz-mark {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin: -4px;
+  padding: 4px;
+  border-radius: 6px;
+}
+
+.tz-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.tz-word {
+  overflow: hidden;
+  font: 400 17px/1.1 var(--tz-display);
+  letter-spacing: .02em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.tz-pos {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 0 8px;
+  font: 500 12px/1 var(--tz-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .06em;
+  color: var(--tz-paper);
+}
+
+.tz-pos-s,
+.tz-pos-t {
+  opacity: .6;
+}
+
+/* shuffle is a session mode: on reads in the accent, like the rail's pressed state */
+.tz-shuffle {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+}
+
+.tz-shuffle[aria-pressed="true"] .tz-ico {
+  color: var(--tz-flare);
+}
+
+.tz-sound {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+}
+
+.tz-sound .tz-ico,
+.tz-shuffle .tz-ico {
+  width: 20px;
+  height: 20px;
+}
+
+/* sound pill: the only pill in the system, because it is a transient toast */
+.tz-soundpill {
+  position: fixed;
+  z-index: 45;
+  top: calc(var(--tz-safe-t) + 60px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: rgba(5, 6, 10, .78);
+  font: 600 11px/1 var(--tz-ui);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.tz-soundpill .tz-ico {
+  width: 16px;
+  height: 16px;
+}
+
+body[data-sound="on"] .tz-soundpill,
+body[data-end] .tz-soundpill,
+body[data-end] .tz-pos-s,
+body[data-end] .tz-pos-t {
+  display: none;
+}
+
+/* app shell --------------------------------------------------------------- */
+
+.tz-app {
+  position: relative;
+  height: 100dvh;
+}
+
+.tz-stagewrap {
+  position: relative;
+  height: 100%;
+}
+
+/* stage glow: the active clip's own poster, blurred; feed.js swaps it with the clip */
+.tz-glow {
+  display: none;
+}
+
+.tz-reel {
+  position: relative;
+  height: 100%;
+}
+
+/* immersive: one clip per screen, snapping */
+body[data-mode="immersive"] .tz-reel {
+  position: fixed;
+  inset: 0;
+  height: 100dvh;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+body[data-mode="immersive"] .tz-reel::-webkit-scrollbar {
+  display: none;
+}
+
+body[data-mode="immersive"] .tz-slide {
+  height: 100dvh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+body[data-mode="immersive"][data-sheet-open="1"] .tz-reel {
+  scroll-snap-type: none;
+  overflow: hidden;
+}
+
+.tz-slide {
+  position: relative;
+  overflow: hidden;
+  background: var(--tz-void);
+}
+
+/* the video slot; the poster shows until the first frame, so a swipe never lands on black */
+.tz-slot {
+  position: absolute;
+  inset: 0;
+  display: block;
+  background: var(--tz-surface);
+}
+
+.tz-slot video,
+.tz-slot img.tz-still {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.tz-slot[data-fit="cover"] video,
+.tz-slot[data-fit="cover"] img.tz-still {
+  object-fit: cover;
+}
+
+.tz-slot[data-fit="contain"] video,
+.tz-slot[data-fit="contain"] img.tz-still {
+  object-fit: contain;
+}
+
+/* ambient fill behind letterboxed clips: the poster, blurred; one <img>, never a second <video> */
+.tz-amb {
+  position: absolute;
+  inset: -12%;
+  z-index: 0;
+  width: 124%;
+  height: 124%;
+  object-fit: cover;
+  opacity: 0;
+  filter: blur(42px) saturate(1.3) brightness(.45);
+  transition: opacity var(--tz-t3) var(--tz-ease);
+}
+
+.tz-slot[data-fit="contain"] .tz-amb {
+  opacity: 1;
+}
+
+.tz-scrimb {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 46%;
+  background: var(--tz-scrim-b);
+  pointer-events: none;
+}
+
+/* caption, bottom left: "■ LATEST · OCT 20 2026 · 1:29" over the title */
+.tz-cap {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  z-index: 12;
+  width: min(76%, 34ch);
+  padding: 0 16px calc(30px + var(--tz-safe-b) + var(--tz-kb));
+}
+
+.tz-cap-eyebrow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 8px;
+}
+
+.tz-cap-eyebrow .tz-label,
+.tz-cap-eyebrow .tz-meta {
+  font: 500 11px/1.2 var(--tz-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.tz-cap-eyebrow .tz-label + .tz-meta::before {
+  content: "· ";
+}
+
+.tz-rec {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  background: var(--tz-flare);
+}
+
+.tz-cap-title {
+  margin: 0 0 6px;
+  font: 400 clamp(24px, 6.6vw, 34px)/1 var(--tz-display);
+  letter-spacing: .01em;
+  text-transform: uppercase;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tz-cap-blurb {
+  margin: 0;
+  color: var(--tz-paper);
+  opacity: .88;
+  font-size: 14px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.tz-cap-blurb:empty {
+  display: none;
+}
+
+/* dim is never used over footage */
+.tz-cap .tz-meta {
+  color: var(--tz-paper);
+  opacity: .86;
+}
+
+/* action rail, bottom right */
+.tz-rail {
+  position: absolute;
+  right: 4px;
+  bottom: 0;
+  z-index: 12;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding-bottom: calc(40px + var(--tz-safe-b) + var(--tz-kb));
+}
+
+.tz-rail button {
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 2px;
+}
+
+.tz-rail button[disabled] {
+  opacity: .32;
+  cursor: default;
+}
+
+.tz-rail .tz-ico {
+  filter: drop-shadow(0 1px 2px rgba(5, 6, 10, .9));
+}
+
+.tz-rail button[aria-pressed="true"] .tz-ico {
+  color: var(--tz-flare);
+}
+
+/* the like count sits inside the button, so the rail keeps one touch target per action */
+.tz-rail button[data-act="like"] {
+  height: 66px;
+  grid-template-rows: 24px 12px;
+  gap: 2px;
+  align-content: center;
+}
+
+.tz-likes {
+  font: 500 11px/1 var(--tz-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .02em;
+  color: var(--tz-paper);
+  text-shadow: 0 1px 2px rgba(5, 6, 10, .9);
+}
+
+.tz-rail button[aria-pressed="true"] .tz-likes {
+  color: var(--tz-flare);
+}
+
+.tz-rail button:active:not([disabled]) .tz-ico {
+  transform: scale(.9);
+  transition: transform 80ms var(--tz-ease);
+}
+
+.tz-rail button[aria-pressed="true"] .tz-ico[data-ico="heart-on"] {
+  animation: tz-pop 220ms var(--tz-ease);
+}
+
+@keyframes tz-pop {
+  0% { transform: scale(1); }
+  45% { transform: scale(1.25); }
+  100% { transform: scale(1); }
+}
+
+/* centre play glyph: shows while paused, never decorates a playing clip */
+.tz-tap {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  background: none;
+}
+
+.tz-glyph {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  translate: -50% -50%;
+  z-index: 11;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  background: rgba(5, 6, 10, .7);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--tz-t1) var(--tz-ease);
+}
+
+.tz-glyph .tz-ico {
+  width: 30px;
+  height: 30px;
+}
+
+.tz-slide[data-paused="1"]:not([data-state="error"]) .tz-glyph {
+  opacity: 1;
+}
+
+/* progress: 3px to see, 32px to hit */
+.tz-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(var(--tz-safe-b) + var(--tz-kb));
+  z-index: 13;
+  display: flex;
+  align-items: flex-end;
+  width: 100%;
+  height: 32px;
+  padding: 0;
+  background: none;
+}
+
+.tz-bar-track {
+  position: relative;
+  width: 100%;
+  height: 3px;
+  background: rgba(247, 244, 236, .22);
+}
+
+.tz-bar-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: var(--tz-flare);
+  transition: width 90ms linear;
+}
+
+/* buffering and errors */
+.tz-buf {
+  position: absolute;
+  left: 0;
+  bottom: calc(var(--tz-safe-b) + var(--tz-kb));
+  z-index: 14;
+  display: none;
+  width: 32%;
+  height: 3px;
+  background: var(--tz-flare);
+  animation: tz-buf 1.1s linear infinite;
+}
+
+.tz-slide[data-state="buffering"] .tz-buf {
+  display: block;
+}
+
+@keyframes tz-buf {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(320%); }
+}
+
+.tz-err {
+  position: absolute;
+  z-index: 15;
+  left: 16px;
+  right: 70px;
+  top: 50%;
+  translate: 0 -50%;
+  display: none;
+  padding: 12px 0 12px 14px;
+  border-left: 3px solid var(--tz-flare);
+  background: rgba(5, 6, 10, .9);
+}
+
+.tz-slide[data-state="error"] .tz-err {
+  display: block;
+}
+
+.tz-err p {
+  margin: 6px 0 12px;
+  font-size: 14px;
+}
+
+.tz-err-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.tz-btn {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--tz-line);
+  font: 500 12px/1 var(--tz-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.tz-btn[data-variant="primary"] {
+  background: var(--tz-flare);
+  border-color: var(--tz-flare);
+  color: var(--tz-flare-ink);
+}
+
+/* loading: the poster, or a still surface; never a shimmer */
+.tz-slide[data-state="loading"] .tz-slot {
+  background: var(--tz-surface);
+}
+
+/* the empty channel and the end plate: the feed ends, on purpose */
+.tz-slide[data-end] {
+  display: grid;
+  place-items: center;
+  padding: 32px;
+  background: var(--tz-ink);
+  text-align: center;
+  font: 500 13px/1.6 var(--tz-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--tz-dim);
+}
+
+.tz-endslide {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 14px;
+  padding: 0 24px;
+  background: var(--tz-ink);
+}
+
+.tz-endslide h2 {
+  margin: 0;
+  max-width: 14ch;
+  font: 400 clamp(34px, 8.5vw, 64px)/.92 var(--tz-display);
+  text-transform: uppercase;
+}
+
+.tz-endslide .tz-rule {
+  width: 56px;
+  height: 2px;
+  background: var(--tz-flare);
+}
+
+.tz-endplate {
+  display: grid;
+  justify-items: start;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--tz-line);
+}
+
+.tz-endplate .tz-label,
+.tz-endplate .tz-meta {
+  font: 500 11px/1.3 var(--tz-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--tz-dim);
+}
+
+.tz-endplate .tz-meta {
+  margin: 0;
+}
+
+/* the running order -------------------------------------------------------- */
+
+.tz-log {
+  display: none;
+}
+
+.tz-log-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding-bottom: 4px;
+}
+
+.tz-log-head .tz-label,
+.tz-log-head .tz-meta {
+  font: 500 12px/1 var(--tz-mono);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.tz-log-row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 72px;
+  padding: 10px 12px;
+  border-left: 2px solid transparent;
+  text-align: left;
+}
+
+.tz-log-row:hover {
+  background: rgba(247, 244, 236, .04);
+}
+
+.tz-log-row[aria-current="true"] {
+  border-left-color: var(--tz-flare);
+  background: color-mix(in srgb, var(--tz-flare) 12%, transparent);
+}
+
+.tz-log-thumb {
+  position: relative;
+  overflow: hidden;
+  width: 40px;
+  aspect-ratio: 9 / 16;
+  background: var(--tz-surface-2);
+}
+
+.tz-log-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.tz-log-n {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 4px;
+  background: rgba(5, 6, 10, .8);
+  font: 500 10px/1 var(--tz-mono);
+}
+
+.tz-log-row[aria-current="true"] .tz-log-n {
+  color: var(--tz-flare);
+}
+
+.tz-log-t {
+  display: -webkit-box;
+  margin: 0 0 4px;
+  overflow: hidden;
+  font: 500 15px/1.25 var(--tz-ui);
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.tz-log-row[aria-current="true"] .tz-log-t {
+  font-weight: 600;
+}
+
+.tz-log-row .tz-meta {
+  font-size: 11px;
+  letter-spacing: .08em;
+}
+
+/* sheets ------------------------------------------------------------------- */
+
+.tz-scrimlayer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(5, 6, 10, .55);
+}
+
+.tz-sheet {
+  position: fixed;
+  z-index: 55;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 68dvh;
+  padding-bottom: calc(var(--tz-safe-b) + var(--tz-kb));
+  border-top: 1px solid var(--tz-line);
+  border-radius: var(--tz-rad-sheet) var(--tz-rad-sheet) 0 0;
+  background: var(--tz-surface);
+  transform: translateY(0);
+  transition: transform var(--tz-t3) var(--tz-ease);
+}
+
+.tz-sheet[hidden] {
+  display: none;
+}
+
+.tz-sheet[data-enter="1"] {
+  transform: translateY(100%);
+}
+
+.tz-sheet-grip {
+  width: 36px;
+  height: 4px;
+  margin: 8px auto 4px;
+  border-radius: 2px;
+  background: var(--tz-line);
+}
+
+.tz-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px 10px;
+}
+
+.tz-sheet-title {
+  margin: 0 auto 0 0;
+  font: 400 22px/1 var(--tz-display);
+  letter-spacing: .01em;
+  text-transform: uppercase;
+}
+
+[data-sheet="index"] .tz-sheet-title {
+  font: 500 12px/1 var(--tz-mono);
+  letter-spacing: .16em;
+}
+
+.tz-x {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  margin-right: -10px;
+}
+
+.tz-truth {
+  margin: 0;
+  padding: 0 16px 10px;
+  color: var(--tz-dim);
+  font-size: 13px;
+}
+
+.tz-sheet-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px 12px;
+}
+
+.tz-sheet-body .tz-truth,
+.tz-sheet-body .tz-foot {
+  padding: 0;
+}
+
+.tz-cmt {
+  padding: 12px 0;
+  border-top: 1px solid var(--tz-line-soft);
+}
+
+.tz-cmt:first-child {
+  border-top: 0;
+}
+
+.tz-cmt-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.tz-cmt-who {
+  font: 600 15px/1.2 var(--tz-ui);
+}
+
+.tz-cmt-body {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.tz-cmt[data-state="sending"] {
+  opacity: .6;
+}
+
+.tz-cmt-acts {
+  display: flex;
+  gap: 14px;
+  margin-top: 8px;
+}
+
+.tz-cmt-acts button {
+  min-height: 44px;
+  font: 500 11px/1 var(--tz-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--tz-dim);
+}
+
+.tz-cmt-acts button:hover {
+  color: var(--tz-paper);
+}
+
+.tz-empty {
+  margin: 14px 0;
+  padding: 10px 0 10px 14px;
+  border-left: 3px solid var(--tz-line);
+}
+
+.tz-composer {
+  display: grid;
+  gap: 8px;
+  padding: 12px 16px 4px;
+  border-top: 1px solid var(--tz-line);
+}
+
+.tz-field {
+  width: 100%;
+  min-height: 44px;
+  padding: 11px 12px;
+  border: 1px solid var(--tz-line);
+  border-radius: 2px;
+  background: var(--tz-surface-2);
+  color: var(--tz-paper);
+  font: 400 16px/1.4 var(--tz-ui);
+}
+
+.tz-field::placeholder {
+  color: var(--tz-dim);
+}
+
+.tz-area {
+  resize: none;
+  max-height: 132px;
+}
+
+.tz-composer-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tz-composer-foot .tz-meta {
+  margin-right: auto;
+}
+
+.tz-post {
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 2px;
+  background: var(--tz-flare);
+  color: var(--tz-flare-ink);
+  font: 600 12px/1 var(--tz-ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.tz-post[disabled] {
+  background: var(--tz-surface-2);
+  color: var(--tz-dim);
+  cursor: default;
+}
+
+.tz-exit {
+  display: none;
+}
+
+.tz-foot {
+  margin: 18px 0 8px;
+  color: var(--tz-dim);
+  font-size: 13px;
+}
+
+/* inline save failure */
+.tz-failnote {
+  margin-top: 4px;
+  font: 400 11px/1 var(--tz-mono);
+  color: var(--tz-flare);
+}
+
+/* ==========================================================================
+   Wide screens (900px and up): the stage and the running order
+   ========================================================================== */
+
+@media (min-width: 900px) {
+  :root {
+    --tz-head-h: 64px;
+  }
+
+  .tz-head {
+    gap: 10px;
+    padding: var(--tz-safe-t) 20px 0 28px;
+  }
+
+  body[data-mode="stage"] .tz-head {
+    background: var(--tz-ink);
+    border-bottom: 1px solid var(--tz-line-soft);
+  }
+
+  .tz-mark {
+    width: 40px;
+    height: 40px;
+  }
+
+  .tz-word {
+    font-size: 24px;
+  }
+
+  body[data-mode="stage"] {
+    overflow: hidden;
+  }
+
+  body[data-mode="stage"] .tz-app {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 380px;
+    height: 100dvh;
+    padding-top: calc(var(--tz-head-h) + var(--tz-safe-t));
+  }
+
+  body[data-mode="stage"] .tz-stagewrap {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    min-width: 0;
+    padding: 32px;
+  }
+
+  /* a 16:9 stage that always fits: portrait clips letterbox over their own blurred poster */
+  body[data-mode="stage"] .tz-reel {
+    position: relative;
+    width: min(100%, calc((100dvh - var(--tz-head-h) - 64px) * 16 / 9));
+    height: auto;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    border-radius: var(--tz-rad-frame);
+    box-shadow: 0 24px 70px -12px rgba(0, 0, 0, .85);
+  }
+
+  body[data-mode="stage"] .tz-slide {
+    position: absolute;
+    inset: 0;
+  }
+
+  body[data-mode="stage"] .tz-slide:not([data-active="1"]) {
+    display: none;
+  }
+
+  body[data-mode="stage"] .tz-cap-title {
+    font-size: clamp(28px, 2.8vw, 40px);
+  }
+
+  body[data-mode="stage"] .tz-glow {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-size: cover;
+    background-position: center;
+    filter: blur(90px) saturate(1.2) brightness(.45);
+    opacity: .3;
+    transition: opacity var(--tz-t3) var(--tz-ease);
+  }
+
+  body[data-mode="stage"] .tz-log {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 28px 22px 28px 28px;
+    border-left: 1px solid var(--tz-line-soft);
+  }
+
+  body[data-mode="stage"] .tz-sheet {
+    left: auto;
+    right: 40px;
+    bottom: 32px;
+    width: min(420px, 38vw);
+    max-height: min(70dvh, 620px);
+    border: 1px solid var(--tz-line);
+    border-radius: var(--tz-rad-sheet);
+  }
+
+  body[data-mode="stage"] .tz-scrimlayer {
+    background: rgba(5, 6, 10, .35);
+  }
+
+  body[data-mode="stage"] .tz-soundpill {
+    top: auto;
+    bottom: 24px;
+  }
+
+  body[data-mode="immersive"] .tz-exit {
+    position: fixed;
+    z-index: 60;
+    top: calc(var(--tz-safe-t) + 10px);
+    right: 14px;
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+  }
+
+  body[data-mode="immersive"] .tz-cap {
+    width: min(46%, 40ch);
+    padding-left: 32px;
+  }
+
+  body[data-mode="immersive"] .tz-rail {
+    right: 24px;
+  }
+
+  body[data-mode="immersive"] .tz-sheet {
+    left: auto;
+    right: 24px;
+    bottom: 24px;
+    width: min(440px, 34vw);
+    max-height: min(72dvh, 660px);
+    border: 1px solid var(--tz-line);
+    border-radius: var(--tz-rad-sheet);
+  }
+}
+
+/* ==========================================================================
+   Landscape phones: the chrome moves out of the video's way
+   ========================================================================== */
+
+@media (max-width: 899px) and (orientation: landscape) {
+  :root {
+    --tz-head-h: 44px;
+  }
+
+  .tz-cap {
+    width: min(52%, 38ch);
+    padding-bottom: calc(16px + var(--tz-safe-b));
+  }
+
+  .tz-cap-title {
+    font-size: 20px;
+    -webkit-line-clamp: 1;
+  }
+
+  .tz-cap-blurb {
+    display: none;
+  }
+
+  .tz-rail {
+    right: 2px;
+    bottom: 50%;
+    gap: 0;
+    padding-bottom: 0;
+    transform: translateY(50%);
+  }
+
+  .tz-rail button {
+    width: 44px;
+    height: 44px;
+  }
+
+  .tz-rail button[data-act="like"] {
+    height: 54px;
+    grid-template-rows: 22px 11px;
+    gap: 1px;
+  }
+}
+
+/* ==========================================================================
+   Reduced motion: implemented, not stubbed. Video still plays.
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  .tz-sheet {
+    transform: none;
+    transition: opacity 100ms linear;
+  }
+
+  .tz-sheet[data-enter="1"] {
+    transform: none;
+    opacity: 0;
+  }
+
+  .tz-buf {
+    width: 30%;
+    animation: none;
+  }
+
+  .tz-rail button[aria-pressed="true"] .tz-ico[data-ico="heart-on"] {
+    animation: none;
+  }
+}

@@ -1,1 +1,68 @@
-<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>About — KidTube</title><link rel="icon" href="/assets/logo.svg"><link rel="stylesheet" href="/css/kid.css"><body class="about-page"><main class="about-content"><a href="/">← Back to KidTube</a><p class="eyebrow">YOUR FAMILY / YOUR CHANNEL</p><h1>A little channel.<br>A big imagination.</h1><p>This is a family-run space for sharing videos with people we know. There are no ads, recommendations from strangers, or public discovery feeds.</p><h2>How to join</h2><p>Create an account and wait for a parent to approve it. A guest code gives invited visitors 24 hours of view-only access.</p><h2>Be a good guest</h2><p>Keep comments kind. Ask before downloading or sharing someone else’s video. A parent manages accounts and chooses who can upload.</p><h2>Make this space yours</h2><p>This starter has no videos or family information. The family hosting it can customize this page and the channel design.</p><a class="block-button" href="/">Enter the channel ↗</a></main></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>About · {{brand.name}}</title>
+  <meta name="description" content="How this private family video channel works, and who can watch it.">
+  <meta name="theme-color" content="#0B0C10">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/reset.css">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/page.css">
+</head>
+<body class="page about-page" data-title="About">
+  <header class="page-head">
+    <a class="page-brand" href="/">
+      <img src="/assets/logo.svg" alt="" width="32" height="32">
+      <span data-site="name">{{brand.wordmark}}</span>
+    </a>
+    <a class="page-back" href="/">Back to the videos</a>
+  </header>
+
+  <main class="page-main">
+    <p class="page-kicker">About this channel</p>
+    <h1 class="page-title" data-site="tagline">{{brand.tagline}}</h1>
+    <p class="page-lead">
+      A private video channel run by a family on their own computer or server.
+      There are no ads, no recommendations from strangers and no public feed.
+    </p>
+
+    <section class="page-section">
+      <h2>Who can watch</h2>
+      <p>
+        Everyone who watches has an account that a parent approved, or a guest code from the family.
+        A guest code works once and gives 24 hours of watching, without hearts or comments.
+      </p>
+    </section>
+
+    <section class="page-section">
+      <h2>Be a good guest</h2>
+      <p>
+        Keep comments kind. Ask before saving or sharing someone else’s video.
+        A parent manages accounts, chooses who can post and can remove any comment.
+      </p>
+    </section>
+
+    <section class="page-section">
+      <h2>Privacy</h2>
+      <p>
+        The videos stay on the family’s own server. Location details from phones are removed from every upload.
+        This site loads no outside fonts, trackers or analytics.
+      </p>
+    </section>
+
+    <p class="page-actions">
+      <a class="page-button" href="/">Enter the channel</a>
+      <a class="page-link" href="/?register=1">Ask for an account</a>
+    </p>
+  </main>
+
+  <footer class="page-foot">
+    <span>{{brand.name}} {{brand.endorsement}}</span>
+  </footer>
+
+  <script type="module" src="/js/shell/site.js"></script>
+</body>
+</html>

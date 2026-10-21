@@ -1,17 +1,33 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>KidTube | Parent dashboard</title>
-  <link rel="stylesheet" href="/css/reset-c24c98af0f96.css">
-  <link rel="stylesheet" href="/css/framework-0dc1137c1e8d.css">
-  <link rel="stylesheet" href="/css/style-4a90ad5ed053.css">
-  <link rel="stylesheet" href="/css/userStyles-8a661a58ad94.css">
-<link rel="icon" href="/assets/logo.svg"><link rel="stylesheet" href="/css/kid.css"></head>
-<body class="hq-page">
-<main class="tza-wrap"><div class="tza-shell"><header class="tza-head"><span class="tza-brand">PARENT DASHBOARD</span><span class="tza-sub">KidTube · Family controls</span></header><div aria-live="polite" id="tza-root"></div><footer class="tza-foot"><a href="/" target="_self">Back to the channel</a></footer></div></main>
-  <script type="module" src="/js/admin.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Parent dashboard · {{brand.name}}</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#0B0C10">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/reset.css">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/page.css">
+</head>
+<body class="page hq-page" data-title="Parent dashboard">
+  <main class="tza-wrap">
+    <div class="tza-shell">
+      <header class="tza-head">
+        <h1 class="tza-brand">Parent dashboard</h1>
+        <span class="tza-sub"><span data-site="name">{{brand.name}}</span> · Family controls</span>
+      </header>
+      <div id="tza-root" aria-live="polite"></div>
+      <footer class="tza-foot">
+        <a href="/">Back to the videos</a>
+        <span>{{brand.name}} {{brand.endorsement}}</span>
+      </footer>
+    </div>
+  </main>
 
+  <script type="module" src="/js/shell/site.js"></script>
+  <script type="module" src="/js/admin.js"></script>
 </body>
 </html>
