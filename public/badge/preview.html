@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="robots" content="noindex">
+<title>Badge playground · {{brand.name}}</title>
+<link rel="stylesheet" href="/js/badge/builder.css">
+<link rel="stylesheet" href="/badge/preview.css">
+</head>
+<body>
+<header class="pg-top">
+  <span><strong>{{brand.name}}</strong> · Badge builder playground</span>
+  <span class="pg-dim">Every name here is invented</span>
+</header>
+<main class="pg-main">
+  <section class="pg-intro">
+    <h1>Make your <span class="pg-accent">badge.</span></h1>
+    <p>Pick a shape, a color, stickers and a font, type a name, and shuffle until it feels right. The server redraws the badge from these choices, so a logo can never carry hidden code.</p>
+  </section>
+  <div id="builder" class="pg-builder"></div>
+  <section class="pg-panel" aria-labelledby="pg-server-title">
+    <h2 id="pg-server-title">Check against the server</h2>
+    <p class="pg-dim" id="pg-session">Sign in as a parent on this site to save. Saving sends only the choices; the server draws the SVG and this page compares it with the preview.</p>
+    <div class="pg-actions">
+      <label class="pg-field">Channel id <input id="pg-channel" type="number" min="1" value="1" inputmode="numeric"></label>
+      <button type="button" class="pg-button" id="pg-save-channel">Save to channel</button>
+      <button type="button" class="pg-button" id="pg-save-family">Save family badge + icons</button>
+    </div>
+    <div class="pg-actions">
+      <label class="pg-field">Picture for the channel <input id="pg-picture" type="file" accept="image/png,image/jpeg,image/webp"></label>
+      <button type="button" class="pg-button" id="pg-remove-picture">Remove picture</button>
+    </div>
+    <p id="pg-result" role="status" class="pg-result"></p>
+    <div id="pg-icons" class="pg-icons"></div>
+  </section>
+  <section class="pg-panel" aria-labelledby="pg-examples-title">
+    <h2 id="pg-examples-title">Made by kids</h2>
+    <p class="pg-dim">Tap one to load it into the builder.</p>
+    <div id="pg-examples" class="pg-examples"></div>
+  </section>
+  <details class="pg-panel">
+    <summary>Spec JSON</summary>
+    <pre id="pg-spec" class="pg-spec"></pre>
+  </details>
+</main>
+<footer class="pg-foot"><span>Fonts: SIL OFL 1.1 · Stickers: Microsoft Fluent Emoji, MIT · <a href="/badge/licenses/fluent-emoji-MIT.txt">sticker license</a> · <a href="/badge/licenses/OFL-tall.txt">font licenses</a></span><span>{{brand.endorsement}}</span></footer>
+<script type="module" src="/badge/preview.js"></script>
+</body>
+</html>
