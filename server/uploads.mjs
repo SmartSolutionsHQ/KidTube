@@ -5,7 +5,7 @@ import { open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { asCreator } from './api.js';
-import { channelById, channelBySlug } from './channels.mjs';
+import { DEFAULT_CHANNEL_ID, channelById, channelBySlug } from './channels.mjs';
 import { publishClip } from './publish.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -143,7 +143,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
     return asCreator(env, email, token);
   }
 
-  // Kids upload only to their own channel; parents pick one or get the default when publishing.
+  // Kids upload only to their own channel; parents pick one or get the default.
   function targetChannel(user, slug) {
     if (user.role === 'kid') {
       const own = channelById(sqlite, user.channelId);
@@ -151,7 +151,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
       if (slug && slug !== own.slug) throw new HttpError(403, 'You can only upload to your own channel.');
       return own.id;
     }
-    if (!slug) return null;
+    if (!slug) return DEFAULT_CHANNEL_ID;
     const channel = channelBySlug(sqlite, slug);
     if (!channel) throw new HttpError(400, 'Choose a channel.');
     return channel.id;
@@ -200,7 +200,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
       const now = Date.now();
       publishClip(sqlite, notifications, {
         id: clipId, title: job.title, src: `/api/video/${job.id}`, poster: posterSrc, kind: 'video',
-        publishedAt: new Date(now).toISOString(), duration, channelId: job.channel_id, review: reviewed ? 'pending' : 'live',
+        publishedAt: new Date(now).toISOString(), duration, channelId: job.channel_id, review: reviewed ? 'pending' : 'approved',
       }, job.id);
       await rm(dir, { recursive: true, force: true })
         .catch(error => console.error(`Could not remove completed upload ${job.id}:`, error));

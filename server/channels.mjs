@@ -12,13 +12,8 @@ export function channelById(sqlite, id) {
   return id == null ? undefined : sqlite.prepare('SELECT * FROM channels WHERE id=?').get(id);
 }
 
-// Clips that arrive without a channel go to the first one; an install with no kids yet gets one.
-export function defaultChannel(sqlite) {
-  const first = sqlite.prepare('SELECT * FROM channels ORDER BY position, id LIMIT 1').get();
-  if (first) return first;
-  sqlite.prepare("INSERT OR IGNORE INTO channels (slug,name,created) VALUES ('main','Main channel',?)").run(Date.now());
-  return channelBySlug(sqlite, 'main');
-}
+// The migration seeds channel 1 and a trigger keeps it, so anything without a channel can land there.
+export const DEFAULT_CHANNEL_ID = 1;
 
 // What viewers may see about a channel; empty choices fall back to the family's.
 export function publicChannel(row, site) {

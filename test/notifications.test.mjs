@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createVideoNotifications, videoEmail } from '../server/notifications.mjs';
 import { publishClip } from '../server/publish.mjs';
-import { initializeSchema } from '../server/schema.mjs';
+import { migrate } from '../server/schema.mjs';
 
 const env = {
   SIGN_SECRET: 'test-secret', BREVO_API_KEY: 'fake-key', SENDER_EMAIL: 'tube@example.com',
@@ -14,10 +14,10 @@ const clip = {
   src: '/api/video/test-video', duration: 62.4, kind: 'video', publishedAt: '2026-10-20T18:30:00Z',
 };
 
-function fixture(t, fetchImpl) {
+async function fixture(t, fetchImpl) {
   const sqlite = new DatabaseSync(':memory:');
   sqlite.exec('PRAGMA foreign_keys=ON');
-  initializeSchema(sqlite);
+  await migrate(sqlite);
   const account = sqlite.prepare(`INSERT INTO accounts (email,first,last,salt,hash,status,role,created)
     VALUES (?,'Test','Account','salt','hash',?,?,0)`);
   for (const [email, status, role] of [['viewer@example.com', 'approved', ''], ['kid@example.com', 'approved', 'admin'],
@@ -52,7 +52,7 @@ function unsubscribeRequest(message, method = 'GET') {
 }
 
 test('announces a published video to approved accounts individually with escaped details and a clip link', async t => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.publish();
   await f.notifications.kick();
   assert.deepEqual(f.sent.map(m => m.to[0].email).sort(), ['kid@example.com', 'parent@example.com', 'viewer@example.com']);
@@ -80,7 +80,7 @@ test('announces a published video to approved accounts individually with escaped
 });
 
 test('unsubscribe needs a signed confirmation and stops queued and future video emails only', async t => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.publish();
   await f.notifications.kick();
   const viewer = f.sent.find(m => m.to[0].email === 'viewer@example.com');
@@ -105,7 +105,7 @@ test('unsubscribe needs a signed confirmation and stops queued and future video 
 });
 
 test('resumes persisted deliveries and rechecks account status and clip availability', async t => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.queue();
   f.sqlite.prepare("UPDATE accounts SET status='denied' WHERE email='viewer@example.com'").run();
   f.sqlite.prepare("DELETE FROM accounts WHERE email='parent@example.com'").run();
@@ -121,7 +121,7 @@ test('resumes persisted deliveries and rechecks account status and clip availabi
 });
 
 test('does not backfill old clips or include people approved after publication', async t => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.sqlite.prepare("INSERT INTO clips (id,title,src,position,created) VALUES ('old-clip','Old video','/old.mp4',1,0)").run();
   await f.restart();
   await f.notifications.kick();
@@ -135,7 +135,7 @@ test('does not backfill old clips or include people approved after publication',
 test('retries provider failures across restart with the same delivery key and respects Retry-After', async t => {
   const requests = [];
   let calls = 0;
-  const f = fixture(t, async (url, options) => {
+  const f = await fixture(t, async (url, options) => {
     requests.push(JSON.parse(options.body));
     if (++calls === 1) return Response.json({ code: 'too_many_requests' }, { status: 429, headers: { 'retry-after': '120' } });
     if (calls === 4) return Response.json({ code: 'duplicate_parameter' }, { status: 400 });
@@ -158,7 +158,7 @@ test('retries provider failures across restart with the same delivery key and re
 
 test('records permanent failures and bounds transient retries without undoing publication', async t => {
   let permanent = true;
-  const f = fixture(t, async () => {
+  const f = await fixture(t, async () => {
     if (permanent) return Response.json({ code: 'invalid_parameter' }, { status: 400 });
     throw new Error('Network unavailable');
   });
@@ -177,7 +177,7 @@ test('records permanent failures and bounds transient retries without undoing pu
 });
 
 test('rolls back publication with the outbox if saving recipients fails', async t => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.sqlite.exec(`CREATE TRIGGER fail_delivery BEFORE INSERT ON video_notification_deliveries
     BEGIN SELECT RAISE(ABORT, 'disk error'); END`);
   assert.throws(() => f.publish(), /disk error/);

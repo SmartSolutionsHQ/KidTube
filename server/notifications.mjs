@@ -1,6 +1,7 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { sendMail } from './mail.mjs';
 import { BRAND_NAME, WORDMARK } from './brand.mjs';
+import { DEFAULT_CHANNEL_ID } from './channels.mjs';
 
 const SUBJECT = `New video on ${BRAND_NAME}`;
 const MAX_ATTEMPTS = 8;
@@ -43,8 +44,8 @@ export function createVideoNotifications({ sqlite, env, fetchImpl = fetch, now =
   function enqueue(clip) {
     if (env.MAIL_MODE==='disabled' || (clip.kind && clip.kind !== 'video')) return;
     const added = sqlite.prepare(`INSERT OR IGNORE INTO video_announcements
-      (clip_id,title,blurb,duration,published,created) VALUES (?,?,?,?,?,?)`)
-      .run(clip.id, clip.title, clip.blurb || '', Number(clip.duration) || 0, clip.publishedAt || clip.published, now()).changes;
+      (clip_id,title,blurb,duration,published,created,channel_id) VALUES (?,?,?,?,?,?,?)`)
+      .run(clip.id, clip.title, clip.blurb || '', Number(clip.duration) || 0, clip.publishedAt || clip.published, now(), clip.channelId ?? DEFAULT_CHANNEL_ID).changes;
     if (!added) return;
     const recipients = sqlite.prepare(`SELECT email FROM accounts WHERE status='approved'
       AND NOT EXISTS (SELECT 1 FROM video_email_preferences p WHERE p.email=accounts.email AND p.unsubscribed=1)`).all();
@@ -100,7 +101,7 @@ ${action ? `<form method="post" action="${esc(action)}"><button style="backgroun
       const account = sqlite.prepare('SELECT status FROM accounts WHERE email=?').get(row.email);
       const clip = sqlite.prepare('SELECT hidden, review FROM clips WHERE id=?').get(row.clip_id);
       const preference = sqlite.prepare('SELECT unsubscribed FROM video_email_preferences WHERE email=?').get(row.email);
-      if (account?.status !== 'approved' || !clip || clip.hidden || clip.review !== 'live' || preference?.unsubscribed) {
+      if (account?.status !== 'approved' || !clip || clip.hidden || clip.review !== 'approved' || preference?.unsubscribed) {
         sqlite.prepare("UPDATE video_notification_deliveries SET status='skipped', last_error='Account or clip no longer eligible' WHERE clip_id=? AND email=?")
           .run(row.clip_id, row.email);
         continue;

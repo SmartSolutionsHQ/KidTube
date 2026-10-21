@@ -272,11 +272,11 @@ async function superFrom(req, env) {
 
 /* ---------- server-owned clip catalog (the admin panel edits it) ---------- */
 
-/* viewers only ever see live, unhidden clips */
+/* viewers only ever see approved, unhidden clips */
 async function clipsList(env) {
   const r = await db(env, `SELECT c.id, c.title, c.src, c.poster, c.kind, c.blurb, c.published, c.duration, c.position, ch.slug AS channel
     FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id
-    WHERE c.hidden = 0 AND c.review = 'live' ORDER BY c.position ASC`);
+    WHERE c.hidden = 0 AND c.review = 'approved' ORDER BY c.position ASC`);
   const clips = (r.results || []).map((c) => ({
     id: c.id, title: c.title, src: c.src, poster: c.poster || '', kind: c.kind || 'video',
     blurb: c.blurb || '', publishedAt: c.published || '', duration: c.duration || 0, seq: c.position,

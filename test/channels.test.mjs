@@ -5,13 +5,13 @@ import { startInstall, PARENT } from './helpers.mjs';
 
 const VIDEO = '22222222-2222-4222-8222-222222222222';
 
+// Channel 1 comes from the migration; the first kid takes it over.
 function addChannels(db) {
-  db.exec(`INSERT INTO channels (id,slug,name,kicker,accent,theme_id,logo_rev,position,created) VALUES
-    (1,'ana','Ana','Side A','#4df6ff','arcade',3,1,0),
-    (2,'ben','Ben','','','',0,2,0)`);
+  db.exec(`UPDATE channels SET slug='ana', name='Ana', kicker='Side A', accent='#4df6ff', theme_id='arcade', logo_rev=3, position=1 WHERE id=1;
+    INSERT INTO channels (id,slug,name,position,created) VALUES (2,'ben','Ben',2,0)`);
 }
 
-function addClip(db, id, { channel = 1, review = 'live', hidden = 0, position = 1 } = {}) {
+function addClip(db, id, { channel = 1, review = 'approved', hidden = 0, position = 1 } = {}) {
   db.prepare(`INSERT INTO clips (id,title,src,poster,position,created,channel_id,review,hidden)
     VALUES (?,?,?,?,?,0,?,?,?)`).run(id, 'Clip ' + id, '/api/video/' + VIDEO, `/api/video/${VIDEO}.jpg`, position, channel, review, hidden);
 }
@@ -42,7 +42,7 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
   });
 
   await t.test('signed-out visitors get 401 from every private endpoint', async () => {
-    for (const path of ['/api/clips', '/api/channels', '/api/channels/', '/api/likes', '/api/comments?c=clip-live',
+    for (const path of ['/api/clips', '/api/channels', '/api/channels/', '/api/likes', '/api/comments?c=clip-approved',
       `/api/video/${VIDEO}`, `/api/video/${VIDEO}.jpg`]) {
       const response = await install.call(path);
       assert.equal(response.status, 401, path);
@@ -55,15 +55,15 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
     assert.deepEqual(channels.map(channel => [channel.slug, channel.tagline]), [['ana', TAGLINE], ['ben', TAGLINE]]);
   });
 
-  await t.test('/api/clips shows only live, unhidden clips with their channel and poster', async () => {
-    addClip(install.db, 'clip-live', { position: 1 });
+  await t.test('/api/clips shows only approved, unhidden clips with their channel and poster', async () => {
+    addClip(install.db, 'clip-approved', { position: 1 });
     addClip(install.db, 'clip-ben', { channel: 2, position: 2 });
     addClip(install.db, 'clip-pending', { review: 'pending', position: 3 });
     addClip(install.db, 'clip-rejected', { review: 'rejected', position: 4 });
     addClip(install.db, 'clip-hidden', { hidden: 1, position: 5 });
     const { clips } = await json('/api/clips', { cookie: parent.cookie });
     assert.deepEqual(clips.map(clip => [clip.id, clip.channel, clip.poster]), [
-      ['clip-live', 'ana', `/api/video/${VIDEO}.jpg`],
+      ['clip-approved', 'ana', `/api/video/${VIDEO}.jpg`],
       ['clip-ben', 'ben', `/api/video/${VIDEO}.jpg`],
     ]);
     const overview = await json(`/api/admin/overview?e=${Buffer.from(PARENT.email).toString('base64url')}&t=${parent.t}`);
@@ -75,10 +75,10 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
 
   await t.test('deleting a clip deletes its likes and comments', async () => {
     const signed = body => ({ body: { email: PARENT.email, t: parent.t, ...body } });
-    assert.equal((await json('/api/like', signed({ clipId: 'clip-live', on: true }))).ok, true);
-    assert.equal((await json('/api/comment', signed({ clipId: 'clip-live', body: 'So good' }))).ok, true);
-    assert.equal((await json('/api/clips/delete', signed({ id: 'clip-live' }))).ok, true);
-    const count = table => install.db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE clip_id='clip-live'`).get().n;
+    assert.equal((await json('/api/like', signed({ clipId: 'clip-approved', on: true }))).ok, true);
+    assert.equal((await json('/api/comment', signed({ clipId: 'clip-approved', body: 'So good' }))).ok, true);
+    assert.equal((await json('/api/clips/delete', signed({ id: 'clip-approved' }))).ok, true);
+    const count = table => install.db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE clip_id='clip-approved'`).get().n;
     assert.deepEqual([count('likes'), count('comments')], [0, 0]);
   });
 

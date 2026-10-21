@@ -52,8 +52,8 @@ async function upload(install, account, bytes, extra = {}) {
 
 test('uploads land in the right channel with a poster, and kid uploads wait for review', { timeout: 120000 }, async t => {
   const install = await startInstall(t);
-  install.db.exec(`INSERT INTO channels (id,slug,name,review_uploads,position,created) VALUES
-    (1,'ana','Ana',1,1,0), (2,'ben','Ben',1,2,0)`);
+  install.db.exec(`UPDATE channels SET slug='ana', name='Ana', position=1 WHERE id=1;
+    INSERT INTO channels (id,slug,name,position,created) VALUES (2,'ben','Ben',2,0)`);
   const { salt, hash } = await passwordRecord(KID.pass);
   install.db.prepare(`INSERT INTO accounts (email,first,last,salt,hash,status,role,created,channel_id)
     VALUES (?,'Ana','R',?,?,'approved','kid',0,1)`).run(KID.email, salt, hash);
@@ -90,8 +90,8 @@ test('uploads land in the right channel with a poster, and kid uploads wait for 
   await t.test('parent uploads go live in the chosen or default channel, posters stay private', async () => {
     const chosen = await upload(install, parent, video, { channel: 'ben' });
     const fallback = await upload(install, parent, video);
-    assert.deepEqual([chosen.clip.review, chosen.clip.channel], ['live', 'ben']);
-    assert.deepEqual([fallback.clip.review, fallback.clip.channel], ['live', 'ana']);
+    assert.deepEqual([chosen.clip.review, chosen.clip.channel], ['approved', 'ben']);
+    assert.deepEqual([fallback.clip.review, fallback.clip.channel], ['approved', 'ana']);
     assert.deepEqual((await clips()).map(clip => [clip.id, clip.channel, clip.poster]), [
       [fallback.clip.id, 'ana', `/api/video/${fallback.uploadId}.jpg`],
       [chosen.clip.id, 'ben', `/api/video/${chosen.uploadId}.jpg`],

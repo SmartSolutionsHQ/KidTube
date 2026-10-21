@@ -1,3 +1,8 @@
+import { backup } from 'node:sqlite';
+import { chmodSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
+import { BRAND_NAME } from './brand.mjs';
+
 // Every table lives here. Each step upgrades a database from PRAGMA user_version N to N+1,
 // and is safe to rerun so a half-known database (an old install, an import) still lands cleanly.
 const MIGRATIONS = [
@@ -39,8 +44,13 @@ const MIGRATIONS = [
       PRIMARY KEY (clip_id, email));
     CREATE INDEX IF NOT EXISTS video_notification_pending ON video_notification_deliveries(status, next_attempt);
     CREATE TABLE IF NOT EXISTS video_email_preferences (email TEXT PRIMARY KEY, unsubscribed INTEGER NOT NULL);`);
-    // Accounts created by the original Worker had no role column.
-    addColumn(sqlite, 'accounts', 'role', "TEXT NOT NULL DEFAULT ''");
+    // Databases from the original Worker (and TanzenTube) may lack columns added since.
+    ensureColumn(sqlite, 'accounts', 'role', "TEXT NOT NULL DEFAULT ''");
+    for (const [column, definition] of [['poster', "TEXT DEFAULT ''"], ['kind', "TEXT DEFAULT 'video'"], ['blurb', "TEXT DEFAULT ''"],
+      ['published', "TEXT DEFAULT ''"], ['duration', 'REAL DEFAULT 0'], ['position', 'INTEGER NOT NULL DEFAULT 0'],
+      ['created', 'INTEGER NOT NULL DEFAULT 0'], ['hidden', 'INTEGER NOT NULL DEFAULT 0']]) {
+      ensureColumn(sqlite, 'clips', column, definition);
+    }
   },
 
   // v2: settings, a channel per kid, review states, moderation, views and activity.
@@ -57,44 +67,65 @@ const MIGRATIONS = [
       id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, actor TEXT NOT NULL, kind TEXT NOT NULL,
       subject TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '{}');
     CREATE INDEX IF NOT EXISTS activity_by_time ON activity(ts);`);
-    addColumn(sqlite, 'clips', 'channel_id', 'INTEGER REFERENCES channels(id)');
-    addColumn(sqlite, 'clips', 'poster', "TEXT DEFAULT ''");
-    addColumn(sqlite, 'clips', 'review', "TEXT NOT NULL DEFAULT 'live' CHECK (review IN ('live','pending','rejected'))");
-    addColumn(sqlite, 'upload_jobs', 'channel_id', 'INTEGER REFERENCES channels(id)');
-    addColumn(sqlite, 'accounts', 'channel_id', 'INTEGER REFERENCES channels(id)');
-    addColumn(sqlite, 'comments', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
+    // Channel 1 always exists, so link columns default to it. SQLite will not add a REFERENCES column
+    // with a non-NULL default while foreign keys are on, so the app checks these links itself.
+    sqlite.prepare("INSERT OR IGNORE INTO channels (id,slug,name,created) VALUES (1,'main','Main channel',?)").run(Date.now());
+    ensureColumn(sqlite, 'clips', 'channel_id', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'clips', 'review', "TEXT NOT NULL DEFAULT 'approved' CHECK (review IN ('pending','approved','rejected'))");
+    ensureColumn(sqlite, 'upload_jobs', 'channel_id', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'video_announcements', 'channel_id', 'INTEGER NOT NULL DEFAULT 1');
+    ensureColumn(sqlite, 'accounts', 'channel_id', 'INTEGER');
+    ensureColumn(sqlite, 'comments', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
     sqlite.exec(`CREATE INDEX IF NOT EXISTS clips_by_channel ON clips(channel_id, position);
     CREATE TRIGGER IF NOT EXISTS clips_delete_cascade AFTER DELETE ON clips BEGIN
       DELETE FROM likes WHERE clip_id=OLD.id;
       DELETE FROM comments WHERE clip_id=OLD.id;
       DELETE FROM views WHERE clip_id=OLD.id;
+    END;
+    CREATE TRIGGER IF NOT EXISTS channels_keep_first BEFORE DELETE ON channels WHEN OLD.id=1 BEGIN
+      SELECT RAISE(ABORT, 'The first channel cannot be deleted. Rename it instead.');
     END;`);
-    // Existing videos belonged to the install's one channel; give it a row the parent can rename.
-    if (sqlite.prepare('SELECT 1 FROM clips WHERE channel_id IS NULL LIMIT 1').get()) {
-      const first = sqlite.prepare('SELECT id FROM channels ORDER BY position, id LIMIT 1').get()
-        ?? { id: sqlite.prepare("INSERT INTO channels (slug,name,created) VALUES ('main','Main channel',?)").run(Date.now()).lastInsertRowid };
-      sqlite.prepare('UPDATE clips SET channel_id=? WHERE channel_id IS NULL').run(first.id);
+    // An install that already has an owner keeps working as before: no setup wizard, comments stay open.
+    if (sqlite.prepare("SELECT 1 FROM accounts WHERE role='super' LIMIT 1").get()) {
+      const keep = sqlite.prepare('INSERT OR IGNORE INTO settings (key,value,updated) VALUES (?,?,?)');
+      keep.run('setup_complete', 'true', Date.now());
+      keep.run('comments_default', '"open"', Date.now());
     }
   },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
-function addColumn(sqlite, table, column, definition) {
+function ensureColumn(sqlite, table, column, definition) {
   const columns = sqlite.prepare(`PRAGMA table_info(${table})`).all();
   if (!columns.some(({ name }) => name === column)) sqlite.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
 }
 
-export function initializeSchema(sqlite) {
+const version = sqlite => sqlite.prepare('PRAGMA user_version').get().user_version;
+const tooNew = () => new Error(`Database is newer than this app. Upgrade ${BRAND_NAME}.`);
+
+// Upgrades the database in place. With dataDir, an existing install is first copied to
+// <dataDir>/backups/pre-migrate-v<from>-<time>.sqlite so a failed upgrade can be undone by hand.
+export async function migrate(sqlite, { dataDir } = {}) {
+  const from = version(sqlite);
+  if (from > SCHEMA_VERSION) throw tooNew();
+  if (from === SCHEMA_VERSION) return from;
+  if (dataDir && sqlite.prepare("SELECT 1 FROM sqlite_schema WHERE type='table' LIMIT 1").get()) {
+    const folder = join(dataDir, 'backups');
+    mkdirSync(folder, { recursive: true, mode: 0o700 });
+    const file = join(folder, `pre-migrate-v${from}-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`);
+    await backup(sqlite, file);
+    chmodSync(file, 0o600);
+  }
   for (;;) {
     // Read the version inside the write lock so two processes never run the same step.
     sqlite.exec('BEGIN IMMEDIATE');
     try {
-      const version = sqlite.prepare('PRAGMA user_version').get().user_version;
-      if (version > SCHEMA_VERSION) throw new Error(`Database schema v${version} is newer than this build supports (v${SCHEMA_VERSION}). Install the newer release.`);
-      if (version === SCHEMA_VERSION) { sqlite.exec('COMMIT'); return version; }
-      MIGRATIONS[version](sqlite);
-      sqlite.exec(`PRAGMA user_version=${version + 1}`);
+      const current = version(sqlite);
+      if (current > SCHEMA_VERSION) throw tooNew();
+      if (current === SCHEMA_VERSION) { sqlite.exec('COMMIT'); return current; }
+      MIGRATIONS[current](sqlite);
+      sqlite.exec(`PRAGMA user_version=${current + 1}`);
       sqlite.exec('COMMIT');
     } catch (error) { sqlite.exec('ROLLBACK'); throw error; }
   }

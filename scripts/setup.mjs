@@ -3,7 +3,7 @@ import { resolve, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline/promises';
 import { openDatabase } from '../server/db.mjs';
-import { initializeSchema } from '../server/schema.mjs';
+import { migrate } from '../server/schema.mjs';
 import { createSettings } from '../server/settings.mjs';
 import { passwordRecord } from '../server/passwords.mjs';
 
@@ -21,7 +21,7 @@ try {
  const record=await passwordRecord(password);
  const secret=randomBytes(48).toString('hex');
  mkdirSync(dirname(database),{recursive:true,mode:0o700});
- const {sqlite}=openDatabase(database,{allowEmpty:true});initializeSchema(sqlite);
+ const {sqlite}=openDatabase(database,{allowEmpty:true});await migrate(sqlite);
  sqlite.prepare('INSERT INTO accounts(email,first,last,salt,hash,status,role,created) VALUES (?,?,?,?,?,?,?,?)').run(email,'Parent','Owner',record.salt,record.hash,'approved','super',Date.now());
  createSettings(sqlite,{}).set('setup_complete',true,email);
  sqlite.close();chmodSync(database,0o600);

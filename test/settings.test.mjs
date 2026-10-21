@@ -1,20 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
-import { initializeSchema } from '../server/schema.mjs';
-import { BRAND_NAME, DEFAULT_ACCENT, TAGLINE } from '../server/brand.mjs';
+import { migrate } from '../server/schema.mjs';
+import { DEFAULT_ACCENT, TAGLINE } from '../server/brand.mjs';
 import { createSettings, SettingError, SETTING_KEYS } from '../server/settings.mjs';
-import { createVideoNotifications, videoEmail } from '../server/notifications.mjs';
 
-function database(t) {
+async function database(t) {
   const sqlite = new DatabaseSync(':memory:');
   t.after(() => sqlite.close());
-  initializeSchema(sqlite);
+  await migrate(sqlite);
   return sqlite;
 }
 
-test('settings fall back to defaults, then the database, then the environment', t => {
-  const sqlite = database(t);
+test('settings fall back to defaults, then the database, then the environment', async t => {
+  const sqlite = await database(t);
   const settings = createSettings(sqlite, {});
   assert.deepEqual(settings.all(), {
     site_name: '', site_tagline: TAGLINE, site_url: '', family_accent: DEFAULT_ACCENT, gate_theme: 'ember-tape',
@@ -42,14 +41,14 @@ test('settings fall back to defaults, then the database, then the environment', 
   assert.equal(createSettings(sqlite, {}).describe().find(row => row.key === 'site_name').source, 'db');
 });
 
-test('secrets stay masked and every change is recorded as activity', t => {
-  const sqlite = database(t);
+test('secrets stay masked and every change is recorded as activity', async t => {
+  const sqlite = await database(t);
   const settings = createSettings(sqlite, {});
   settings.set('brevo_api_key', 'xkeysib-secret-value', 'parent@example.com');
   settings.set('guest_passes', false, 'parent@example.com');
   assert.equal(settings.get('brevo_api_key'), 'xkeysib-secret-value');
   assert.equal(settings.describe().find(row => row.key === 'brevo_api_key').value, '********');
-  assert.equal(createSettings(database(t), {}).describe().find(row => row.key === 'brevo_api_key').value, '', 'an unset secret shows as empty');
+  assert.equal(createSettings(await database(t), {}).describe().find(row => row.key === 'brevo_api_key').value, '', 'an unset secret shows as empty');
   const activity = sqlite.prepare('SELECT actor, kind, subject, detail FROM activity ORDER BY id').all().map(row => ({ ...row }));
   assert.deepEqual(activity, [
     { actor: 'parent@example.com', kind: 'setting', subject: 'brevo_api_key', detail: '{"value":"(hidden)"}' },
@@ -58,8 +57,8 @@ test('secrets stay masked and every change is recorded as activity', t => {
   assert.ok(!JSON.stringify(activity).includes('xkeysib'));
 });
 
-test('settings reject bad values and survive a corrupt row', t => {
-  const sqlite = database(t);
+test('settings reject bad values and survive a corrupt row', async t => {
+  const sqlite = await database(t);
   const settings = createSettings(sqlite, {});
   for (const [key, value] of [['family_accent', 'red'], ['kids_public', 'sometimes'], ['site_name', 'x'.repeat(61)],
     ['signup_mode', 'open'], ['site_url', 'https://tube.example.com/watch'], ['notify_email', 'not-an-email'],
@@ -75,19 +74,4 @@ test('settings reject bad values and survive a corrupt row', t => {
   const errors = console.error;
   console.error = () => {};
   try { assert.equal(settings.get('family_accent'), DEFAULT_ACCENT); } finally { console.error = errors; }
-});
-
-test('server copy uses the brand name from settings', async t => {
-  const sqlite = database(t);
-  const env = { SIGN_SECRET: 'test-secret', SITE_URL: 'https://tube.example.com', MAIL_MODE: 'disabled' };
-  const message = videoEmail({ id: 'clip', title: 'Clip', duration: 3, published: '2026-10-21T00:00:00Z' },
-    { siteUrl: env.SITE_URL, unsubscribeUrl: 'https://tube.example.com/unsubscribe' });
-  const notifications = createVideoNotifications({ sqlite, env });
-  t.after(() => notifications.close());
-  const page = notifications.handleUnsubscribe(new Request('https://tube.example.com/api/notifications/unsubscribe?e=x&s=y'));
-  assert.equal(page.status, 403);
-  for (const copy of [message.subject, message.text, message.html, await page.text()]) {
-    assert.ok(copy.includes(BRAND_NAME));
-    assert.ok(!copy.includes('${'), 'every template placeholder is filled');
-  }
 });
