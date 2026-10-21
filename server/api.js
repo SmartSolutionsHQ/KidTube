@@ -1,6 +1,7 @@
 /* KidTube account, moderation, and catalog API. */
 import { passwordRecord, passwordMatches } from './passwords.mjs';
 import { sendMail } from './mail.mjs';
+import { BRAND_NAME } from './settings.mjs';
 
 export default {
   async fetch(req, env, ctx) {
@@ -95,7 +96,7 @@ async function notify(env, first, last, email) {
   const link = new URL('/parents',env.SITE_URL).href;
   const who = esc(first+' '+last+' ('+email+')');
   try {
-    await sendMail(env,{email:env.NOTIFY_EMAIL},'KidTube: new account request',
+    await sendMail(env,{email:env.NOTIFY_EMAIL},`${BRAND_NAME}: new account request`,
       '<p>'+who+' requested access.</p><p><a href="'+esc(link)+'">Open the parent dashboard</a> to approve or deny this request.</p>',
       'New account request. Review it at '+link);
     return true;
@@ -110,13 +111,13 @@ async function approvalMail(env, email, first) {
   const who = esc(first || 'Viewer');
   const site = env.SITE_URL;
   const html = `<div style="font-family:Arial,sans-serif;background:#0B0C10;color:#F7F4EC;padding:26px;border-radius:10px">
-    <p style="color:#3265FF;letter-spacing:.3em;font-size:11px;margin:0 0 10px">KIDTUBE</p>
+    <p style="color:#3265FF;letter-spacing:.3em;font-size:11px;margin:0 0 10px">${BRAND_NAME.toUpperCase()}</p>
     <h2 style="margin:0 0 12px">You're in, ${who}!</h2>
     <p style="margin:0 0 16px;line-height:1.5">The channel owner approved your account. Come back and log in with the email and password you picked:</p>
     <p style="margin:0 0 10px"><a href="${site}" style="background:#3265FF;color:#0B0C10;padding:10px 18px;border-radius:4px;text-decoration:none;font-weight:bold">Enter the tube</a></p>
-    <p style="color:#A6A0AE;font-size:11px;margin:14px 0 0">If you did not sign up for KidTube you can ignore this email.</p></div>`;
-  const text = "You're in, " + (first || 'Viewer') + "! The channel owner approved your KidTube account. Log in at " + site;
-  await sendMail(env, { email: email, name: first || undefined }, "You're approved for KidTube", html, text);
+    <p style="color:#A6A0AE;font-size:11px;margin:14px 0 0">If you did not sign up for ${BRAND_NAME} you can ignore this email.</p></div>`;
+  const text = "You're in, " + (first || 'Viewer') + "! The channel owner approved your " + BRAND_NAME + " account. Log in at " + site;
+  await sendMail(env, { email: email, name: first || undefined }, "You're approved for " + BRAND_NAME, html, text);
 }
 
 /* ---------- login: unknown emails and wrong passwords look identical ---------- */
@@ -546,9 +547,9 @@ async function commentDelete(req, env) {
 
 function PAGE(msg, code) {
   return new Response(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>KidTube</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#05060A;color:#F7F4EC;
+<title>${BRAND_NAME}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#05060A;color:#F7F4EC;
 font-family:'Inter Tight',system-ui,sans-serif}div{max-width:420px;padding:30px;border:1px solid rgba(247,244,236,.25);border-radius:16px;
 background:rgba(255,255,255,.06)}p.k{color:#3265FF;letter-spacing:.3em;font-size:11px;margin:0 0 10px;font-weight:600}</style></head>
-<body><div><p class="k">KIDTUBE</p><p style="margin:0;line-height:1.5">${esc(msg)}</p></div></body></html>`,
+<body><div><p class="k">${BRAND_NAME.toUpperCase()}</p><p style="margin:0;line-height:1.5">${esc(msg)}</p></div></body></html>`,
     { status: code, headers: { 'content-type': 'text/html; charset=utf-8' } });
 }

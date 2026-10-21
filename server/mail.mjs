@@ -1,3 +1,5 @@
+import { BRAND_NAME } from './settings.mjs';
+
 export class MailError extends Error {
   constructor(status, retryAfter = 0) {
     super(`Brevo returned HTTP ${status}`);
@@ -13,7 +15,7 @@ export async function sendMail(env, to, subject, html, text, { idempotencyKey, f
     headers: { 'api-key': env.BREVO_API_KEY, 'content-type': 'application/json', accept: 'application/json' },
     signal: AbortSignal.timeout(15000),
     body: JSON.stringify({
-      sender: { email: env.SENDER_EMAIL, name: 'KidTube' },
+      sender: { email: env.SENDER_EMAIL, name: BRAND_NAME },
       to: [{ email: to.email, name: to.name || undefined }],
       subject, htmlContent: html, textContent: text,
       ...(idempotencyKey ? { headers: { idempotencyKey } } : {}),

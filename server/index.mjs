@@ -9,6 +9,7 @@ import { createVideoNotifications } from './notifications.mjs';
 import { publishClip } from './publish.mjs';
 import { sendFile } from './static.mjs';
 import { initializeSchema } from './schema.mjs';
+import { BRAND_NAME } from './settings.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const publicDir = resolve(process.env.PUBLIC_DIR || 'public');
@@ -105,7 +106,7 @@ const server = http.createServer((req, res) => {
     res.writeHead(405).end();
   }
 });
-server.listen(port, process.env.HOST || '127.0.0.1', () => console.log(`KidTube listening on ${server.address().port}`));
+server.listen(port, process.env.HOST || '127.0.0.1', () => console.log(`${BRAND_NAME} listening on ${server.address().port}`));
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   server.close(async () => { await notifications.close(); sqlite.close(); process.exit(0); });
 });
