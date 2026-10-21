@@ -11,6 +11,7 @@ import { migrate } from './schema.mjs';
 import { BRAND_NAME } from './brand.mjs';
 import { createSettings } from './settings.mjs';
 import { createSite } from './site.mjs';
+import { createBrandFiles } from './brandfiles.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const publicDir = resolve(process.env.PUBLIC_DIR || 'public');
@@ -40,6 +41,7 @@ const notifications = createVideoNotifications({ sqlite, env });
 env.handleVideoUnsubscribe = request => notifications.handleUnsubscribe(request);
 const uploads = createUploadManager({ sqlite, env, databasePath: dbFile, notifications });
 env.deleteLocalVideo = uploads.deleteVideo;
+const brandFiles = createBrandFiles({ sqlite, env, dataDir: process.env.DATA_DIR || dirname(dbFile) });
 notifications.kick();
 
 async function sendApi(req, res) {
@@ -94,6 +96,7 @@ const server = http.createServer((req, res) => {
     if(!viewer(req,sqlite,env)){res.writeHead(401,{'Content-Type':'application/json','Cache-Control':'no-store'}).end('{"ok":false,"error":"Log in to view this channel."}');return;}
     res.setHeader('Cache-Control','private, no-store');
   }
+  if(pathname.startsWith('/brand/')||/^\/api\/admin\/(?:brand(?:\/|$)|channels\/[^/]+\/(?:badge|image)$)/.test(pathname)){brandFiles.handle(req,res,pathname);return;}
   if(pathname.startsWith('/uploads/')){res.writeHead(404).end();return;}
   if (pathname.startsWith('/api/upload/raw/') || pathname.startsWith('/api/video/')) {
     uploads.handle(req, res, pathname);
