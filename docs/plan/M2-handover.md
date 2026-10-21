@@ -78,6 +78,8 @@ including 304s; assets don't get it. There are no `<meta>` policies, inline scri
   private and `no-store`; a long channel would otherwise fetch every poster at sign-in. Checked in the browser: a
   swipe lands on a frame at once. The slot's empty colour is `--tz-surface`, not black, for clips without a poster.
 - Colour literals now read the tokens (ember fallbacks); the guest prompt uses the tokens.
+- `setMode()` no longer throws when the viewport crosses 900px before the reel is built (it scrolled to a
+  slide that didn't exist yet).
 - Nothing else changed. The VHS pause overlay is M3's (Ember Tape pause accent).
 
 ## Browser check (local install, synthetic ffmpeg clips, invented names)
@@ -89,9 +91,6 @@ swipe, running order and stage, about, parents. Fonts load from `/fonts`, no out
 
 ## Left for later
 
-- **M6:** `feed.js` `setMode()` calls `slides[state.index].scrollIntoView()` in a frame callback; if the viewport
-  crosses 900px before the reel is built (rotating a tablet on the front door) it throws an uncaught TypeError.
-  Harmless, but guard it (`slides[state.index]?.`). Pre-existing; outside M2's feed.js edits.
 - **M6:** `sessToken()`'s `/api/check` call without `t` can be deleted (M1 notes). "Sent to a parent for review",
   per-channel `?channel=`, the deep-link regex and the upload target are still M6's.
 - **M6:** the front door is a still of Ember Tape (`#tzs-splash`, `#enter-tube`); the kid picker and theme loader

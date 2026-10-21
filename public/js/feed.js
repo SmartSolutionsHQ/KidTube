@@ -957,7 +957,7 @@ function wireSlide(slide) {
 function setMode(mode) {
   body.dataset.mode = mode;
   if (mode === "immersive") {
-    requestAnimationFrame(() => slides[state.index].scrollIntoView({ behavior: "auto", block: "start" }));
+    requestAnimationFrame(() => slides[state.index]?.scrollIntoView({ behavior: "auto", block: "start" }));
   }
   if (slides[state.index]) applyFit(slides[state.index]);
 }
