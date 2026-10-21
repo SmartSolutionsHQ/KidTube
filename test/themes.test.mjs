@@ -31,9 +31,11 @@ const stripJsComments = js => js.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^
 function walkCss(css) {
   const rules = [];
   const keyframes = [];
+  const stops = new Map();
   const animations = [];
   let i = 0;
-  const source = stripComments(css);
+  // Braces and semicolons inside strings (content: "}") must not end a block.
+  const source = stripComments(css).replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, text => text.replace(/[{};]/g, ' '));
   function block(context) {
     while (i < source.length) {
       const open = source.indexOf('{', i);
@@ -43,8 +45,11 @@ function walkCss(css) {
       const prelude = source.slice(i, open).trim();
       i = open + 1;
       if (prelude.startsWith('@keyframes')) {
-        keyframes.push(prelude.replace('@keyframes', '').trim());
+        const name = prelude.replace('@keyframes', '').trim();
+        const from = i;
+        keyframes.push(name);
         skip();
+        stops.set(name, (source.slice(from, i).match(/\{/g) || []).length);
       } else if (prelude.startsWith('@font-face')) {
         skip();
       } else if (prelude.startsWith('@media') || prelude.startsWith('@supports') || prelude.startsWith('@container')) {
@@ -54,7 +59,8 @@ function walkCss(css) {
         skip();
       } else {
         const body = source.slice(i, source.indexOf('}', i));
-        rules.push({ selector: prelude, context, body });
+        // Nested rules would escape the scope check, so they are not allowed.
+        rules.push({ selector: prelude, context, body, bad: body.includes('{') });
         for (const match of body.matchAll(/animation(?:-name)?\s*:\s*([^;]+)/g)) animations.push(match[1].trim());
         skip();
       }
@@ -69,7 +75,7 @@ function walkCss(css) {
     }
   }
   block(null);
-  return { rules, keyframes, animations };
+  return { rules, keyframes, stops, animations };
 }
 
 test('the launch set is exactly the six first-party themes', () => {
@@ -115,8 +121,12 @@ for (const id of ids) {
       const scope = `[data-kt-theme="${id}"]`;
       assert.ok(rules.length > 0);
       for (const rule of rules) {
-        assert.ok(!rule.bad, `unexpected at-rule ${rule.selector}`);
-        for (const selector of rule.selector.split(',')) assert.ok(selector.trim().startsWith(scope), `unscoped selector: ${selector.trim()}`);
+        assert.ok(!rule.bad, `unexpected at-rule or nested rule in ${rule.selector}`);
+        for (const selector of topLevel(rule.selector)) {
+          assert.ok(selector.startsWith(scope), `unscoped selector: ${selector}`);
+          // A sibling combinator right after the scope would reach the feed next to a pause host.
+          assert.doesNotMatch(selector.slice(scope.length), /^\s*[~+]/, `selector escapes the host: ${selector}`);
+        }
       }
       for (const name of keyframes) assert.ok(name.startsWith(`kt-${id}-`), `keyframes ${name} needs the kt-${id}- prefix`);
       // Every animation a rule names is one this theme defines.
@@ -128,10 +138,14 @@ for (const id of ids) {
       }
     });
 
-    await t.test('blinking (stepped, looping) animations stay well under 3 flashes a second', () => {
-      const { animations } = walkCss(read(id, 'splash.css'));
+    await t.test('blinking (stepped, looping) animations stay under 3 flashes a second', () => {
+      const { animations, stops } = walkCss(read(id, 'splash.css'));
       for (const value of animations.filter(text => /steps\(/.test(text) && /infinite/.test(text))) {
         const seconds = Number(/(\d*\.?\d+)s/.exec(value)?.[1]);
+        const name = value.split(/\s+/).find(token => token.startsWith('kt-'));
+        // Every keyframe stop is a state change; two changes make one flash.
+        const flashes = Math.max(1, (stops.get(name) || 2) / 2) / seconds;
+        assert.ok(flashes <= 3, `"${value}" makes ${flashes.toFixed(1)} flashes a second`);
         assert.ok(seconds >= 0.67, `"${value}" cycles faster than 1.5 times a second`);
       }
     });
@@ -142,10 +156,10 @@ for (const id of ids) {
       const banned = [
         /\binnerHTML\b/, /\bouterHTML\b/, /insertAdjacentHTML/, /document\.write/, /\beval\s*\(/, /\bnew\s+Function\b/, /\bFunction\s*\(/,
         /\bfetch\s*\(/, /XMLHttpRequest/, /\bWebSocket\b/, /\bEventSource\b/, /sendBeacon/, /\bimport\s*\(/, /^\s*import\s/m, /importScripts/,
-        /localStorage/, /sessionStorage/, /indexedDB/, /document\.cookie/, /:\/\//, /javascript:/i, /\bsetInterval\s*\(/,
+        /localStorage/, /sessionStorage/, /indexedDB/, /document\.cookie/, /:\/\//, /['"`]\/\//, /javascript:/i, /\bsetInterval\s*\(/,
       ];
       for (const pattern of banned) assert.doesNotMatch(js, pattern, `${id}/splash.js matches ${pattern}`);
-      for (const pattern of [/@import/, /:\/\//, /javascript:/i, /expression\(/]) assert.doesNotMatch(css, pattern, `${id}/splash.css matches ${pattern}`);
+      for (const pattern of [/@import/, /:\/\//, /url\(\s*['"]?\/\//, /javascript:/i, /expression\(/]) assert.doesNotMatch(css, pattern, `${id}/splash.css matches ${pattern}`);
     });
 
     await t.test('importing splash.js in Node has no side effects', async () => {
@@ -311,6 +325,15 @@ test('the loader and gallery import cleanly in Node and their helpers behave', a
   store.set('kt-always-enter', '{not json');
   assert.equal(loader.alwaysEnter('milo', undefined, storage), false);
   assert.equal(loader.alwaysEnter('milo', undefined, null), false);
+
+  assert.equal(loader.themeUrl('arcade-crt', 'fonts/a.woff2'), '/themes/arcade-crt/fonts/a.woff2');
+  for (const escape of ['../glass-gate/splash.js', '....//....//api/x', '/api/site', '//evil.example/x', 'https://evil.example/x', '%2e%2e/x'])
+    assert.ok(loader.themeUrl('arcade-crt', escape).startsWith('/themes/arcade-crt/'), escape);
+  assert.equal(loader.sameOriginImage('/brand/milo.svg'), '/brand/milo.svg');
+  assert.equal(loader.sameOriginImage('blob:http://localhost/abc'), 'blob:http://localhost/abc');
+  assert.equal(loader.sameOriginImage('data:image/png;base64,AAAA'), 'data:image/png;base64,AAAA');
+  for (const bad of ['https://evil.example/a.png', '//evil.example/a.png', 'javascript:alert(1)', 'data:text/html,x', '', null])
+    assert.equal(loader.sameOriginImage(bad), null, String(bad));
 });
 
 test('GET /api/themes on a running install, with immutable theme assets', async t => {
