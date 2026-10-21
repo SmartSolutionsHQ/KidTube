@@ -6,7 +6,7 @@
   "license": "MIT",
   "engines": { "node": ">=24.16.0 <25" },
   "bin": { "create-kidtube": "bin/create-kidtube.mjs" },
-  "files": ["bin/", "server/", "public/", "scripts/", "test/", "docs/", "Dockerfile", "compose.yaml", "compose.https.yaml", "Caddyfile", ".env.example", ".dockerignore", "LICENSE", "SECURITY.md"],
+  "files": ["bin/", "server/", "public/", "scripts/", "test/", "docs/*.md", "Dockerfile", "compose.yaml", "compose.https.yaml", "Caddyfile", ".env.example", ".dockerignore", "LICENSE", "SECURITY.md"],
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "start": "node --env-file-if-exists=.env server/index.mjs",
