@@ -91,7 +91,7 @@ const server = http.createServer((req, res) => {
     if(!viewer(req,sqlite,env)){res.writeHead(401,{'Content-Type':'application/json','Cache-Control':'no-store'}).end('{"ok":false,"error":"Log in to view this channel."}');return;}
     res.setHeader('Cache-Control','private, no-store');
   }
-  if(pathname.startsWith('/uploads/') || ['/api/upload/init','/api/clips/create'].includes(pathname)||pathname.startsWith('/api/upload/chunk/')){res.writeHead(404).end();return;}
+  if(pathname.startsWith('/uploads/')){res.writeHead(404).end();return;}
   if (pathname.startsWith('/api/upload/raw/') || pathname.startsWith('/api/video/')) {
     uploads.handle(req, res, pathname);
   } else if (pathname.startsWith('/api/')) {

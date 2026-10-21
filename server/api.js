@@ -18,16 +18,10 @@ export default {
       if (p === '/api/check') return await check(url, env);
       if (p === '/api/pending') return DENY403();
       if (p === '/api/decide') return PAGE('Open the parent dashboard to review account requests.', 200);
-      if (req.method === 'POST' && p === '/api/admin') return await adminLogin(req, env);
-      if (req.method === 'POST' && p === '/api/admin/act') return await adminAct(req, env);
-      if (p === '/api/admin/list') return await adminList(url, env);
       if (p === '/api/clips') return await clipsList(env);
       if (req.method === 'POST' && p === '/api/clips/reorder') return await clipsReorder(req, env);
       if (req.method === 'POST' && p === '/api/clips/rename') return await clipsRename(req, env);
       if (req.method === 'POST' && p === '/api/clips/delete') return await clipsDelete(req, env);
-      if (req.method === 'POST' && p === '/api/upload/init') return await uploadInit(req, env);
-      if (req.method === 'POST' && p.startsWith('/api/upload/chunk/')) return await uploadChunk(req, env, p, url);
-      if (req.method === 'POST' && p === '/api/clips/create') return await clipsCreate(req, env);
       if (p.startsWith('/api/media/')) return await mediaServe(req, env, p);
       if (p === '/api/admin/overview') return await adminOverview(url, env);
       if (req.method === 'POST' && p === '/api/admin/status') return await adminStatus(req, env);
@@ -40,6 +34,7 @@ export default {
       if (req.method === 'POST' && p === '/api/comment/delete') return await commentDelete(req, env);
       return J({ ok: false, error: 'not found' }, 404);
     } catch (err) {
+      console.error(`API ${req.method} ${p} failed:`, err);
       return J({ ok: false, error: 'server error' }, 500);
     }
   },
@@ -48,13 +43,11 @@ export default {
 /* ---------- helpers ---------- */
 const J = (o, s) => new Response(JSON.stringify(o), { status: s || 200, headers: { 'content-type': 'application/json' } });
 const enc = new TextEncoder();
-const b64u = (s) => btoa(String.fromCharCode(...enc.encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64u = (s) => atob(s.replace(/-/g, '+').replace(/_/g, '/'));
 const unb64uSafe = (s) => { try { return unb64u(s || ''); } catch (e) { return ''; } };
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 const EMAIL_OK = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s) && s.length < 120;
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const HEXRE = /^[0-9a-f]{8,130}$/;
 
 async function hmac(secret, msg) {
   const k = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -89,23 +82,27 @@ async function signup(req, env) {
   const exists = await db(env, 'SELECT status FROM accounts WHERE email = ?', [email]);
   if (exists.results && exists.results.length) {
     const st = exists.results[0].status;
-    if (st === 'pending') { await notify(env, first, last, email); return J({ ok: true, status: 'pending' }); }
-    return J({ ok: false, error: 'exists', status: st }, 409);
+    if (st === 'pending') return J({ ok: true, status: 'pending', notified: await notify(env, first, last, email) });
+    return J({ ok: false, error: 'exists' }, 409);
   }
   await db(env, 'INSERT INTO accounts (email, first, last, salt, hash, status, created) VALUES (?,?,?,?,?,?,?)',
     [email, first, last, salt, hash, 'pending', Date.now()]);
-  let notified = true, notifyErr = '';
-  try { await notify(env, first, last, email); } catch (e) { notified = false; notifyErr = String((e && e.message) || e).slice(0, 180); }
-  return J({ ok: true, status: 'pending', notified: notified, notifyErr: notifyErr || undefined });
+  return J({ ok: true, status: 'pending', notified: await notify(env, first, last, email) });
 }
 
-/* ---------- notify email via Brevo ---------- */
+/* ---------- notify email via Brevo; the request is saved either way ---------- */
 async function notify(env, first, last, email) {
   const link = new URL('/parents',env.SITE_URL).href;
   const who = esc(first+' '+last+' ('+email+')');
-  return sendMail(env,{email:env.NOTIFY_EMAIL},'KidTube: new account request',
-    '<p>'+who+' requested access.</p><p><a href="'+esc(link)+'">Open the parent dashboard</a> to approve or deny this request.</p>',
-    'New account request. Review it at '+link);
+  try {
+    await sendMail(env,{email:env.NOTIFY_EMAIL},'KidTube: new account request',
+      '<p>'+who+' requested access.</p><p><a href="'+esc(link)+'">Open the parent dashboard</a> to approve or deny this request.</p>',
+      'New account request. Review it at '+link);
+    return true;
+  } catch (error) {
+    console.error('Account request email failed:', error);
+    return false;
+  }
 }
 
 /* ---------- approval email to the approved viewer ---------- */
@@ -122,19 +119,9 @@ async function approvalMail(env, email, first) {
   await sendMail(env, { email: email, name: first || undefined }, "You're approved for KidTube", html, text);
 }
 
-/* ---------- login ---------- */
-const djb2 = (s) => {
-  let h1 = 5381, h2 = 52711;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    h1 = ((h1 * 33) ^ c) >>> 0;
-    h2 = ((h2 * 31) ^ c) >>> 0;
-  }
-  return ('0000000' + h1.toString(16)).slice(-8) + ('0000000' + h2.toString(16)).slice(-8) +
-         ('0000000' + (h1 ^ h2).toString(16)).slice(-8) + ('0000000' + s.length.toString(16)).slice(-4);
-};
-const hashPass = (s) => crypto.subtle.digest('SHA-256', enc.encode(s)).then(hex).catch(() => djb2(s));
-
+/* ---------- login: unknown emails and wrong passwords look identical ---------- */
+const DECOY = { salt: '0'.repeat(32), hash: 'scrypt:' + '0'.repeat(128) };
+const BAD_LOGIN = () => J({ ok: false, error: 'Wrong email or password.' }, 401);
 async function login(req, env) {
   const b = await req.json().catch(() => null);
   if (!b) return J({ ok: false, error: 'bad body' }, 400);
@@ -143,112 +130,18 @@ async function login(req, env) {
   if (!EMAIL_OK(email) || !pass) return J({ ok: false, error: 'creds' }, 400);
   const r = await db(env, 'SELECT salt, hash, status, role FROM accounts WHERE email = ?', [email]);
   const row = r.results && r.results[0];
-  if (!row) return J({ ok: false, error: 'no account' }, 404);
-  if (!await passwordMatches(pass,row)) return J({ ok: false, error: 'wrong password' }, 401);
+  /* hash against a decoy so a missing account takes as long as a wrong password */
+  const matches = await passwordMatches(pass, row || DECOY);
+  if (!row || !matches) return BAD_LOGIN();
   return J({ ok: true, status: row.status, role: String(row.role || ''), t: await sessToken(env, email) });
 }
 
-/* ---------- status check ---------- */
+/* ---------- status check: without a valid session it says nothing about the email ---------- */
 async function check(url, env) {
-  let email = '';
-  try { email = unb64u(url.searchParams.get('e') || '').trim().toLowerCase(); } catch (e) { /* bad b64 */ }
-  if (!EMAIL_OK(email)) return J({ ok: false, error: 'email' }, 400);
-  const r = await db(env, 'SELECT status, role FROM accounts WHERE email = ?', [email]);
-  const row = r.results && r.results[0];
-  const authenticated = row && await sessOk(env, email, url.searchParams.get('t') || '');
-  return J({ ok: true, status: row ? row.status : 'none',
-    role: authenticated ? String(row.role || '') : '',
-    t: authenticated ? url.searchParams.get('t') : undefined });
-}
-
-/* ---------- panel list (masked) ---------- */
-async function pending(env) {
-  await db(env, `CREATE TABLE IF NOT EXISTS accounts (
-    email TEXT PRIMARY KEY, first TEXT NOT NULL, last TEXT NOT NULL,
-    salt TEXT NOT NULL, hash TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending', created INTEGER NOT NULL)`);
-  const r = await db(env, 'SELECT first, last, email, status, created FROM accounts ORDER BY created DESC LIMIT 100');
-  const mask = (e) => {
-    const i = e.indexOf('@');
-    if (i < 2) return '***';
-    return e.slice(0, 2) + '***' + e.slice(i);
-  };
-  const rows = (r.results || []).map((a) => ({
-    first: a.first, last: a.last, emailMasked: mask(a.email), status: a.status, created: a.created,
-  }));
-  return J({ ok: true, rows: rows });
-}
-
-/* ---------- signed approve/deny links ---------- */
-async function decide(url, env) {
-  let email = '';
-  try { email = unb64u(url.searchParams.get('e') || '').trim().toLowerCase(); } catch (e) { /* bad b64 */ }
-  const action = url.searchParams.get('a') || '';
-  const sig = url.searchParams.get('s') || '';
-  if (!EMAIL_OK(email) || (action !== 'approve' && action !== 'deny')) return PAGE('Bad link', 400);
-  const want = await hmac(env.SIGN_SECRET, email + '|' + action);
-  if (want !== sig) return PAGE('This link is not valid.', 403);
-  const r = await db(env, 'UPDATE accounts SET status = ? WHERE email = ?', [action === 'approve' ? 'approved' : 'denied', email]);
-  if (!r.meta || !r.meta.changes) return PAGE('No account found for that link.', 404);
-  if (action !== 'approve') return PAGE('Denied. That account cannot log in.', 200);
-  const g = await db(env, 'SELECT first FROM accounts WHERE email = ?', [email]);
-  const first = (g.results && g.results[0] && g.results[0].first) || '';
-  let mailed = true;
-  try { await approvalMail(env, email, first); } catch (e) { mailed = false; }
-  return PAGE('Approved. That account can log in to the tube right away.' +
-    (mailed ? ' A welcome email was sent to them.' : ' (The welcome email could not be sent.)'), 200);
-}
-
-/* ---------- parent admin (PIN lives ONLY in the Worker, not settable) ---------- */
-const adminToken = async (env, stamp) => hmac(env.SIGN_SECRET, 'admin|' + stamp);
-async function adminOk(env, t) {
-  const now = Math.floor(Date.now() / 3600000);
-  for (const s of [now, now - 1]) { /* token valid for ~1h */
-    if (t === await adminToken(env, s)) return true;
-  }
-  return false;
-}
-async function adminLogin(req, env) {
-  const b = await req.json().catch(() => null);
-  if (!b || !env.PARENT_PIN) return J({ ok: false, error: 'admin unavailable' }, 404);
-  const pin = String(b.pin || '');
-  if (pin.length !== env.PARENT_PIN.length) return J({ ok: false, error: 'wrong pin' }, 401);
-  const a = await hashPass('tza-pin|' + pin);
-  const c = await hashPass('tza-pin|' + env.PARENT_PIN);
-  if (a !== c) return J({ ok: false, error: 'wrong pin' }, 401);
-  return J({ ok: true, token: await adminToken(env, Math.floor(Date.now() / 3600000)) });
-}
-async function adminList(url, env) {
-  if (!(await adminOk(env, url.searchParams.get('t') || ''))) return J({ ok: false, error: 'forbidden' }, 403);
-  await db(env, `CREATE TABLE IF NOT EXISTS accounts (
-    email TEXT PRIMARY KEY, first TEXT NOT NULL, last TEXT NOT NULL,
-    salt TEXT NOT NULL, hash TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending', created INTEGER NOT NULL)`);
-  const r = await db(env, 'SELECT email, first, last, status, created FROM accounts ORDER BY created DESC LIMIT 100');
-  return J({ ok: true, rows: r.results || [] });
-}
-async function adminAct(req, env) {
-  const b = await req.json().catch(() => null);
-  if (!b) return J({ ok: false, error: 'bad body' }, 400);
-  if (!(await adminOk(env, String(b.t || '')))) return J({ ok: false, error: 'forbidden' }, 403);
-  const email = String(b.email || '').trim().toLowerCase();
-  const act = String(b.act || '');
-  if (!EMAIL_OK(email)) return J({ ok: false, error: 'email' }, 400);
-  if (act === 'remove') {
-    const r = await db(env, 'DELETE FROM accounts WHERE email = ?', [email]);
-    return J({ ok: true, act: 'remove', changes: (r.meta && r.meta.changes) || 0 });
-  }
-  if (act !== 'approve' && act !== 'deny' && act !== 'revoke') return J({ ok: false, error: 'act' }, 400);
-  const status = act === 'approve' ? 'approved' : 'denied';
-  const r = await db(env, 'UPDATE accounts SET status = ? WHERE email = ?', [status, email]);
-  if (!r.meta || !r.meta.changes) return J({ ok: false, error: 'no account' }, 404);
-  let mailed = false;
-  if (act === 'approve') {
-    const g = await db(env, 'SELECT first FROM accounts WHERE email = ?', [email]);
-    const first = (g.results && g.results[0] && g.results[0].first) || '';
-    try { await approvalMail(env, email, first); mailed = true; } catch (e) { mailed = false; }
-  }
-  return J({ ok: true, act: act, status: status, mailed: mailed });
+  const email = unb64uSafe(url.searchParams.get('e')).trim().toLowerCase();
+  const t = url.searchParams.get('t') || '';
+  if (!await sessOk(env, email, t)) return J({ ok: true, status: 'none', role: '' });
+  return J({ ok: true, status: 'approved', role: await roleOf(env, email), t });
 }
 
 /* Sessions expire after seven days and password changes invalidate them. */
@@ -271,7 +164,7 @@ async function sessOk(env, email, t) {
 const dispName = (first, last) => (String(first || '').trim() +
   (String(last || '').trim() ? ' ' + String(last).trim().charAt(0).toUpperCase() + '.' : '')).trim();
 
-/* ---------- roles: '' kid, 'admin' (Family), 'super' (the owner) ---------- */
+/* ---------- roles: '' viewer, 'admin' (Family), 'super' (the owner) ---------- */
 async function roleOf(env, email) {
   const r = await db(env, 'SELECT role, status FROM accounts WHERE email = ?', [email]);
   const row = r.results && r.results[0];
@@ -411,69 +304,8 @@ async function clipsDelete(req, env) {
   return J({ ok: true });
 }
 
-/* ---------- uploads: chunked media in D1, Range-streamed back ---------- */
+/* ---------- legacy media: clips stored as chunks by the original Worker ---------- */
 const CHUNK = 700000;                /* bytes per stored chunk */
-const MAX_UPLOAD = 60 * 1024 * 1024; /* 60 MB raw */
-const MAX_SECONDS = 305;             /* 5 minutes + a little grace */
-
-async function uploadInit(req, env) {
-  const ctx = await staffFrom(req, env);
-  if (!ctx) return DENY403();
-  const mime = String(ctx.body.mime || '');
-  if (!/^video\/(mp4|webm|quicktime)$/.test(mime)) return J({ ok: false, error: 'mime' }, 400);
-  const size = Number(ctx.body.size) || 0;
-  const secs = Number(ctx.body.duration) || 0;
-  if (size < 1000 || size > MAX_UPLOAD) return J({ ok: false, error: 'size' }, 400);
-  if (secs <= 0 || secs > MAX_SECONDS) return J({ ok: false, error: 'Keep it under 5 minutes.' }, 400);
-  const id = crypto.randomUUID();
-  await db(env, 'INSERT INTO media (id, mime, size, created) VALUES (?,?,?,?)', [id, mime, size, Date.now()]);
-  return J({ ok: true, uploadId: id, chunkSize: CHUNK });
-}
-
-async function uploadChunk(req, env, p, url) {
-  const s = await asStaff(env, unb64uSafe(url.searchParams.get('e') || ''), url.searchParams.get('t') || '');
-  if (!s) return DENY403();
-  const m = p.match(/^\/api\/upload\/chunk\/([A-Za-z0-9-]{8,80})\/(\d{1,5})$/);
-  if (!m) return J({ ok: false, error: 'bad chunk path' }, 400);
-  const buf = await req.arrayBuffer();
-  if (!buf.byteLength || buf.byteLength > CHUNK) return J({ ok: false, error: 'chunk size' }, 400);
-  await db(env, 'INSERT OR REPLACE INTO media_chunks (id, seq, bytes) VALUES (?,?,?)', [m[1], Number(m[2]), buf]);
-  return J({ ok: true, seq: Number(m[2]) });
-}
-
-async function clipsCreate(req, env) {
-  const ctx = await staffFrom(req, env);
-  if (!ctx) return DENY403();
-  const id = String(ctx.body.uploadId || '');
-  const total = Number(ctx.body.total) || 0;
-  const title = String(ctx.body.title || '').trim().slice(0, 80) || 'Untitled clip';
-  const secs = Number(ctx.body.duration) || 0;
-  if (!/^[A-Za-z0-9-]{8,80}$/.test(id) || total < 1 || total > 200) return J({ ok: false, error: 'upload' }, 400);
-  if (secs <= 0 || secs > MAX_SECONDS) return J({ ok: false, error: 'Keep it under 5 minutes.' }, 400);
-  const mr = await db(env, 'SELECT mime, size FROM media WHERE id = ?', [id]);
-  const mrow = mr.results && mr.results[0];
-  if (!mrow) return J({ ok: false, error: 'unknown upload' }, 404);
-  const have = await db(env, 'SELECT seq, length(bytes) AS n FROM media_chunks WHERE id = ? ORDER BY seq ASC', [id]);
-  const rows = have.results || [];
-  const gridTotal = Math.ceil(mrow.size / CHUNK);
-  if (rows.length !== total || total !== gridTotal || rows.reduce((a, r) => a + r.n, 0) !== mrow.size) return J({ ok: false, error: 'chunks incomplete' }, 400);
-  for (let i = 0; i < rows.length; i++) {
-    const want = i < rows.length - 1 ? CHUNK : mrow.size - i * CHUNK;
-    if (rows[i].seq !== i || rows[i].n !== want) return J({ ok: false, error: 'bad chunk sizes' }, 400);
-  }
-  const clipId = crypto.randomUUID();
-  const publishedAt = new Date().toISOString();
-  const clip = { id: clipId, title, position: 1, src: '/api/media/' + id, poster: '', kind: 'video', blurb: '', publishedAt, duration: secs };
-  if (env.publishClip) {
-    env.publishClip(clip);
-    return J({ ok: true, clip });
-  }
-  /* new uploads lead the reel: position 1, everyone else shifts down one */
-  await db(env, 'UPDATE clips SET position = position + 1');
-  await db(env, 'INSERT INTO clips (id, title, src, poster, kind, blurb, published, duration, position, created) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    [clipId, title, '/api/media/' + id, '', 'video', '', publishedAt, secs, 1, Date.now()]);
-  return J({ ok: true, clip });
-}
 
 /* stitch the requested byte range out of chunk rows (serve <= ~2MB per reply) */
 function stitchChunks(rows, start, need) {
@@ -608,7 +440,8 @@ async function adminStatus(req, env) {
   const r = await db(env, 'UPDATE accounts SET status = ? WHERE email = ?', [status, email]);
   let mailed = false;
   if(status==='approved' && before.results[0] && before.results[0].status!=='approved' && env.MAIL_MODE!=='disabled'){
-    try { await approvalMail(env,email,before.results[0].first); mailed=true; } catch { /* Approval remains saved; dashboard works without email. */ }
+    /* the approval stays saved; the dashboard works without email */
+    try { await approvalMail(env,email,before.results[0].first); mailed=true; } catch (error) { console.error('Approval email failed:', error); }
   }
   return J({ ok: true, changes: (r.meta && r.meta.changes) || 0, mailed });
 }
