@@ -87,6 +87,7 @@ test('generator copies a blank installation and refuses an existing destination'
   assert.equal(existsSync(join(target,'.env')),false);assert.equal(existsSync(join(target,'data')),false);
   assert.ok(readFileSync(join(target,'.gitignore'),'utf8').includes('data/'));
   assert.ok(existsSync(join(target,'docs/OPERATIONS.md')));assert.equal(existsSync(join(target,'docs/plan')),false);
+  assert.ok(existsSync(join(target,'scripts/setup.mjs')));assert.equal(existsSync(join(target,'scripts/dev')),false);
   assert.notEqual(spawnSync(process.execPath,['bin/create-kidtube.mjs',target],{cwd:root}).status,0);
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
