@@ -79,17 +79,18 @@ let frames = [];
 let mounted = [];
 let gallery = null;
 let detachPause = null;
-let token = 0;
+let staging = null;
 
 async function renderStage() {
-  const mine = ++token;
+  staging?.abort();
+  const mine = (staging = new AbortController());
   for (const handle of mounted) handle?.destroy();
   mounted = [];
   const ctx = readCtx();
   const theme = registry.themes.find(entry => entry.id === ctx.themeId) || registry.themes[0];
   if (!theme) return;
-  const handles = await Promise.all(frames.map(frame => previewTheme(frame, theme, ctx)));
-  if (mine !== token) { handles.forEach(handle => handle?.destroy()); return; }
+  const handles = await Promise.all(frames.map(frame => previewTheme(frame, theme, ctx, mine.signal)));
+  if (mine.signal.aborted) { handles.forEach(handle => handle?.destroy()); return; }
   mounted = handles;
   detachPause?.();
   detachPause = attachPause({ ...ctx, registry });

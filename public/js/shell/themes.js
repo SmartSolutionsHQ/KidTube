@@ -121,12 +121,17 @@ export function createH(doc, signal) {
 // ---------- browser side ----------
 
 let registryPromise = null;
-export function loadRegistry({ refresh = false, url = '/api/themes' } = {}) {
+// A registry that fails or stalls past the import timeout reads as empty (so the splash falls back)
+// and is not remembered, so the next call tries again.
+export function loadRegistry({ refresh = false, url = '/api/themes', timeout = IMPORT_TIMEOUT_MS } = {}) {
   if (!registryPromise || refresh) {
-    registryPromise = fetch(url, { credentials: 'same-origin' })
+    const empty = { contract: CONTRACT, fallback: FALLBACK_ID, themes: [], failed: true };
+    const promise = fetch(url, { credentials: 'same-origin', signal: AbortSignal.timeout(timeout) })
       .then(response => (response.ok ? response.json() : null))
-      .then(json => (json && json.contract === CONTRACT && Array.isArray(json.themes) ? json : { contract: CONTRACT, fallback: FALLBACK_ID, themes: [] }))
-      .catch(() => ({ contract: CONTRACT, fallback: FALLBACK_ID, themes: [] }));
+      .then(json => (json && json.contract === CONTRACT && Array.isArray(json.themes) ? json : empty))
+      .catch(() => empty);
+    promise.then(json => { if (json.failed && registryPromise === promise) registryPromise = null; });
+    registryPromise = promise;
   }
   return registryPromise;
 }
@@ -171,7 +176,7 @@ export function loadTheme(theme, { timeout = IMPORT_TIMEOUT_MS } = {}) {
         if (typeof mod.mount !== 'function') throw new Error(`${theme.id} has no mount()`);
         return mod;
       });
-    promise.catch(() => modules.delete(theme.js));
+    promise.catch(() => { modules.delete(theme.js); cssLoads.delete(theme.css); });
     modules.set(theme.js, promise);
   }
   return modules.get(theme.js);
@@ -199,8 +204,8 @@ function ensureBaseStyle() {
 :where(.kt-splash-host){position:fixed;inset:0;z-index:2000;overflow:hidden;background:#05060A;color:#F7F4EC;container-type:size;overscroll-behavior:contain;touch-action:manipulation;-webkit-tap-highlight-color:transparent;outline:none}
 :where(.kt-frame-host){position:absolute;inset:0;overflow:hidden;container-type:size;background:#05060A;color:#F7F4EC}
 :where(.kt-pause-host){position:absolute;inset:0;z-index:3;overflow:hidden;pointer-events:none;container-type:size}
-[data-kt-paused] *,[data-kt-paused]::before,[data-kt-paused]::after{animation-play-state:paused!important}
-[data-kt-reduced] *,[data-kt-reduced] *::before,[data-kt-reduced] *::after{animation:none!important;transition:none!important}
+[data-kt-paused],[data-kt-paused]::before,[data-kt-paused]::after,[data-kt-paused] *,[data-kt-paused] *::before,[data-kt-paused] *::after{animation-play-state:paused!important}
+[data-kt-reduced],[data-kt-reduced]::before,[data-kt-reduced]::after,[data-kt-reduced] *,[data-kt-reduced] *::before,[data-kt-reduced] *::after{animation:none!important;transition:none!important}
 .kt-builtin{position:absolute;inset:0;display:grid;place-items:center;align-content:center;gap:20px;padding:24px;text-align:center;font-family:'Inter Tight',system-ui,sans-serif}
 .kt-builtin h1{margin:0;font-size:clamp(28px,8cqmin,64px);line-height:1}
 .kt-builtin button{min-height:48px;padding:0 28px;border:0;border-radius:12px;font:700 16px 'Inter Tight',system-ui,sans-serif;cursor:pointer}
@@ -232,8 +237,10 @@ function makeLoop(host, signal, cap) {
   return (fn, { fps = cap } = {}) => {
     const frame = 1000 / Math.max(1, Math.min(fps, cap));
     let raf = 0, last = 0, time = 0, stopped = false;
+    // Each loop owns its listeners, so a loop stopped early (a pause overlay hidden) leaves none behind.
+    const own = new AbortController();
     const paused = () => document.hidden || host.hasAttribute('data-kt-paused') || !host.isConnected;
-    const stop = () => { stopped = true; if (raf) cancelAnimationFrame(raf); raf = 0; };
+    const stop = () => { stopped = true; if (raf) cancelAnimationFrame(raf); raf = 0; own.abort(); };
     const tick = now => {
       raf = 0;
       if (stopped || signal.aborted || paused()) return;
@@ -247,12 +254,28 @@ function makeLoop(host, signal, cap) {
       if (result === false) stop();
     };
     const resume = () => { if (!raf && !stopped && !signal.aborted && !paused()) { last = 0; raf = requestAnimationFrame(tick); } };
-    host.addEventListener('kt:resume', resume, { signal });
-    document.addEventListener('visibilitychange', resume, { signal });
-    signal.addEventListener('abort', stop, { once: true });
+    host.addEventListener('kt:resume', resume, { signal: own.signal });
+    document.addEventListener('visibilitychange', resume, { signal: own.signal });
+    signal.addEventListener('abort', stop, { once: true, signal: own.signal });
     resume();
     return stop;
   };
+}
+
+// Badges come from this site only: a root-relative path, or a blob/data image made in the page.
+export function sameOriginImage(value) {
+  if (typeof value !== 'string' || !value) return null;
+  if (/^\/(?!\/)/.test(value) || /^blob:/.test(value) || /^data:image\/(?:png|jpeg|webp|gif|svg\+xml)[;,]/.test(value)) return value;
+  return null;
+}
+
+// A file inside the theme's own folder; anything that resolves outside it falls back to the folder.
+export function themeUrl(id, rel) {
+  const base = `/themes/${id}/`;
+  try {
+    const url = new URL(String(rel), `http://theme.invalid${base}`);
+    return url.origin === 'http://theme.invalid' && url.pathname.startsWith(base) ? url.pathname + url.search : base;
+  } catch { return base; }
 }
 
 // Builds the ctx a theme's mount() or pause() receives.
@@ -260,10 +283,10 @@ export function buildCtx(host, theme, opts, hooks) {
   const accent = cleanAccent(opts.accent, theme?.defaultAccent || DEFAULT_ACCENT);
   const preview = opts.preview === true;
   const reducedMotion = wantsReducedMotion(opts);
+  // Sound unlocks only when the viewer presses the Enter button itself.
   let tapped = false;
-  const markTap = () => { tapped = true; };
-  host.addEventListener('pointerdown', markTap, { capture: true, signal: hooks.signal });
-  host.addEventListener('keydown', markTap, { capture: true, signal: hooks.signal });
+  const markTap = event => { if (event.target?.closest?.('[data-kt-enter]')) tapped = true; };
+  for (const name of ['pointerdown', 'keydown', 'click']) host.addEventListener(name, markTap, { capture: true, signal: hooks.signal });
   const soundAllowed = () => !preview && opts.soundAllowed === true && theme?.sound !== false && tapped;
   const title = String(opts.title || opts.brand?.name || 'Our channel').trim().slice(0, 60);
   return Object.freeze({
@@ -277,7 +300,7 @@ export function buildCtx(host, theme, opts, hooks) {
     slug: String(opts.channel || title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 24) || 'tape',
     accent,
     accentInk: accentInk(accent),
-    logoUrl: typeof opts.logoUrl === 'string' && opts.logoUrl ? opts.logoUrl : null,
+    logoUrl: sameOriginImage(opts.logoUrl),
     reducedMotion,
     lowPower: opts.lowPower === true,
     preview,
@@ -287,15 +310,22 @@ export function buildCtx(host, theme, opts, hooks) {
     onSkip: hooks.onSkip,
     brand: Object.freeze({ name: opts.brand?.name || '', endorsement: opts.brand?.endorsement || '' }),
     h: createH(document, hooks.signal),
-    url: rel => `/themes/${theme?.id}/${String(rel).replace(/^\/+/, '').replace(/\.\.\//g, '')}`,
+    url: rel => themeUrl(theme?.id, rel),
     signal: hooks.signal,
     loop: makeLoop(host, hooks.signal, preview ? 24 : 30),
   });
 }
 
-// Mounts a theme into an existing host element. Rejects when the theme cannot load or mount.
+// Which mount currently owns a host, so a stale mount never clears a newer one's DOM.
+const owners = new WeakMap();
+
+// Mounts a theme into an existing host element. Rejects when the theme cannot load or mount, or
+// when opts.signal aborts before it is ready (then the host is left untouched).
 export async function mountTheme(host, theme, opts = {}, hooks = {}) {
   const mod = await loadTheme(theme, opts);
+  if (opts.signal?.aborted) throw new DOMException('Mount cancelled', 'AbortError');
+  const owner = {};
+  owners.get(host)?.destroy();
   ensureBaseStyle();
   const controller = new AbortController();
   const signal = controller.signal;
@@ -309,17 +339,21 @@ export async function mountTheme(host, theme, opts = {}, hooks = {}) {
     onEnter: () => { if (!gone) hooks.onEnter?.(); },
     onSkip: () => { if (!gone) hooks.onSkip?.(); },
   });
-  let handle;
-  try { handle = mod.mount(host, ctx) || {}; } catch (error) { controller.abort(); host.replaceChildren(); throw error; }
   // Aborting the signal is what frees a theme's loops, listeners and WebGL context. The host is
   // then reset, so a frame can take another theme.
   const finish = () => {
     gone = true;
     controller.abort();
+    if (owners.get(host) !== owner) return;
+    owners.delete(host);
     host.replaceChildren();
     for (const name of ['style', 'data-kt-paused', 'data-kt-reduced', 'data-kt-theme']) host.removeAttribute(name);
     host.inert = false;
   };
+  owner.destroy = finish;
+  owners.set(host, owner);
+  let handle;
+  try { handle = mod.mount(host, ctx) || {}; } catch (error) { finish(); throw error; }
   return {
     theme, ctx, module: mod,
     async dismiss(reason = 'enter') {
@@ -346,15 +380,29 @@ function mountBuiltin(host, opts, hooks) {
 
 const fire = name => document.dispatchEvent(new Event(name));
 
-// Shows a full-screen splash and resolves once the viewer is in: {shown, reason, theme}.
+// Used only when /api/themes itself failed: Glass Gate's files are always at these paths.
+const BUILTIN_FALLBACK = Object.freeze({
+  id: FALLBACK_ID, name: 'Glass Gate', weight: 'light', modes: ['gate', 'channel'], sound: false,
+  defaultAccent: '#A98BFF', accents: { pause: false }, feed: {},
+  css: `/themes/${FALLBACK_ID}/splash.css`, js: `/themes/${FALLBACK_ID}/splash.js`, preview: `/themes/${FALLBACK_ID}/preview.webp`,
+});
+
+// Shows a full-screen splash and resolves once the viewer is in: {shown, reason, theme, picked}.
 // opts: themeId, mode, title, kicker, subtitle, number, accent, logoUrl, channel (slug), brand,
 // soundAllowed, force, reducedMotion, lowPower, enterLabel, registry, search.
-export async function showSplash(opts = {}) {
+// Only one splash runs at a time; calling again while one is up returns the same promise.
+let active = null;
+export function showSplash(opts = {}) {
+  if (active) return active;
   const search = opts.search ?? globalThis.location?.search ?? '';
   const param = splashParam(search);
-  if (param === '0') { fire('tz:enter'); return { shown: false, reason: 'param', theme: null }; }
-  if (param !== '1' && opts.channel && alwaysEnter(opts.channel)) { fire('tz:enter'); return { shown: false, reason: 'always', theme: null }; }
+  if (param === '0') { fire('tz:enter'); return Promise.resolve({ shown: false, reason: 'param', theme: null }); }
+  if (param !== '1' && opts.channel && alwaysEnter(opts.channel)) { fire('tz:enter'); return Promise.resolve({ shown: false, reason: 'always', theme: null }); }
+  active = runSplash(opts).finally(() => { active = null; });
+  return active;
+}
 
+function runSplash(opts) {
   // Set before anything awaits: recovery.js checks it when it boots.
   globalThis.__tzsplash = { theme: opts.themeId || null, state: 'loading' };
   fire('tz:hold');
@@ -371,48 +419,62 @@ export async function showSplash(opts = {}) {
   const overflow = document.documentElement.style.overflow;
   document.documentElement.style.overflow = 'hidden';
   document.body.append(host);
+  host.focus({ preventScroll: true });
 
-  const reducedMotion = wantsReducedMotion(opts);
-  const lowPower = opts.lowPower ?? detectLowPower({ navigator: globalThis.navigator, reducedMotion });
-  const registry = opts.registry || await loadRegistry();
-  const picked = pickTheme(registry, opts.themeId, { lowPower, force: opts.force === true, mode: opts.mode });
+  let resolveDone;
+  const done = new Promise(resolve => { resolveDone = resolve; });
+  let mounted = null, leaving = false, picked = { reason: 'pending' };
+  // Aborted when the viewer leaves, so a theme still loading never mounts into a removed host.
+  const life = new AbortController();
+  const leave = async reason => {
+    if (leaving) return;
+    leaving = true;
+    life.abort();
+    await mounted?.dismiss(reason);
+    host.remove();
+    document.documentElement.style.overflow = overflow;
+    delete globalThis.__tzsplash;
+    try { before?.focus?.({ preventScroll: true }); } catch {}
+    fire('tz:enter');
+    resolveDone({ shown: true, reason, theme: mounted?.theme?.id || null, picked: picked.reason });
+  };
+  const hooks = { onEnter: () => leave('enter'), onSkip: () => leave('skip') };
+  // Safety net: Esc always skips, from the first moment, even while the theme loads.
+  document.addEventListener('keydown', event => { if (event.key === 'Escape') hooks.onSkip(); }, { signal: life.signal });
 
-  return new Promise(resolve => {
-    let mounted = null, leaving = false;
-    const keys = new AbortController();
-    const leave = async reason => {
+  const settle = handle => {
+    if (leaving) { handle.destroy(); return; }
+    mounted = handle;
+    globalThis.__tzsplash = { theme: handle.theme?.id || 'builtin', state: 'mounted' };
+    const enter = host.querySelector('[data-kt-enter]');
+    (enter || host).focus({ preventScroll: true });
+  };
+
+  (async () => {
+    const reducedMotion = wantsReducedMotion(opts);
+    const lowPower = opts.lowPower ?? detectLowPower({ navigator: globalThis.navigator, reducedMotion });
+    const registry = opts.registry || await loadRegistry();
+    if (leaving) return;
+    picked = pickTheme(registry, opts.themeId, { lowPower, force: opts.force === true, mode: opts.mode });
+    const ctxOpts = { ...opts, reducedMotion, lowPower, preview: false, signal: life.signal };
+    const fallback = registry.themes.find(theme => theme.id === (registry.fallback || FALLBACK_ID)) || (registry.themes.length ? null : BUILTIN_FALLBACK);
+    let handle;
+    try {
+      handle = await mountTheme(host, picked.theme, ctxOpts, hooks);
+    } catch (error) {
       if (leaving) return;
-      leaving = true;
-      keys.abort();
-      await mounted?.dismiss(reason);
-      host.remove();
-      document.documentElement.style.overflow = overflow;
-      delete globalThis.__tzsplash;
-      try { before?.focus?.({ preventScroll: true }); } catch {}
-      fire('tz:enter');
-      resolve({ shown: true, reason, theme: mounted?.theme?.id || null, picked: picked.reason });
-    };
-    const hooks = { onEnter: () => leave('enter'), onSkip: () => leave('skip') };
-    // Safety net: Esc always skips, even if a theme forgot to listen.
-    document.addEventListener('keydown', event => { if (event.key === 'Escape') hooks.onSkip(); }, { signal: keys.signal });
-    const settle = handle => {
-      mounted = handle;
-      globalThis.__tzsplash = { theme: handle.theme?.id || 'builtin', state: 'mounted' };
-      const enter = host.querySelector('[data-kt-enter]');
-      (enter || host).focus({ preventScroll: true });
-    };
-    const ctxOpts = { ...opts, reducedMotion, lowPower, preview: false };
-    const fallback = registry.themes.find(theme => theme.id === (registry.fallback || FALLBACK_ID));
-    mountTheme(host, picked.theme, ctxOpts, hooks)
-      .catch(error => {
-        if (picked.theme) console.warn('Splash theme failed, using the fallback', error);
+      if (picked.theme) console.warn('Splash theme failed, using the fallback', error);
+      try {
         if (!fallback || fallback === picked.theme) throw error;
-        host.replaceChildren();
-        return mountTheme(host, fallback, ctxOpts, hooks);
-      })
-      .catch(() => { host.replaceChildren(); return mountBuiltin(host, opts, hooks); })
-      .then(settle);
-  });
+        handle = await mountTheme(host, fallback, ctxOpts, hooks);
+      } catch {
+        if (leaving) return;
+        handle = mountBuiltin(host, opts, hooks);
+      }
+    }
+    settle(handle);
+  })();
+  return done;
 }
 
 // Mounts a theme's pause() accent over feed videos when a viewer pauses one. Listens in the capture
@@ -420,16 +482,23 @@ export async function showSplash(opts = {}) {
 export function attachPause(opts = {}) {
   const controller = new AbortController();
   const { signal } = controller;
-  const overlays = new Map();
-  let modPromise = null;
+  // Videos are held weakly; the live overlays are also kept in a set so detach can remove them.
+  const overlays = new WeakMap();
+  const pending = new WeakMap();
+  const live = new Set();
   const ready = (async () => {
     const registry = opts.registry || await loadRegistry();
     const theme = registry.themes.find(entry => entry.id === opts.themeId);
     if (!theme || !theme.accents?.pause) return null;
-    modPromise = loadTheme(theme).catch(() => null);
-    const mod = await modPromise;
+    const mod = await loadTheme(theme).catch(() => null);
     return mod && typeof mod.pause === 'function' ? { mod, theme } : null;
   })();
+  const drop = entry => {
+    live.delete(entry);
+    entry.local.abort();
+    try { entry.api?.destroy?.(); } catch {}
+    entry.host.remove();
+  };
   const reducedMotion = wantsReducedMotion(opts);
 
   const isMain = video => {
@@ -443,9 +512,19 @@ export function attachPause(opts = {}) {
     return (rect.top <= height / 2 && rect.bottom >= height / 2) || (rect.height > 0 && visible / rect.height >= 0.6);
   };
 
-  async function overlayFor(video) {
+  function overlayFor(video) {
     const found = overlays.get(video);
-    if (found && found.host.isConnected) return found;
+    if (found && found.host.isConnected && found.host.parentElement === video.parentElement) return Promise.resolve(found);
+    if (!pending.has(video)) {
+      pending.set(video, create(video, found).finally(() => pending.delete(video)));
+    }
+    return pending.get(video);
+  }
+
+  async function create(video, stale) {
+    if (stale) drop(stale);
+    // Overlays whose slides the feed has since thrown away go too.
+    for (const entry of live) if (!entry.host.isConnected) drop(entry);
     const loaded = await ready;
     if (!loaded || signal.aborted) return null;
     ensureBaseStyle();
@@ -456,12 +535,11 @@ export function attachPause(opts = {}) {
     host.toggleAttribute('data-kt-reduced', reducedMotion);
     (video.parentElement || video.closest('.tz-slide')).append(host);
     const local = new AbortController();
-    signal.addEventListener('abort', () => local.abort(), { once: true });
+    const entry = { host, api: null, local };
     watchVisibility(host, local.signal);
     const ctx = buildCtx(host, loaded.theme, { ...opts, reducedMotion, preview: false, soundAllowed: false }, { signal: local.signal, onEnter() {}, onSkip() {} });
-    let api;
-    try { api = loaded.mod.pause(host, ctx); } catch (error) { console.warn(error); host.remove(); return null; }
-    const entry = { host, api, local };
+    try { entry.api = loaded.mod.pause(host, ctx) || {}; } catch (error) { console.warn(error); local.abort(); host.remove(); return null; }
+    live.add(entry);
     overlays.set(video, entry);
     return entry;
   }
@@ -473,9 +551,9 @@ export function attachPause(opts = {}) {
     clearTimeout(timers.get(video));
     // A short wait skips the pauses the feed makes while swapping or scrolling slides.
     timers.set(video, setTimeout(async () => {
-      if (!video.paused || !isMain(video)) return;
+      if (signal.aborted || !video.paused || !isMain(video)) return;
       const entry = await overlayFor(video);
-      if (entry && video.paused) entry.api.show?.(video.currentTime || 0, Number.isFinite(video.duration) ? video.duration : 0);
+      if (entry && video.paused && !signal.aborted) entry.api.show?.(video.currentTime || 0, Number.isFinite(video.duration) ? video.duration : 0);
     }, 160));
   }, { capture: true, signal });
   const hide = event => {
@@ -488,7 +566,6 @@ export function attachPause(opts = {}) {
 
   return () => {
     controller.abort();
-    for (const { host, api } of overlays.values()) { try { api.destroy?.(); } catch {} host.remove(); }
-    overlays.clear();
+    for (const entry of [...live]) drop(entry);
   };
 }

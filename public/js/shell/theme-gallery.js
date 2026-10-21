@@ -53,11 +53,14 @@ export function createFrame(parent, { width = PHONE.width, height = PHONE.height
   return { outer, host, fit, destroy() { observer?.disconnect(); outer.remove(); } };
 }
 
-// Mounts one theme into a frame in preview mode. Returns the mounted handle, or null on failure.
-export async function previewTheme(frame, theme, ctx = {}) {
+// Mounts one theme into a frame in preview mode. Returns the mounted handle, or null on failure or
+// when signal aborts first (a newer preview replaced this one).
+export async function previewTheme(frame, theme, ctx = {}, signal) {
+  frame.outer.querySelector('.kt-gal-note')?.remove();
   try {
-    return await mountTheme(frame.host, theme, { ...ctx, preview: true, soundAllowed: false });
+    return await mountTheme(frame.host, theme, { ...ctx, preview: true, soundAllowed: false, signal });
   } catch (error) {
+    if (error?.name === 'AbortError') return null;
     console.warn('Theme preview failed', theme?.id, error);
     frame.host.replaceChildren();
     const note = document.createElement('p');
@@ -95,17 +98,18 @@ export function createThemeGallery(container, opts = {}) {
   };
 
   async function mountCard(card) {
+    // A newer mount cancels one still loading, so two never race for the same frame.
+    card.mounting?.abort();
+    const mounting = (card.mounting = new AbortController());
     card.handle?.destroy();
     card.handle = null;
-    card.frame.outer.querySelector('.kt-gal-note')?.remove();
     card.frame.outer.querySelector('img')?.remove();
     if (!live(card.theme)) {
       card.frame.outer.append(h('img', { src: card.theme.preview, alt: '', loading: 'lazy', decoding: 'async' }));
       return;
     }
-    const token = (card.token = {});
-    const handle = await previewTheme(card.frame, card.theme, ctx);
-    if (card.token !== token || controller.signal.aborted) { handle?.destroy(); return; }
+    const handle = await previewTheme(card.frame, card.theme, ctx, mounting.signal);
+    if (mounting.signal.aborted || controller.signal.aborted) { handle?.destroy(); return; }
     card.handle = handle;
   }
 
@@ -166,7 +170,7 @@ export function createThemeGallery(container, opts = {}) {
         h('span', { class: 'kt-gal-tags', text: theme.tags.join(' · ') })));
       root.append(el);
       const frame = createFrame(screen);
-      return { theme, el, frame, handle: null, started: false, token: null };
+      return { theme, el, frame, handle: null, started: false, mounting: null };
     });
     paintAccent();
     sync();
@@ -191,7 +195,7 @@ export function createThemeGallery(container, opts = {}) {
       clearTimeout(timer);
       controller.abort();
       observer?.disconnect();
-      for (const card of cards) { card.handle?.destroy(); card.frame.destroy(); }
+      for (const card of cards) { card.mounting?.abort(); card.handle?.destroy(); card.frame.destroy(); }
       root.remove();
     },
   };
