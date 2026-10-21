@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { passwordRecord } from '../server/passwords.mjs';
-import { runProcess } from '../server/uploads.mjs';
+import { hasRoom, runProcess } from '../server/uploads.mjs';
 import { startInstall, PARENT } from './helpers.mjs';
 
 const KID = { email: 'ana@example.com', pass: 'A-kid-test-only-password!' };
@@ -22,11 +22,22 @@ test('tools that hang, go quiet, fail or are missing reject instead of blocking 
   assert.deepEqual(seen, ['progress']);
 });
 
+test('an upload needs room for its chunks, its encoded copy and a spare gigabyte', () => {
+  const size = 100 * 1024 ** 2;
+  assert.equal(hasRoom(2 * size + 1024 ** 3, size), true);
+  assert.equal(hasRoom(2 * size + 1024 ** 3 - 1, size), false);
+});
+
+const formatTags = file => JSON.parse(spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format_tags', '-of', 'json', file],
+  { encoding: 'utf8' }).stdout).format.tags || {};
+
 function makeVideo(dir) {
   const file = join(dir, 'source.mp4');
   const result = spawnSync('ffmpeg', ['-nostdin', '-y', '-f', 'lavfi', '-i', 'testsrc=s=320x240:d=2', '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
-    '-metadata', 'title=Our street', '-metadata', 'comment=GPS 40.7128,-74.0060', file], { encoding: 'utf8' });
+    '-metadata', 'title=Our street', '-metadata', 'comment=GPS 40.7128,-74.0060', '-metadata', 'location=+40.0000-105.0000/', file],
+    { encoding: 'utf8' });
   assert.equal(result.status, 0, 'FFmpeg is required for integration tests: ' + result.stderr);
+  assert.equal(formatTags(file).location, '+40.0000-105.0000/', 'the source really carries a location');
   return readFileSync(file);
 }
 
@@ -79,7 +90,7 @@ test('uploads land in the right channel with a poster, and kid uploads wait for 
     assert.equal(result.status, 'done', result.error);
     assert.equal(result.clip.review, 'pending');
     assert.equal(result.clip.channel, 'ana');
-    assert.equal(result.clip.poster, `/api/video/${result.uploadId}.jpg`);
+    assert.equal(result.clip.poster, `/api/video/${result.uploadId}/poster`);
     const poster = readFileSync(join(videos, `${result.uploadId}.jpg`));
     assert.deepEqual([...poster.subarray(0, 3)], [0xff, 0xd8, 0xff], 'the poster is a JPEG');
     assert.ok(poster.length < 100000, 'the poster stays small');
@@ -93,20 +104,20 @@ test('uploads land in the right channel with a poster, and kid uploads wait for 
     assert.deepEqual([chosen.clip.review, chosen.clip.channel], ['approved', 'ben']);
     assert.deepEqual([fallback.clip.review, fallback.clip.channel], ['approved', 'ana']);
     assert.deepEqual((await clips()).map(clip => [clip.id, clip.channel, clip.poster]), [
-      [fallback.clip.id, 'ana', `/api/video/${fallback.uploadId}.jpg`],
-      [chosen.clip.id, 'ben', `/api/video/${chosen.uploadId}.jpg`],
+      [fallback.clip.id, 'ana', `/api/video/${fallback.uploadId}/poster`],
+      [chosen.clip.id, 'ben', `/api/video/${chosen.uploadId}/poster`],
     ]);
     const poster = await install.call(chosen.clip.poster, { cookie: parent.cookie });
     assert.equal(poster.status, 200);
     assert.equal(poster.headers.get('content-type'), 'image/jpeg');
     assert.match(poster.headers.get('cache-control'), /no-store/);
     assert.equal((await install.call(chosen.clip.poster)).status, 401);
-    assert.equal((await install.call(`/api/video/${chosen.uploadId}.png`, { cookie: parent.cookie })).status, 404);
+    for (const path of [`/api/video/${chosen.uploadId}.jpg`, `/api/video/${chosen.uploadId}/thumb`]) {
+      assert.equal((await install.call(path, { cookie: parent.cookie })).status, 404, path);
+    }
 
-    const probe = spawnSync('ffprobe', ['-v', 'error', '-show_entries', 'format_tags', '-of', 'json', join(videos, `${chosen.uploadId}.mp4`)], { encoding: 'utf8' });
-    const tags = JSON.parse(probe.stdout).format.tags || {};
-    assert.equal(tags.title, undefined, 'source metadata is stripped');
-    assert.equal(tags.comment, undefined, 'source metadata is stripped');
+    const tags = formatTags(join(videos, `${chosen.uploadId}.mp4`));
+    for (const tag of ['location', 'location-eng', 'title', 'comment']) assert.equal(tags[tag], undefined, `${tag} is stripped`);
 
     const signed = { email: PARENT.email, t: parent.t };
     assert.equal((await (await install.call('/api/clips/delete', { body: { ...signed, id: chosen.clip.id } })).json()).ok, true);

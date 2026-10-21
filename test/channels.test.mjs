@@ -14,7 +14,7 @@ function addChannels(db) {
 
 function addClip(db, id, { channel = 1, review = 'approved', hidden = 0, position = 1 } = {}) {
   db.prepare(`INSERT INTO clips (id,title,src,poster,position,created,channel_id,review,hidden)
-    VALUES (?,?,?,?,?,0,?,?,?)`).run(id, 'Clip ' + id, '/api/video/' + VIDEO, `/api/video/${VIDEO}.jpg`, position, channel, review, hidden);
+    VALUES (?,?,?,?,?,0,?,?,?)`).run(id, 'Clip ' + id, '/api/video/' + VIDEO, `/api/video/${VIDEO}/poster`, position, channel, review, hidden);
 }
 
 test('front door, channels and the clip catalog', { timeout: 30000 }, async t => {
@@ -44,7 +44,7 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
 
   await t.test('signed-out visitors get 401 from every private endpoint', async () => {
     for (const path of ['/api/clips', '/api/channels', '/api/channels/', '/api/likes', '/api/comments?c=clip-approved',
-      `/api/video/${VIDEO}`, `/api/video/${VIDEO}.jpg`]) {
+      `/api/video/${VIDEO}`, `/api/video/${VIDEO}/poster`]) {
       const response = await install.call(path);
       assert.equal(response.status, 401, path);
       assert.equal(response.headers.get('cache-control'), 'no-store', path);
@@ -64,8 +64,8 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
     addClip(install.db, 'clip-hidden', { hidden: 1, position: 5 });
     const { clips } = await json('/api/clips', { cookie: parent.cookie });
     assert.deepEqual(clips.map(clip => [clip.id, clip.channel, clip.poster]), [
-      ['clip-approved', 'ana', `/api/video/${VIDEO}.jpg`],
-      ['clip-ben', 'ben', `/api/video/${VIDEO}.jpg`],
+      ['clip-approved', 'ana', `/api/video/${VIDEO}/poster`],
+      ['clip-ben', 'ben', `/api/video/${VIDEO}/poster`],
     ]);
     const overview = await json(`/api/admin/overview?e=${Buffer.from(PARENT.email).toString('base64url')}&t=${parent.t}`);
     assert.deepEqual(overview.clips.find(clip => clip.id === 'clip-pending'), {

@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
-import { open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { open, readFile, rename, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { asCreator } from './api.js';
@@ -13,12 +13,13 @@ const CHUNK_SIZE = 4 * 1024 * 1024;
 const MAX_SOURCE = 512 * 1024 * 1024;
 const MAX_SECONDS = 305;
 const ID = /^[a-f0-9-]{36}$/;
-const MEDIA = /^([a-f0-9-]{36})(\.jpg)?$/;
+const MEDIA = /^([a-f0-9-]{36})(\/poster)?$/;
 const PROBE_TIMEOUT = 30000;
 const POSTER_TIMEOUT = 30000;
 // FFmpeg reports progress twice a second, so minutes of silence mean it is stuck.
 const TRANSCODE_STALL = 2 * 60000;
-const TRANSCODE_TIMEOUT = 30 * 60000;
+const transcodeTimeout = duration => Math.max(10 * 60000, duration * 20 * 1000);
+const SPARE_BYTES = 1024 ** 3;
 const STAFF = new Set(['admin', 'super']);
 
 function json(res, status, value) {
@@ -102,7 +103,7 @@ function transcode(input, output, duration, onProgress) {
   ];
   let progress = '';
   return runProcess('ffmpeg', args, {
-    timeoutMs: TRANSCODE_TIMEOUT, stallMs: TRANSCODE_STALL,
+    timeoutMs: transcodeTimeout(duration), stallMs: TRANSCODE_STALL,
     onStdout(chunk) {
       progress += chunk.toString();
       const lines = progress.split('\n');
@@ -116,6 +117,9 @@ function transcode(input, output, duration, onProgress) {
     },
   });
 }
+
+// The chunks and the encoded copy both land on this disk, with room to spare for everything else.
+export const hasRoom = (freeBytes, size) => freeBytes >= 2 * size + SPARE_BYTES;
 
 // One small frame about a second in (the middle of very short clips) so the feed never shows black.
 function grabPoster(video, output, duration) {
@@ -187,7 +191,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
       if ((await stat(temporary)).size < 1000) throw new Error('encoded file is empty');
       // A missing poster only costs a still frame, so it never fails the upload.
       const posterSrc = await grabPoster(temporary, poster, duration)
-        .then(async () => (await stat(poster)).size > 0 ? `/api/video/${job.id}.jpg` : '')
+        .then(async () => (await stat(poster)).size > 0 ? `/api/video/${job.id}/poster` : '')
         .catch(async error => {
           console.error(`Poster for upload ${job.id} failed:`, error);
           await rm(poster, { force: true });
@@ -229,7 +233,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed.');
     const media = MEDIA.exec(pathname.slice('/api/video/'.length));
     if (!media) throw new HttpError(404, 'Video not found.');
-    const file = join(videos, media[1] + (media[2] || '.mp4'));
+    const file = join(videos, media[1] + (media[2] ? '.jpg' : '.mp4'));
     if (!existsSync(file)) throw new HttpError(404, 'Video not found.');
     const size = statSync(file).size;
     const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
@@ -264,6 +268,8 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
         const title = String(payload.title || '').trim().slice(0, 80);
         if (!Number.isSafeInteger(size) || size < 1000 || size > MAX_SOURCE) throw new HttpError(400, 'File must be under 512 MB.');
         if (!title) throw new HttpError(400, 'Name the video.');
+        const disk = await statfs(dataDir);
+        if (!hasRoom(disk.bavail * disk.bsize, size)) throw new HttpError(507, 'The server is almost out of space. Free some up and try again.');
         const pending = sqlite.prepare("SELECT COUNT(*) n FROM upload_jobs WHERE email=? AND status IN ('receiving','queued','processing') AND created>?").get(user.email, Date.now() - 86400000).n;
         if (pending >= 3) throw new HttpError(429, 'Finish an earlier upload before starting another.');
         const id = randomUUID(), now = Date.now();
