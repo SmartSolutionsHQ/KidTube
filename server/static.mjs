@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { resolve, relative, sep, extname, join } from 'node:path';
 import { brotliCompressSync, gzipSync, constants } from 'node:zlib';
+import { BRAND_TOKENS } from './brand.mjs';
 
 const types = {
   '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -17,6 +18,9 @@ const HASH_LENGTH = 12;
 // Root-relative script and stylesheet references in a page's src and href attributes.
 const ASSET_REFERENCE = /(\b(?:src|href)=)(["'])(\/[^"'?#\s]+\.(?:js|css))\2/g;
 const IMMUTABLE = 'public, max-age=31536000, immutable';
+// Pages name the product through {{brand.name}} and friends, filled in from server/brand.mjs.
+const BRAND_TOKEN = /\{\{brand\.(\w+)\}\}/g;
+const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function encodingQuality(header, encoding) {
   const values = header.toLowerCase().split(',').map(value => value.trim().split(';'));
@@ -55,7 +59,7 @@ export function createStatic(publicDir) {
     if (cached?.key === key && cached.assets.every(([asset, hash]) => fingerprint(asset)?.hash === hash)) return cached;
     const assets = [];
     let mtimeMs = info.mtimeMs;
-    const html = readFileSync(file, 'utf8').replace(ASSET_REFERENCE, (reference, attribute, quote, path) => {
+    const stampAsset = (reference, attribute, quote, path) => {
       const asset = resolve(root, '.' + path);
       const entry = inside(asset) && fingerprint(asset);
       if (!entry) return reference;
@@ -63,7 +67,10 @@ export function createStatic(publicDir) {
       // A changed script must also move Last-Modified, or If-Modified-Since would keep the old page.
       mtimeMs = Math.max(mtimeMs, entry.mtimeMs);
       return `${attribute}${quote}${path}?v=${entry.hash}${quote}`;
-    });
+    };
+    const html = readFileSync(file, 'utf8')
+      .replace(BRAND_TOKEN, (token, name) => Object.hasOwn(BRAND_TOKENS, name) ? escapeHtml(BRAND_TOKENS[name]) : token)
+      .replace(ASSET_REFERENCE, stampAsset);
     const identity = Buffer.from(html);
     const stamped = {
       key, assets, mtimeMs, identity, etag: `W/"${digest(identity).slice(0, 16)}"`,
@@ -107,7 +114,7 @@ export function createStatic(publicDir) {
       'Content-Type': types[ext] || 'application/octet-stream', 'Accept-Ranges': 'bytes',
       'Cache-Control': cacheControl(req, file, ext),
       ETag: etag, 'Last-Modified': new Date(mtimeMs).toUTCString(),
-      'X-Content-Type-Options': 'nosniff', 'X-KidTube-Origin': 'node',
+      'X-Content-Type-Options': 'nosniff',
     };
     const compressible = textTypes.has(ext);
     if (compressible) headers.Vary = 'Accept-Encoding';

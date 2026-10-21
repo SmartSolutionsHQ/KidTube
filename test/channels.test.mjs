@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BRAND_NAME, TAGLINE } from '../server/settings.mjs';
+import { BRAND_NAME, TAGLINE } from '../server/brand.mjs';
 import { startInstall, PARENT } from './helpers.mjs';
 
 const VIDEO = '22222222-2222-4222-8222-222222222222';
@@ -25,11 +25,11 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
   await t.test('/api/site is public and lists kids only while kidsPublic is on', async () => {
     const site = await json('/api/site');
     assert.deepEqual(site, {
-      ok: true, brand: BRAND_NAME, tagline: TAGLINE, familyName: '', gateTheme: 'ember-tape', accent: '#ff5c2b',
+      ok: true, brand: BRAND_NAME, tagline: TAGLINE, familyName: '', gateTheme: 'ember-tape', accent: '#FF5C2B',
       setup: 'complete', kidsPublic: true,
       channels: [
         { slug: 'ana', name: 'Ana', kicker: 'Side A', accent: '#4df6ff', themeId: 'arcade', logoUrl: '/brand/ana.svg?v=3' },
-        { slug: 'ben', name: 'Ben', kicker: '', accent: '#ff5c2b', themeId: 'ember-tape', logoUrl: null },
+        { slug: 'ben', name: 'Ben', kicker: '', accent: '#FF5C2B', themeId: 'ember-tape', logoUrl: null },
       ],
     });
     install.db.prepare("INSERT INTO settings VALUES ('kidsPublic','false',0), ('familyName','\"The Riveras\"',0)").run();

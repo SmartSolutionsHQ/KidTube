@@ -1,5 +1,5 @@
 import { listChannels, publicChannel } from './channels.mjs';
-import { BRAND_NAME } from './settings.mjs';
+import { BRAND_NAME } from './brand.mjs';
 
 export function createSite({ sqlite, settings }) {
   const owner = sqlite.prepare("SELECT 1 FROM accounts WHERE role='super' AND status='approved' LIMIT 1");

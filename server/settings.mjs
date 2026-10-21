@@ -1,6 +1,4 @@
-// The product name lives only here, so renaming the app is a one-line change.
-export const BRAND_NAME = 'KidTube';
-export const TAGLINE = 'A little channel. A big imagination.';
+import { DEFAULT_ACCENT, TAGLINE } from './brand.mjs';
 
 export class SettingError extends Error {}
 
@@ -24,7 +22,7 @@ const SETTINGS = {
   familyName: { env: 'FAMILY_NAME', fallback: '', parse: text(60) },
   tagline: { env: 'TAGLINE', fallback: TAGLINE, parse: text(120) },
   gateTheme: { env: 'GATE_THEME', fallback: 'ember-tape', parse: matching(/^[a-z0-9-]{1,40}$/i, 'Use a theme id.') },
-  accent: { env: 'ACCENT', fallback: '#ff5c2b', parse: matching(/^#[0-9a-f]{6}$/i, 'Use a color like #ff5c2b.') },
+  accent: { env: 'ACCENT', fallback: DEFAULT_ACCENT, parse: matching(/^#[0-9a-f]{6}$/i, 'Use a color like #FF5C2B.') },
   kidsPublic: { env: 'KIDS_PUBLIC', fallback: true, parse: flag },
   signups: { env: 'SIGNUPS', fallback: true, parse: flag },
   guestCodes: { env: 'GUEST_CODES', fallback: true, parse: flag },

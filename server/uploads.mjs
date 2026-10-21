@@ -25,7 +25,6 @@ function json(res, status, value) {
   res.writeHead(status, {
     'Content-Type': 'application/json',
     'Cache-Control': 'no-store',
-    'X-KidTube-Origin': 'node',
   });
   res.end(JSON.stringify(value));
 }
@@ -247,7 +246,6 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
     const headers = {
       'Content-Type': media[2] ? 'image/jpeg' : 'video/mp4', 'Content-Length': String(end - start + 1),
       'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-store',
-      'X-KidTube-Origin': 'node',
     };
     if (status === 206) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
     res.writeHead(status, headers);

@@ -9,7 +9,8 @@ import { createVideoNotifications } from './notifications.mjs';
 import { publishClip } from './publish.mjs';
 import { createStatic } from './static.mjs';
 import { initializeSchema } from './schema.mjs';
-import { BRAND_NAME, createSettings } from './settings.mjs';
+import { BRAND_NAME } from './brand.mjs';
+import { createSettings } from './settings.mjs';
 import { createSite } from './site.mjs';
 
 const port = Number(process.env.PORT || 3000);
@@ -73,7 +74,6 @@ async function sendApi(req, res) {
       }else if(result.role==='guest')out['Set-Cookie']=mediaCookie(env,{guest:result.token||input.token},Math.max(0,Math.floor((result.expires-Date.now())/1000)));
     }
   }
-  out['X-KidTube-Origin'] = 'node';
   res.writeHead(response.status, out);
   if (req.method === 'HEAD' || !response.body) { res.end(); return; }
   Readable.fromWeb(response.body).pipe(res);

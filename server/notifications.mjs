@@ -1,9 +1,8 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { sendMail } from './mail.mjs';
-import { BRAND_NAME } from './settings.mjs';
+import { BRAND_NAME, WORDMARK } from './brand.mjs';
 
 const SUBJECT = `New video on ${BRAND_NAME}`;
-const WORDMARK = BRAND_NAME.toUpperCase();
 const MAX_ATTEMPTS = 8;
 const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 

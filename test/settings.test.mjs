@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { initializeSchema } from '../server/schema.mjs';
-import { createSettings, SettingError, BRAND_NAME, TAGLINE, SETTING_KEYS } from '../server/settings.mjs';
+import { BRAND_NAME, TAGLINE } from '../server/brand.mjs';
+import { createSettings, SettingError, SETTING_KEYS } from '../server/settings.mjs';
 import { createVideoNotifications, videoEmail } from '../server/notifications.mjs';
 
 function database(t) {
@@ -16,7 +17,7 @@ test('settings fall back to defaults, then the database, then the environment', 
   const sqlite = database(t);
   const settings = createSettings(sqlite, {});
   assert.deepEqual(settings.all(), {
-    familyName: '', tagline: TAGLINE, gateTheme: 'ember-tape', accent: '#ff5c2b',
+    familyName: '', tagline: TAGLINE, gateTheme: 'ember-tape', accent: '#FF5C2B',
     kidsPublic: true, signups: true, guestCodes: true, reviewComments: false,
   });
   assert.deepEqual(Object.keys(settings.all()), SETTING_KEYS);
@@ -27,7 +28,7 @@ test('settings fall back to defaults, then the database, then the environment', 
   const overridden = createSettings(sqlite, { KIDS_PUBLIC: 'yes', FAMILY_NAME: 'Env Family', ACCENT: '' });
   assert.equal(overridden.get('kidsPublic'), true);
   assert.equal(overridden.get('familyName'), 'Env Family');
-  assert.equal(overridden.get('accent'), '#ff5c2b', 'an empty variable counts as unset');
+  assert.equal(overridden.get('accent'), '#FF5C2B', 'an empty variable counts as unset');
   assert.equal(overridden.locked('kidsPublic'), true);
   assert.equal(overridden.locked('accent'), false);
   overridden.set('familyName', 'Saved Family');
@@ -47,7 +48,7 @@ test('settings reject bad values and survive a corrupt row', t => {
   sqlite.prepare("INSERT INTO settings VALUES ('accent','\"not a color\"',0)").run();
   const errors = console.error;
   console.error = () => {};
-  try { assert.equal(settings.get('accent'), '#ff5c2b'); } finally { console.error = errors; }
+  try { assert.equal(settings.get('accent'), '#FF5C2B'); } finally { console.error = errors; }
 });
 
 test('server copy uses the brand name from settings', async t => {

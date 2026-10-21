@@ -1,4 +1,4 @@
-import { BRAND_NAME } from './settings.mjs';
+import { BRAND_NAME } from './brand.mjs';
 
 export class MailError extends Error {
   constructor(status, retryAfter = 0) {

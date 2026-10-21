@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createStatic, sendFile } from '../server/static.mjs';
 import { compressAssets } from '../scripts/compress-assets.mjs';
+import { BRAND_NAME, ENDORSEMENT } from '../server/brand.mjs';
 
 test('static delivery compresses text, revalidates caches, and preserves video byte ranges', async t => {
   const directory = mkdtempSync(join(tmpdir(), 'kidtube-static-'));
@@ -84,7 +85,7 @@ test('pages stamp content hashes onto scripts and stylesheets so they can be cac
   const page = (body = '') => `<!doctype html><link rel="stylesheet" href="/site.css"><script type="module" src="/js/app.js"></script>
     <script src='/js/app.js'></script><script src="https://example.com/x.js"></script><script src="/missing.js"></script>${body}`;
   writeFileSync(join(directory, 'index.html'), page('<p>Pocket Pizza.</p>'.repeat(200)));
-  writeFileSync(join(directory, 'parents/index.html'), '<script src="/js/app.js"></script>');
+  writeFileSync(join(directory, 'parents/index.html'), '<title>{{brand.name}} parents</title><p>{{brand.endorsement}} {{brand.unknown}}</p><script src="/js/app.js"></script>');
   writeFileSync(join(directory, 'site.css'), 'body{color:red}');
   writeFileSync(join(directory, 'js/app.js'), 'console.log(1)');
   await compressAssets(directory);
@@ -106,7 +107,9 @@ test('pages stamp content hashes onto scripts and stylesheets so they can be cac
   assert.equal(again, js, 'single-quoted references are stamped too');
   assert.equal(missing, '/missing.js', 'unknown files are left alone');
   assert.ok(html.includes('src="https://example.com/x.js"'));
-  assert.equal(versions(await (await fetch(base + '/parents')).text())[0], js, 'every page is stamped');
+  const parents = await (await fetch(base + '/parents')).text();
+  assert.equal(versions(parents)[0], js, 'every page is stamped');
+  assert.ok(parents.startsWith(`<title>${BRAND_NAME} parents</title><p>${ENDORSEMENT} {{brand.unknown}}</p>`), 'brand tokens are filled in');
 
   await t.test('compressed pages carry the stamped references', async () => {
     for (const encoding of ['br', 'gzip']) {

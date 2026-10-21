@@ -1,7 +1,7 @@
 // Every table lives here. Each step upgrades a database from PRAGMA user_version N to N+1,
 // and is safe to rerun so a half-known database (an old install, an import) still lands cleanly.
 const MIGRATIONS = [
-  // v1: the tables KidTube created on the fly before migrations existed.
+  // v1: the tables the app created on the fly before migrations existed.
   sqlite => {
     sqlite.exec(`CREATE TABLE IF NOT EXISTS accounts (
       email TEXT PRIMARY KEY, first TEXT NOT NULL, last TEXT NOT NULL,
