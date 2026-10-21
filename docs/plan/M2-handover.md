@@ -102,7 +102,8 @@ swipe, running order and stage, about, parents. Fonts load from `/fonts`, no out
   The About page does not yet say parents can see watch history, because nothing records views until M7.
 - `README.md` "Make it your own" now points at `SITE_NAME`, `SITE_TAGLINE`, `FAMILY_ACCENT` and `base.css`. The
   accent must be quoted in `.env` (`FAMILY_ACCENT="#FF5C2B"`): Node's `--env-file` reads an unquoted `#` as a
-  comment, so the setting silently fell back to its default. `.env.example` doesn't list these keys yet, and
-  `docs/RENAMING.md` still says M2 will replace the name in `public/` (done).
+  comment, so the setting silently fell back to its default. `.env.example` lists them commented out (uncommenting
+  locks the setting), and `docs/RENAMING.md` covers `public/` and the new internal identifiers (`kid-site`, the
+  page events, the `--tz-*` and `--kt-auth-*` variables).
 - The plan's M2 row mentions mail copy; M1 already moved it to the brand module, and server files other than
   `static.mjs` were out of M2's scope.
