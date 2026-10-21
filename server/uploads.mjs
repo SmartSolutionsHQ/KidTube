@@ -93,10 +93,6 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
   const videos = join(dataDir, 'videos');
   mkdirSync(incoming, { recursive: true, mode: 0o700 });
   mkdirSync(videos, { recursive: true, mode: 0o700 });
-  sqlite.exec(`CREATE TABLE IF NOT EXISTS upload_jobs (
-    id TEXT PRIMARY KEY, email TEXT NOT NULL, title TEXT NOT NULL, size INTEGER NOT NULL,
-    status TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, clip_id TEXT,
-    error TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL)`);
   sqlite.prepare("UPDATE upload_jobs SET status='failed', error='Processing was interrupted. Upload again.', updated=? WHERE status='processing'").run(Date.now());
   const getJob = sqlite.prepare('SELECT * FROM upload_jobs WHERE id=?');
   const updateProgress = sqlite.prepare('UPDATE upload_jobs SET progress=?, updated=? WHERE id=?');

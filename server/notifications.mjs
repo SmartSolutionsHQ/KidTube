@@ -36,17 +36,6 @@ export function videoEmail(clip, { siteUrl, unsubscribeUrl }) {
 export function createVideoNotifications({ sqlite, env, fetchImpl = fetch, now = Date.now, logger = console }) {
   const siteUrl = new URL(env.SITE_URL || 'http://localhost:3000');
   if (!['https:', 'http:'].includes(siteUrl.protocol) || siteUrl.username || siteUrl.password) throw new Error('SITE_URL must be an HTTP(S) URL');
-  sqlite.exec(`CREATE TABLE IF NOT EXISTS video_announcements (
-    clip_id TEXT PRIMARY KEY, title TEXT NOT NULL, blurb TEXT NOT NULL,
-    duration REAL NOT NULL, published TEXT NOT NULL, created INTEGER NOT NULL);
-    CREATE TABLE IF NOT EXISTS video_notification_deliveries (
-      clip_id TEXT NOT NULL REFERENCES video_announcements(clip_id), email TEXT NOT NULL,
-      delivery_key TEXT NOT NULL UNIQUE, status TEXT NOT NULL DEFAULT 'pending',
-      attempts INTEGER NOT NULL DEFAULT 0, next_attempt INTEGER NOT NULL,
-      sent INTEGER, message_id TEXT, last_error TEXT,
-      PRIMARY KEY (clip_id, email));
-    CREATE INDEX IF NOT EXISTS video_notification_pending ON video_notification_deliveries(status, next_attempt);
-    CREATE TABLE IF NOT EXISTS video_email_preferences (email TEXT PRIMARY KEY, unsubscribed INTEGER NOT NULL);`);
   let timer = null, running = null, stopped = false;
 
   // Called inside the upload's publication transaction. Never scan old clips on startup.

@@ -81,16 +81,11 @@ async function signup(req, env) {
 
   /* light rate limit per IP: max 5 signups per hour */
   const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
-  await db(env, 'CREATE TABLE IF NOT EXISTS hits (ip TEXT, ts INTEGER)');
   await db(env, 'DELETE FROM hits WHERE ts < ?', [Date.now() - 3600000]);
   await db(env, 'INSERT INTO hits (ip, ts) VALUES (?, ?)', [ip, Date.now()]);
   const c = await db(env, 'SELECT COUNT(*) AS n FROM hits WHERE ip = ? AND ts > ?', [ip, Date.now() - 3600000]);
   if ((c.results && c.results[0] && c.results[0].n || 0) > 5) return J({ ok: false, error: 'slow down' }, 429);
 
-  await db(env, `CREATE TABLE IF NOT EXISTS accounts (
-    email TEXT PRIMARY KEY, first TEXT NOT NULL, last TEXT NOT NULL,
-    salt TEXT NOT NULL, hash TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending', created INTEGER NOT NULL)`);
   const exists = await db(env, 'SELECT status FROM accounts WHERE email = ?', [email]);
   if (exists.results && exists.results.length) {
     const st = exists.results[0].status;
@@ -302,12 +297,6 @@ const SUPER403 = () => J({ ok: false, error: 'super only' }, 403);
 const GUEST_DAY = 24 * 60 * 60 * 1000;
 const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
 const CODE_DIGITS = '23456789';
-async function ensureGuestCodes(env) {
-  await db(env, `CREATE TABLE IF NOT EXISTS guest_codes (
-    code_hash TEXT PRIMARY KEY, creator TEXT NOT NULL, created INTEGER NOT NULL,
-    expires INTEGER NOT NULL, redeemed INTEGER, token_hash TEXT, session_expires INTEGER)`);
-  await db(env, 'CREATE TABLE IF NOT EXISTS guest_code_attempts (ip TEXT, ts INTEGER)');
-}
 function freshGuestCode() {
   const bytes = new Uint8Array(5);
   crypto.getRandomValues(bytes);
@@ -318,7 +307,6 @@ function freshGuestCode() {
 async function guestGenerate(req, env) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
-  await ensureGuestCodes(env);
   const now = Date.now();
   for (let attempt = 0; attempt < 20; attempt++) {
     const code = freshGuestCode();
@@ -337,7 +325,6 @@ async function guestRedeem(req, env) {
   if (!payload) return J({ ok: false, error: 'Invalid request.' }, 400);
   const code = String(payload.code || '').trim().toUpperCase();
   if (!/^[A-Z0-9]{4}$/.test(code)) return J({ ok: false, error: 'Enter the four-character code.' }, 400);
-  await ensureGuestCodes(env);
   const now = Date.now();
   const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
   await db(env, 'DELETE FROM guest_code_attempts WHERE ts < ?', [now - 10 * 60 * 1000]);
@@ -363,7 +350,6 @@ async function guestValidate(req, env) {
   const payload = await req.json().catch(() => null);
   const token = String(payload?.token || '');
   if (!/^[a-f0-9]{64}$/.test(token)) return J({ ok: false, error: 'Invalid guest session.' }, 403);
-  await ensureGuestCodes(env);
   const tokenHash = await hmac(env.SIGN_SECRET, 'guest-session|' + token);
   const result = await db(env, 'SELECT session_expires FROM guest_codes WHERE token_hash = ? AND session_expires > ?',
     [tokenHash, Date.now()]);
@@ -377,18 +363,8 @@ async function superFrom(req, env) {
 }
 
 /* ---------- server-owned clip catalog (the admin panel edits it) ---------- */
-const CLIPS_TABLE = `CREATE TABLE IF NOT EXISTS clips (
-  id TEXT PRIMARY KEY, title TEXT NOT NULL, src TEXT NOT NULL,
-  poster TEXT DEFAULT '', kind TEXT DEFAULT 'video', blurb TEXT DEFAULT '',
-  published TEXT DEFAULT '', duration REAL DEFAULT 0,
-  position INTEGER NOT NULL, created INTEGER NOT NULL, hidden INTEGER NOT NULL DEFAULT 0)`;
-async function ensureMediaTables(env) {
-  await db(env, 'CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, mime TEXT NOT NULL, size INTEGER NOT NULL, created INTEGER NOT NULL)');
-  await db(env, 'CREATE TABLE IF NOT EXISTS media_chunks (id TEXT, seq INTEGER, bytes BLOB, PRIMARY KEY (id, seq))');
-}
 
 async function clipsList(env) {
-  await db(env, CLIPS_TABLE);
   const r = await db(env, 'SELECT id, title, src, poster, kind, blurb, published, duration, position FROM clips WHERE hidden = 0 ORDER BY position ASC');
   const clips = (r.results || []).map((c) => ({
     id: c.id, title: c.title, src: c.src, poster: c.poster || '', kind: c.kind || 'video',
@@ -449,7 +425,6 @@ async function uploadInit(req, env) {
   const secs = Number(ctx.body.duration) || 0;
   if (size < 1000 || size > MAX_UPLOAD) return J({ ok: false, error: 'size' }, 400);
   if (secs <= 0 || secs > MAX_SECONDS) return J({ ok: false, error: 'Keep it under 5 minutes.' }, 400);
-  await ensureMediaTables(env);
   const id = crypto.randomUUID();
   await db(env, 'INSERT INTO media (id, mime, size, created) VALUES (?,?,?,?)', [id, mime, size, Date.now()]);
   return J({ ok: true, uploadId: id, chunkSize: CHUNK });
@@ -475,8 +450,6 @@ async function clipsCreate(req, env) {
   const secs = Number(ctx.body.duration) || 0;
   if (!/^[A-Za-z0-9-]{8,80}$/.test(id) || total < 1 || total > 200) return J({ ok: false, error: 'upload' }, 400);
   if (secs <= 0 || secs > MAX_SECONDS) return J({ ok: false, error: 'Keep it under 5 minutes.' }, 400);
-  await ensureMediaTables(env);
-  await db(env, CLIPS_TABLE);
   const mr = await db(env, 'SELECT mime, size FROM media WHERE id = ?', [id]);
   const mrow = mr.results && mr.results[0];
   if (!mrow) return J({ ok: false, error: 'unknown upload' }, 404);
@@ -525,7 +498,6 @@ function stitchChunks(rows, start, need) {
 async function mediaServe(req, env, p) {
   const id = (p.match(/^\/api\/media\/([A-Za-z0-9-]{8,80})$/) || [])[1];
   if (!id) return new Response('bad id', { status: 404 });
-  await ensureMediaTables(env);
   const mr = await db(env, 'SELECT mime, size FROM media WHERE id = ?', [id]);
   const mrow = mr.results && mr.results[0];
   if (!mrow) return new Response('not found', { status: 404 });
@@ -594,7 +566,6 @@ function chunkStream(env, id, from, to, size) {
 async function adminOverview(url, env) {
   const s = await asStaff(env, unb64uSafe(url.searchParams.get('e') || ''), url.searchParams.get('t') || '');
   if (!s) return DENY403();
-  await db(env, CLIPS_TABLE);
   const acc = await db(env, 'SELECT email, first, last, status, role, created FROM accounts ORDER BY created ASC');
   const cpl = await db(env, 'SELECT id, title, position FROM clips ORDER BY position ASC');
   const lk = await db(env, 'SELECT clip_id, email FROM likes');
@@ -665,7 +636,6 @@ async function adminPassword(req, env) {
 }
 
 async function likesAll(url, env) {
-  await db(env, 'CREATE TABLE IF NOT EXISTS likes (clip_id TEXT NOT NULL, email TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY (clip_id, email))');
   const cr = await db(env, 'SELECT clip_id AS c, COUNT(*) AS n FROM likes GROUP BY clip_id');
   const counts = {};
   for (const row of (cr.results || [])) counts[row.c] = row.n;
@@ -685,7 +655,6 @@ async function likeSet(req, env) {
   if (!CLIP_OK(b.clipId)) return J({ ok: false, error: 'clip' }, 400);
   const email = await sessOk(env, String(b.email || '').trim().toLowerCase(), String(b.t || ''));
   if (!email) return J({ ok: false, error: 'log in to like' }, 401);
-  await db(env, 'CREATE TABLE IF NOT EXISTS likes (clip_id TEXT NOT NULL, email TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY (clip_id, email))');
   if (b.on) await db(env, 'INSERT OR IGNORE INTO likes (clip_id, email, created) VALUES (?,?,?)', [b.clipId, email, Date.now()]);
   else await db(env, 'DELETE FROM likes WHERE clip_id = ? AND email = ?', [b.clipId, email]);
   const c = await db(env, 'SELECT COUNT(*) AS n FROM likes WHERE clip_id = ?', [b.clipId]);
@@ -694,9 +663,6 @@ async function likeSet(req, env) {
 }
 
 async function commentsList(url, env) {
-  await db(env, `CREATE TABLE IF NOT EXISTS comments (
-    id TEXT PRIMARY KEY, clip_id TEXT NOT NULL, email TEXT NOT NULL,
-    name TEXT NOT NULL, body TEXT NOT NULL, created INTEGER NOT NULL)`);
   const clip = url.searchParams.get('c') || '';
   if (!CLIP_OK(clip)) return J({ ok: false, error: 'clip' }, 400);
   let email = '';
@@ -720,7 +686,6 @@ async function commentAdd(req, env) {
   if (!email) return J({ ok: false, error: 'log in to comment' }, 401);
   /* light rate limit per IP: max 10 comments per 10 minutes */
   const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
-  await db(env, 'CREATE TABLE IF NOT EXISTS chits (ip TEXT, ts INTEGER)');
   await db(env, 'DELETE FROM chits WHERE ts < ?', [Date.now() - 600000]);
   await db(env, 'INSERT INTO chits (ip, ts) VALUES (?, ?)', [ip, Date.now()]);
   const c = await db(env, 'SELECT COUNT(*) AS n FROM chits WHERE ip = ? AND ts > ?', [ip, Date.now() - 600000]);

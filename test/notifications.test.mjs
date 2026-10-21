@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createVideoNotifications, videoEmail } from '../server/notifications.mjs';
 import { publishClip } from '../server/publish.mjs';
+import { initializeSchema } from '../server/schema.mjs';
 
 const env = {
   SIGN_SECRET: 'test-secret', BREVO_API_KEY: 'fake-key', SENDER_EMAIL: 'tube@example.com',
@@ -15,13 +16,14 @@ const clip = {
 
 function fixture(t, fetchImpl) {
   const sqlite = new DatabaseSync(':memory:');
-  sqlite.exec(`PRAGMA foreign_keys=ON;
-    CREATE TABLE clips (id TEXT PRIMARY KEY, title TEXT NOT NULL, src TEXT NOT NULL,
-      poster TEXT, kind TEXT, blurb TEXT, published TEXT, duration REAL,
-      position INTEGER, created INTEGER, hidden INTEGER NOT NULL DEFAULT 0);
-    CREATE TABLE accounts (email TEXT PRIMARY KEY, status TEXT NOT NULL, role TEXT);
-    INSERT INTO accounts VALUES ('viewer@example.com','approved',''), ('kid@example.com','approved','admin'),
-      ('parent@example.com','approved','super'), ('pending@example.com','pending',''), ('denied@example.com','denied','');`);
+  sqlite.exec('PRAGMA foreign_keys=ON');
+  initializeSchema(sqlite);
+  const account = sqlite.prepare(`INSERT INTO accounts (email,first,last,salt,hash,status,role,created)
+    VALUES (?,'Test','Account','salt','hash',?,?,0)`);
+  for (const [email, status, role] of [['viewer@example.com', 'approved', ''], ['kid@example.com', 'approved', 'admin'],
+    ['parent@example.com', 'approved', 'super'], ['pending@example.com', 'pending', ''], ['denied@example.com', 'denied', '']]) {
+    account.run(email, status, role);
+  }
   let clock = Date.parse('2026-10-20T18:30:00Z');
   const sent = [];
   const fetcher = fetchImpl || (async (url, options) => {
@@ -120,7 +122,7 @@ test('resumes persisted deliveries and rechecks account status and clip availabi
 
 test('does not backfill old clips or include people approved after publication', async t => {
   const f = fixture(t);
-  f.sqlite.prepare("INSERT INTO clips (id,title,src) VALUES ('old-clip','Old video','/old.mp4')").run();
+  f.sqlite.prepare("INSERT INTO clips (id,title,src,position,created) VALUES ('old-clip','Old video','/old.mp4',1,0)").run();
   await f.restart();
   await f.notifications.kick();
   assert.equal(f.sent.length, 0);
