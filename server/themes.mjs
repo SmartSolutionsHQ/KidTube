@@ -81,22 +81,25 @@ export function createThemes(publicDir) {
 
   // Folders are read on each call (a handful of small files), so an edited theme shows up without a restart.
   function list() {
-    if (!existsSync(root)) return [];
+    let entries;
+    try { entries = readdirSync(root, { withFileTypes: true }); } catch { return []; }
     const themes = [];
-    for (const entry of readdirSync(root, { withFileTypes: true })) {
+    for (const entry of entries) {
       if (!entry.isDirectory() || !ID.test(entry.name)) continue;
       const dir = join(root, entry.name);
-      if (!REQUIRED_FILES.every(file => existsSync(join(dir, file)))) continue;
-      let manifest;
-      try { manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')); } catch { continue; }
-      if (validateManifest(manifest, entry.name).length) continue;
-      const url = file => `/themes/${entry.name}/${file}?v=${version(join(dir, file))}`;
-      themes.push({
-        id: manifest.id, name: manifest.name, description: manifest.description, author: manifest.author,
-        version: manifest.version, tags: manifest.tags, weight: manifest.weight, modes: manifest.modes,
-        sound: manifest.sound, defaultAccent: manifest.defaultAccent, accents: manifest.accents, feed: manifest.feed,
-        preview: url('preview.webp'), css: url('splash.css'), js: url('splash.js'),
-      });
+      // A folder that cannot be read (a file removed mid-update, bad permissions) is skipped, never thrown.
+      try {
+        if (!REQUIRED_FILES.every(file => existsSync(join(dir, file)))) continue;
+        const manifest = JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8'));
+        if (validateManifest(manifest, entry.name).length) continue;
+        const url = file => `/themes/${entry.name}/${file}?v=${version(join(dir, file))}`;
+        themes.push({
+          id: manifest.id, name: manifest.name, description: manifest.description, author: manifest.author,
+          version: manifest.version, tags: manifest.tags, weight: manifest.weight, modes: manifest.modes,
+          sound: manifest.sound, defaultAccent: manifest.defaultAccent, accents: manifest.accents, feed: manifest.feed,
+          preview: url('preview.webp'), css: url('splash.css'), js: url('splash.js'),
+        });
+      } catch { continue; }
     }
     return themes.sort(order);
   }
