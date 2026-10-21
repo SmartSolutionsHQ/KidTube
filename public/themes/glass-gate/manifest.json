@@ -1,0 +1,15 @@
+{
+  "contract": 1,
+  "id": "glass-gate",
+  "name": "Glass Gate",
+  "description": "Two soft glows and a frosted card. Fast on any phone, and the automatic fallback on older or low-power devices.",
+  "author": "Smart Solutions",
+  "version": "1.0.0",
+  "tags": ["light", "css only", "calm"],
+  "weight": "light",
+  "modes": ["gate", "channel"],
+  "sound": false,
+  "defaultAccent": "#A98BFF",
+  "accents": { "pause": false },
+  "feed": { "--tz-flare": "accent" }
+}
