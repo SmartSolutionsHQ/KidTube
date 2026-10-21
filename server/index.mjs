@@ -7,13 +7,14 @@ import { openDatabase } from './db.mjs';
 import { createUploadManager } from './uploads.mjs';
 import { createVideoNotifications } from './notifications.mjs';
 import { publishClip } from './publish.mjs';
-import { sendFile } from './static.mjs';
+import { createStatic } from './static.mjs';
 import { initializeSchema } from './schema.mjs';
 import { BRAND_NAME, createSettings } from './settings.mjs';
 import { createSite } from './site.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const publicDir = resolve(process.env.PUBLIC_DIR || 'public');
+const sendFile = createStatic(publicDir);
 const dbFile = process.env.DATABASE_PATH || 'data/kidtube.sqlite';
 for (const key of ['SIGN_SECRET', 'SITE_URL']) {
   if (!process.env[key]) throw new Error(`${key} is required`);
@@ -105,7 +106,7 @@ const server = http.createServer((req, res) => {
       if (!res.headersSent) res.writeHead(500).end(); else res.destroy(error);
     });
   } else if (req.method === 'GET' || req.method === 'HEAD') {
-    sendFile(publicDir, req, res, pathname);
+    sendFile(req, res, pathname);
   } else {
     res.writeHead(405).end();
   }
