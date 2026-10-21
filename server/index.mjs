@@ -7,6 +7,7 @@ import { openDatabase } from './db.mjs';
 import { createUploadManager } from './uploads.mjs';
 import { createVideoNotifications } from './notifications.mjs';
 import { createStatic } from './static.mjs';
+import { createThemes } from './themes.mjs';
 import { migrate } from './schema.mjs';
 import { BRAND_NAME } from './brand.mjs';
 import { createSettings } from './settings.mjs';
@@ -15,6 +16,7 @@ import { createSite } from './site.mjs';
 const port = Number(process.env.PORT || 3000);
 const publicDir = resolve(process.env.PUBLIC_DIR || 'public');
 const sendFile = createStatic(publicDir);
+const themes = createThemes(publicDir);
 const dbFile = process.env.DATABASE_PATH || 'data/kidtube.sqlite';
 if (!process.env.SIGN_SECRET) throw new Error('SIGN_SECRET is required');
 if(process.env.SIGN_SECRET.length<32) throw new Error('SIGN_SECRET must have at least 32 characters. Run npm run setup.');
@@ -84,6 +86,7 @@ const server = http.createServer((req, res) => {
   if(!['GET','HEAD','OPTIONS'].includes(req.method)&&req.headers.origin&&req.headers.origin!==env.SITE_URL){res.writeHead(403).end();return;}
   let pathname;
   try { pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname).replace(/\/+$/, '') || '/'; }catch{res.writeHead(400).end();return;}
+  if(pathname==='/api/themes'){themes.handle(req,res);return;}
   if(['/api/login','/api/signup','/api/guest/redeem'].includes(pathname)){
     const ip=process.env.TRUST_PROXY==='1'?(req.headers['x-forwarded-for']||req.socket.remoteAddress):req.socket.remoteAddress;
     const now=Date.now(); for(const [k,v] of attempts)if(v.until<now)attempts.delete(k);
