@@ -100,7 +100,9 @@ swipe, running order and stage, about, parents. Fonts load from `/fonts`, no out
   replace it. The parent upload button is moved under the top bar by `kid.css` so it clears the caption.
 - **M7:** `admin.js` still sets DM Mono everywhere in its injected styles; the calm Inter Tight restyle is M7's.
   The About page does not yet say parents can see watch history, because nothing records views until M7.
-- `README.md` (not M2's file) still says to edit `public/css/kid.css` and `public/assets/logo.svg` for colours and
-  the logo; colours now come from settings (`family_accent`) and `base.css`.
+- `README.md` "Make it your own" now points at `SITE_NAME`, `SITE_TAGLINE`, `FAMILY_ACCENT` and `base.css`. The
+  accent must be quoted in `.env` (`FAMILY_ACCENT="#FF5C2B"`): Node's `--env-file` reads an unquoted `#` as a
+  comment, so the setting silently fell back to its default. `.env.example` doesn't list these keys yet, and
+  `docs/RENAMING.md` still says M2 will replace the name in `public/` (done).
 - The plan's M2 row mentions mail copy; M1 already moved it to the brand module, and server files other than
   `static.mjs` were out of M2's scope.
