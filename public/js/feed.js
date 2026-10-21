@@ -77,7 +77,7 @@ var reel = $("#tz-reel");
 function slideMarkup(c, i) {
   const media = `<video playsinline preload="none" muted
               ${c.duration && c.duration < LOOP_UNDER ? "loop" : ""}
-              ${c.src ? `src="${esc(c.src)}"` : ""} poster="${esc(c.poster || "")}"></video>`;
+              ${c.src ? `src="${esc(c.src)}"` : ""}></video>`;
   return `
   <section class="tz-slide" data-i="${i}" data-id="${esc(c.id)}" data-state="loading"
            tabindex="-1" aria-label="Clip ${i + 1} of ${clips.length}">
@@ -219,11 +219,16 @@ function applyPreloads() {
   const active = state.index;
   const position = rank(active);
   const neighbors = new Set([order[(position + 1) % order.length], order[(position - 1 + order.length) % order.length]]);
+  const ahead = order[(position + 2) % order.length];
   for (let i = 0; i < slides.length; i++) {
     const v = $("video", slides[i]);
     if (!v) continue;
     const want = i === active ? "auto" : neighbors.has(i) ? "metadata" : "none";
     if (v.preload !== want) v.preload = want;
+    // The clip on screen and every clip one or two swipes away carry their poster, so a swipe never lands
+    // on black; posters further out wait, because they are private and never cached.
+    const poster = clips[i]?.poster;
+    if (poster && (i === active || neighbors.has(i) || i === ahead) && !v.getAttribute("poster")) v.setAttribute("poster", poster);
   }
 }
 function playActive() {
@@ -778,7 +783,7 @@ document.addEventListener("pointerdown", (e) => {
   display:flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid rgba(247,244,236,.35);
   background:rgba(5,6,10,.72);color:var(--tz-paper,#F7F4EC);font:500 11px/1 var(--tz-mono,'DM Mono',monospace);
   letter-spacing:.12em;text-transform:uppercase;border-radius:999px;cursor:pointer}
-.tz-upload-fab:hover{border-color:var(--tz-flare,#3265FF);color:var(--tz-flare,#3265FF)}
+.tz-upload-fab:hover{border-color:var(--tz-flare,#FF5C2B);color:var(--tz-flare,#FF5C2B)}
 .tz-upload-pill{position:absolute;left:50%;transform:translateX(-50%);top:14px;z-index:40;
   padding:8px 12px;border-radius:2px;background:rgba(5,6,10,.85);color:var(--tz-paper,#F7F4EC);
   font:500 11px/1.3 var(--tz-mono,'DM Mono',monospace);letter-spacing:.08em;max-width:80%;text-align:center}`;
@@ -790,23 +795,23 @@ document.addEventListener("pointerdown", (e) => {
   st.textContent = `
 .tz-namecard{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
   padding:20px;background:rgba(5,6,10,.72);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-.tz-namecard-in{width:100%;max-width:360px;background:#0B0D13;border:1px solid rgba(247,244,236,.28);
+.tz-namecard-in{width:100%;max-width:360px;background:var(--tz-ink,#0B0C10);border:1px solid rgba(247,244,236,.28);
   border-radius:4px;padding:18px 18px 14px;color:var(--tz-paper,#F7F4EC);
   font:500 12px/1.5 var(--tz-mono,'DM Mono',monospace);box-shadow:0 18px 60px rgba(5,6,10,.7)}
-.tz-namecard-kicker{margin:0 0 10px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--tz-flare,#3265FF)}
+.tz-namecard-kicker{margin:0 0 10px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--tz-flare,#FF5C2B)}
 .tz-namecard-lbl{display:block;margin:0 0 6px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(247,244,236,.6)}
 .tz-namecard-input{width:100%;box-sizing:border-box;background:rgba(247,244,236,.07);
   border:1px solid rgba(247,244,236,.3);border-radius:2px;color:var(--tz-paper,#F7F4EC);
   font:500 14px/1 var(--tz-mono,'DM Mono',monospace);padding:11px 10px}
-.tz-namecard-input:focus{outline:none;border-color:var(--tz-flare,#3265FF)}
+.tz-namecard-input:focus{outline:none;border-color:var(--tz-flare,#FF5C2B)}
 .tz-namecard-meta{margin:8px 0 14px;font-size:10px;letter-spacing:.1em;color:rgba(247,244,236,.5)}
 .tz-namecard-acts{display:flex;gap:8px;justify-content:flex-end}
 .tz-namecard-btn{appearance:none;background:none;border:1px solid rgba(247,244,236,.3);color:var(--tz-paper,#F7F4EC);
   font:500 10px/1 var(--tz-mono,'DM Mono',monospace);letter-spacing:.14em;text-transform:uppercase;
   padding:10px 13px;border-radius:2px;cursor:pointer}
-.tz-namecard-btn:hover{border-color:var(--tz-flare,#3265FF);color:var(--tz-flare,#3265FF)}
-.tz-namecard-go{border-color:var(--tz-flare,#3265FF);color:var(--tz-flare,#3265FF)}
-.tz-namecard-go:hover{background:var(--tz-flare,#3265FF);color:#05060A}`;
+.tz-namecard-btn:hover{border-color:var(--tz-flare,#FF5C2B);color:var(--tz-flare,#FF5C2B)}
+.tz-namecard-go{border-color:var(--tz-flare,#FF5C2B);color:var(--tz-flare,#FF5C2B)}
+.tz-namecard-go:hover{background:var(--tz-flare,#FF5C2B);color:var(--tz-flare-ink,#0B0C10)}`;
   document.head.appendChild(st);
 })();
 (() => {
@@ -814,7 +819,7 @@ document.addEventListener("pointerdown", (e) => {
   st.id = "tz-social-style";
   st.textContent = `
 .tz-heartburst{position:absolute;z-index:12;width:0;height:0;pointer-events:none}
-.tz-heartburst .tz-ico{position:absolute;left:-26px;top:-26px;width:52px;height:52px;color:var(--tz-flare,#3265FF);
+.tz-heartburst .tz-ico{position:absolute;left:-26px;top:-26px;width:52px;height:52px;color:var(--tz-flare,#FF5C2B);
   filter:drop-shadow(0 2px 10px rgba(5,6,10,.6));
   animation:tz-heartpop 700ms cubic-bezier(.2,0,0,1) forwards}
 @keyframes tz-heartpop{
@@ -988,11 +993,11 @@ function guestPrompt() {
   wrap.setAttribute("aria-modal", "true");
   wrap.setAttribute("aria-label", "Register to participate");
   wrap.style.cssText = "position:fixed;inset:0;z-index:500;display:grid;place-items:center;padding:20px;background:rgba(5,6,10,.82);backdrop-filter:blur(7px)";
-  wrap.innerHTML = `<div style="width:min(100%,380px);padding:24px;border:1px solid rgba(247,244,236,.3);border-radius:8px;background:#0B0D13;color:#F7F4EC;font:14px/1.5 system-ui,sans-serif;box-shadow:0 18px 60px #0009">
-    <h2 style="margin:0 0 10px;color:#3265FF;font-size:20px">Guest access is view-only</h2>
+  wrap.innerHTML = `<div style="width:min(100%,380px);padding:24px;border:1px solid var(--tz-line);border-radius:16px;background:var(--tz-surface);color:var(--tz-paper);font:15px/1.5 var(--tz-ui);box-shadow:0 18px 60px rgba(5,6,10,.6)">
+    <h2 style="margin:0 0 10px;color:var(--tz-flare);font:400 26px/1 var(--tz-display);text-transform:uppercase">Guest access is view-only</h2>
     <p>To like or comment, you need to register for an account.</p>
-    <p><a href="/?register=1" style="color:#8BA8FF;text-decoration:underline">Click here to register</a></p>
-    <button type="button" data-guest-close style="padding:9px 14px;border:1px solid #F7F4EC;background:transparent;color:#F7F4EC;cursor:pointer">Keep watching</button>
+    <p><a href="/?register=1" style="color:var(--tz-paper);text-decoration:underline;text-underline-offset:4px">Ask for an account</a></p>
+    <button type="button" data-guest-close style="min-height:44px;padding:0 16px;border:1px solid var(--tz-line);background:transparent;color:var(--tz-paper);font:500 12px/1 var(--tz-mono);letter-spacing:.14em;text-transform:uppercase;cursor:pointer">Keep watching</button>
   </div>`;
   const close = () => { wrap.remove(); document.removeEventListener("keydown", escape); };
   const escape = (event) => { if (event.key === "Escape") close(); };
