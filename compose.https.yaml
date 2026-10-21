@@ -1,3 +1,5 @@
+# HTTPS with Caddy: set SITE_URL=https://your.domain in .env first, then
+# docker compose -f compose.yaml -f compose.https.yaml up -d
 services:
   kidtube:
     environment:
@@ -7,7 +9,7 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
-      SITE_URL: ${SITE_URL}
+      SITE_URL: ${SITE_URL:?Set SITE_URL in .env to your https:// address first}
     ports:
       - "80:80"
       - "443:443"

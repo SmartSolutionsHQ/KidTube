@@ -88,6 +88,13 @@ test('generator copies a blank installation and refuses an existing destination'
   assert.ok(readFileSync(join(target,'.gitignore'),'utf8').includes('data/'));
   assert.ok(existsSync(join(target,'docs/OPERATIONS.md')));assert.equal(existsSync(join(target,'docs/plan')),false);
   assert.ok(existsSync(join(target,'scripts/setup.mjs')));assert.equal(existsSync(join(target,'scripts/dev')),false);
+  assert.match(result.stdout,/docker compose up -d/);assert.match(result.stdout,/setup code/);
   assert.notEqual(spawnSync(process.execPath,['bin/create-kidtube.mjs',target],{cwd:root}).status,0);
+  // A new starter has no .env, and the doctor is fine with that: the first start makes what it needs.
+  const env={...process.env};for(const key of ['SIGN_SECRET','SITE_URL','DATABASE_PATH','DATA_DIR','MAIL_MODE','NODE_ENV'])delete env[key];
+  const doctor=spawnSync(process.execPath,['--env-file-if-exists=.env','scripts/doctor.mjs'],{cwd:target,env,encoding:'utf8'});
+  assert.doesNotMatch(doctor.stdout,/MISSING: (?:Private \.env|Signing secret|Database|SITE_URL)/);
+  assert.match(doctor.stdout,/made in .*data\/secret on first start/);
+  assert.equal(existsSync(join(target,'data')),false,'the doctor creates nothing');
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
