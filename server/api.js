@@ -21,7 +21,7 @@ export default {
       if (p === '/api/check') return await check(url, env);
       if (p === '/api/pending') return DENY403();
       if (p === '/api/decide') return PAGE('Open the parent dashboard to review account requests.', 200);
-      if (p === '/api/clips') return await clipsList(env);
+      if (p === '/api/clips') return await clipsList(url, env);
       if (req.method === 'POST' && p === '/api/clips/reorder') return await clipsReorder(req, env);
       if (req.method === 'POST' && p === '/api/clips/rename') return await clipsRename(req, env);
       if (req.method === 'POST' && p === '/api/clips/delete') return await clipsDelete(req, env);
@@ -273,13 +273,17 @@ async function superFrom(req, env) {
 /* ---------- server-owned clip catalog (the admin panel edits it) ---------- */
 
 /* viewers only ever see approved, unhidden clips */
-async function clipsList(env) {
-  const r = await db(env, `SELECT c.id, c.title, c.src, c.poster, c.kind, c.blurb, c.published, c.duration, c.position, ch.slug AS channel
+/* positions count within a channel, so the reel runs channel by channel; ?channel=<slug> picks one */
+const CHANNEL_ORDER = 'ORDER BY ch.position, c.channel_id, c.position';
+async function clipsList(url, env) {
+  const slug = url.searchParams.get('channel');
+  const r = await db(env, `SELECT c.id, c.title, c.src, c.poster, c.kind, c.blurb, c.published, c.duration, ch.slug AS channel
     FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id
-    WHERE c.hidden = 0 AND c.review = 'approved' ORDER BY c.position ASC`);
-  const clips = (r.results || []).map((c) => ({
+    WHERE c.hidden = 0 AND c.review = 'approved' ${slug ? 'AND ch.slug = ?' : ''} ${CHANNEL_ORDER}`, slug ? [slug] : []);
+  /* seq is the place in this list, which feed.js sorts by */
+  const clips = (r.results || []).map((c, i) => ({
     id: c.id, title: c.title, src: c.src, poster: c.poster || '', kind: c.kind || 'video',
-    blurb: c.blurb || '', publishedAt: c.published || '', duration: c.duration || 0, seq: c.position,
+    blurb: c.blurb || '', publishedAt: c.published || '', duration: c.duration || 0, seq: i + 1,
     channel: c.channel || '',
   }));
   return J({ ok: true, clips: clips });
@@ -288,9 +292,17 @@ async function clipsList(env) {
 async function clipsReorder(req, env) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
-  const list = Array.isArray(ctx.body.order) ? ctx.body.order.filter((s) => CLIP_OK(s)) : [];
+  const list = Array.isArray(ctx.body.order) ? [...new Set(ctx.body.order.filter((s) => CLIP_OK(s)))] : [];
   if (!list.length) return J({ ok: false, error: 'order' }, 400);
-  for (let i = 0; i < list.length; i++) await db(env, 'UPDATE clips SET position = ? WHERE id = ?', [i + 1, list[i]]);
+  /* each clip takes the next position within its own channel, in the order given */
+  const r = await db(env, `SELECT id, channel_id FROM clips WHERE id IN (${list.map(() => '?').join(',')})`, list);
+  const channelOf = new Map((r.results || []).map((c) => [c.id, c.channel_id]));
+  const next = new Map();
+  for (const id of list.filter((id) => channelOf.has(id))) {
+    const position = (next.get(channelOf.get(id)) || 0) + 1;
+    next.set(channelOf.get(id), position);
+    await db(env, 'UPDATE clips SET position = ? WHERE id = ?', [position, id]);
+  }
   return J({ ok: true, count: list.length });
 }
 
@@ -419,7 +431,7 @@ async function adminOverview(url, env) {
   if (!s) return DENY403();
   const acc = await db(env, 'SELECT email, first, last, status, role, created FROM accounts ORDER BY created ASC');
   const cpl = await db(env, `SELECT c.id, c.title, c.position, c.review, c.hidden, ch.slug AS channel
-    FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id ORDER BY c.position ASC`);
+    FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id ${CHANNEL_ORDER}`);
   const lk = await db(env, 'SELECT clip_id, email FROM likes');
   const cmAgg = await db(env, 'SELECT clip_id, COUNT(*) AS n FROM comments GROUP BY clip_id');
   const cm = await db(env, 'SELECT clip_id, name, body, created, hidden FROM comments ORDER BY created DESC LIMIT 40');

@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BRAND_NAME, DEFAULT_ACCENT, ENDORSEMENT, TAGLINE } from '../server/brand.mjs';
+import { publishClip } from '../server/publish.mjs';
 import { startInstall, PARENT } from './helpers.mjs';
 
 const VIDEO = '22222222-2222-4222-8222-222222222222';
@@ -71,6 +72,25 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
       id: 'clip-pending', title: 'Clip clip-pending', position: 3, review: 'pending', hidden: false, channel: 'ana',
       likes: 0, comments: 0, likers: [],
     });
+  });
+
+  await t.test('publishing, reordering and listing stay inside each channel', async () => {
+    const quiet = { enqueue() {}, kick() {} };
+    const publish = (id, channelId) => publishClip(install.db, quiet, { id, title: id, src: '/api/video/' + VIDEO, publishedAt: '', duration: 1, channelId });
+    publish('ben-new', 2);
+    assert.throws(() => publish('nowhere', 9), /Channel 9 does not exist/);
+    const positions = () => Object.fromEntries(install.db.prepare('SELECT id, position FROM clips').all().map(row => [row.id, row.position]));
+    assert.equal(positions()['ben-new'], 1);
+    assert.equal(positions()['clip-ben'], 3, 'only the same channel shifts');
+    assert.equal(positions()['clip-approved'], 1, 'other channels keep their order');
+    const signed = body => ({ body: { email: PARENT.email, t: parent.t, ...body } });
+    assert.equal((await json('/api/clips/reorder', signed({ order: ['clip-ben', 'clip-approved', 'ben-new'] }))).ok, true);
+    assert.deepEqual([positions()['clip-ben'], positions()['ben-new'], positions()['clip-approved']], [1, 2, 1]);
+    const { clips } = await json('/api/clips?channel=ben', { cookie: parent.cookie });
+    assert.deepEqual(clips.map(clip => [clip.id, clip.seq]), [['clip-ben', 1], ['ben-new', 2]]);
+    const all = (await json('/api/clips', { cookie: parent.cookie })).clips;
+    assert.deepEqual(all.map(clip => clip.id), ['clip-approved', 'clip-ben', 'ben-new'], 'channel by channel');
+    assert.deepEqual((await json('/api/clips?channel=nobody', { cookie: parent.cookie })).clips, []);
   });
 
   await t.test('deleting a clip deletes its likes and comments', async () => {

@@ -8,7 +8,8 @@ export function publishClip(sqlite, notifications, clip, uploadJobId) {
     // Link columns have no foreign keys (see schema v2), so check the channel here.
     const channelId = clip.channelId ?? DEFAULT_CHANNEL_ID;
     if (!channelById(sqlite, channelId)) throw new Error(`Channel ${channelId} does not exist`);
-    sqlite.prepare('UPDATE clips SET position=position+1').run();
+    // New clips lead their own channel's reel.
+    sqlite.prepare('UPDATE clips SET position=position+1 WHERE channel_id=?').run(channelId);
     sqlite.prepare(`INSERT INTO clips
       (id,title,src,poster,kind,blurb,published,duration,position,created,channel_id,review)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
