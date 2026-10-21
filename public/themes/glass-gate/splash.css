@@ -1,0 +1,124 @@
+/* Glass Gate. Everything is scoped to the host; sizes follow the host, not the window. */
+[data-kt-theme="glass-gate"] {
+  --gg-accent: #A98BFF;
+  --gg-ink: #0B0C10;
+  color: #F7F4EC;
+  font-family: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+[data-kt-theme="glass-gate"] .gg-root {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  overflow: hidden;
+  background: #0B0C14;
+}
+[data-kt-theme="glass-gate"] .gg-glow {
+  position: absolute;
+  width: 120cqmax;
+  height: 80cqmax;
+  border-radius: 50%;
+  pointer-events: none;
+  will-change: transform;
+}
+[data-kt-theme="glass-gate"] .gg-glow-a {
+  left: -50cqmax;
+  top: -38cqmax;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--gg-accent) 58%, transparent), transparent);
+  animation: kt-glass-gate-drift-a 16s ease-in-out infinite alternate;
+}
+[data-kt-theme="glass-gate"] .gg-glow-b {
+  right: -52cqmax;
+  bottom: -40cqmax;
+  background: radial-gradient(closest-side, rgba(77, 91, 255, 0.42), transparent);
+  animation: kt-glass-gate-drift-b 19s ease-in-out infinite alternate;
+}
+[data-kt-theme="glass-gate"] .gg-card {
+  position: relative;
+  box-sizing: border-box;
+  width: min(400px, 100%);
+  padding: 32px 22px 22px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(247, 244, 236, 0.2);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.35);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  backdrop-filter: blur(22px) saturate(1.2);
+  animation: kt-glass-gate-rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+}
+[data-kt-theme="glass-gate"] .gg-badge {
+  display: block;
+  width: 88px;
+  height: 88px;
+  object-fit: contain;
+  border-radius: 20px;
+}
+[data-kt-theme="glass-gate"] .gg-badge-text {
+  font: 400 30px 'Anton', Impact, 'Arial Narrow Bold', sans-serif;
+}
+[data-kt-theme="glass-gate"] .gg-kicker {
+  margin: 0;
+  font: 500 11px/1.4 'DM Mono', ui-monospace, Menlo, monospace;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #C9C4D6;
+}
+[data-kt-theme="glass-gate"] .gg-title {
+  margin: 0;
+  font-weight: 800;
+  font-size: clamp(28px, 9cqmin, 52px);
+  line-height: 1;
+  letter-spacing: -0.015em;
+  overflow-wrap: anywhere;
+}
+[data-kt-theme="glass-gate"] .gg-line {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: #C9C4D6;
+  max-width: 30ch;
+}
+[data-kt-theme="glass-gate"] .gg-enter {
+  margin-top: 8px;
+  width: 100%;
+  min-height: 48px;
+  border: 0;
+  border-radius: 14px;
+  background: var(--gg-accent);
+  color: var(--gg-ink);
+  font: 700 16px 'Inter Tight', system-ui, sans-serif;
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+[data-kt-theme="glass-gate"] .gg-enter:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--gg-accent) 45%, transparent);
+}
+[data-kt-theme="glass-gate"] .gg-enter:focus-visible {
+  outline: 3px solid #F7F4EC;
+  outline-offset: 3px;
+}
+[data-kt-theme="glass-gate"] .gg-leaving .gg-card {
+  transform: translateY(-10px) scale(0.97);
+  opacity: 0;
+}
+[data-kt-theme="glass-gate"] .gg-leaving .gg-glow {
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+@keyframes kt-glass-gate-drift-a {
+  to { transform: translate(14cqmin, 10cqmin) scale(1.08); }
+}
+@keyframes kt-glass-gate-drift-b {
+  to { transform: translate(-12cqmin, -9cqmin) scale(1.1); }
+}
+@keyframes kt-glass-gate-rise {
+  from { transform: translateY(16px); opacity: 0; }
+}
