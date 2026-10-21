@@ -1014,20 +1014,11 @@ function sessWrite(s) {
   }
 }
 var b64uParam = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+// The signed-in session, or null for guests and visitors. /api/check never hands out a token without one,
+// so there is nothing to fetch here; callers already treat a session without `t` as signed out.
 async function sessToken() {
   const s = sessRead();
-  if (!s) return null;
-  if (s.guest) return null;
-  if (s.t) return s;
-  try {
-    const j = await fetch("/api/check?e=" + b64uParam(s.email)).then((r) => r.json());
-    if (j && j.ok && j.status === "approved" && j.t) {
-      s.t = j.t;
-      sessWrite(s);
-    }
-  } catch (err) {
-  }
-  return sessRead();
+  return s && !s.guest ? s : null;
 }
 async function apiPost(path, body2) {
   try {
