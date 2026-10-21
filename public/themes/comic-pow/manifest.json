@@ -1,0 +1,15 @@
+{
+  "contract": 1,
+  "id": "comic-pow",
+  "name": "Comic Pow",
+  "description": "A comic-book cover. Halftone dots, a speech bubble with the channel name and a POW burst that wipes to the first panel.",
+  "author": "Smart Solutions",
+  "version": "1.0.0",
+  "tags": ["light", "bangers", "panel wipe", "pause bubble"],
+  "weight": "light",
+  "modes": ["gate", "channel"],
+  "sound": true,
+  "defaultAccent": "#FF3D55",
+  "accents": { "pause": true },
+  "feed": { "--tz-flare": "#FFD23F", "--tz-rad-frame": "0px", "--tz-rad-sheet": "0px" }
+}
