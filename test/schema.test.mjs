@@ -58,7 +58,33 @@ test('upgrades a pre-migration database in place and keeps its data', t => {
   assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM clips').get().n, 3);
   assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM likes').get().n, 1);
   assert.equal(sqlite.prepare('SELECT body FROM comments').get().body, 'Nice!');
-  for (const table of ['chits', 'upload_jobs', 'video_announcements']) assert.ok(tables(sqlite).includes(table), table);
+  for (const table of ['chits', 'upload_jobs', 'video_announcements', 'settings', 'channels', 'views', 'activity']) {
+    assert.ok(tables(sqlite).includes(table), table);
+  }
+});
+
+test('every existing clip lands live in one default channel', t => {
+  const sqlite = v0Database(t);
+  initializeSchema(sqlite);
+  const channels = sqlite.prepare('SELECT id, slug, name, review_uploads FROM channels').all().map(row => ({ ...row }));
+  assert.deepEqual(channels, [{ id: 1, slug: 'main', name: 'Main channel', review_uploads: 1 }]);
+  const clips = sqlite.prepare('SELECT id, channel_id, review, hidden FROM clips ORDER BY id').all().map(row => ({ ...row }));
+  assert.deepEqual(clips, [
+    { id: 'clip-a', channel_id: 1, review: 'live', hidden: 0 },
+    { id: 'clip-b', channel_id: 1, review: 'live', hidden: 0 },
+    { id: 'clip-c', channel_id: 1, review: 'live', hidden: 1 },
+  ]);
+  assert.equal(sqlite.prepare('SELECT hidden FROM comments').get().hidden, 0);
+  assert.throws(() => sqlite.prepare("UPDATE clips SET review='maybe'").run(), /CHECK constraint/);
+});
+
+test('deleting a clip deletes its likes, comments and views', t => {
+  const sqlite = v0Database(t);
+  initializeSchema(sqlite);
+  sqlite.exec("INSERT INTO views VALUES ('clip-a','parent@example.com',1), ('clip-b','parent@example.com',1)");
+  sqlite.exec("DELETE FROM clips WHERE id='clip-a'");
+  const left = table => sqlite.prepare(`SELECT COUNT(*) n FROM ${table}`).get().n;
+  assert.deepEqual([left('likes'), left('comments'), left('views')], [0, 0, 1]);
 });
 
 test('rerunning the ladder, even from a reset version, changes nothing', t => {
@@ -69,6 +95,7 @@ test('rerunning the ladder, even from a reset version, changes nothing', t => {
   sqlite.exec('PRAGMA user_version=0');
   initializeSchema(sqlite);
   assert.deepEqual({ tables: tables(sqlite), clips: sqlite.prepare('SELECT * FROM clips ORDER BY id').all() }, before);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM channels').get().n, 1);
 });
 
 test('adds the role column to accounts created by the original Worker', t => {
@@ -85,6 +112,7 @@ test('a fresh database gets every table, and a newer one is refused untouched', 
   t.after(() => sqlite.close());
   initializeSchema(sqlite);
   assert.ok(tables(sqlite).includes('accounts'));
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM channels').get().n, 0, 'kids are added during setup, not invented');
   sqlite.exec(`PRAGMA user_version=${SCHEMA_VERSION + 1}`);
   assert.throws(() => initializeSchema(sqlite), /newer than this build/);
   assert.equal(sqlite.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION + 1);

@@ -42,6 +42,40 @@ const MIGRATIONS = [
     // Accounts created by the original Worker had no role column.
     addColumn(sqlite, 'accounts', 'role', "TEXT NOT NULL DEFAULT ''");
   },
+
+  // v2: settings, a channel per kid, review states, moderation, views and activity.
+  sqlite => {
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS channels (
+      id INTEGER PRIMARY KEY, slug TEXT NOT NULL UNIQUE, name TEXT NOT NULL,
+      kicker TEXT NOT NULL DEFAULT '', tagline TEXT NOT NULL DEFAULT '', accent TEXT NOT NULL DEFAULT '',
+      theme_id TEXT NOT NULL DEFAULT '', badge TEXT NOT NULL DEFAULT '{}', logo_rev INTEGER NOT NULL DEFAULT 0,
+      review_uploads INTEGER NOT NULL DEFAULT 1, position INTEGER NOT NULL DEFAULT 0, created INTEGER NOT NULL);
+    CREATE TABLE IF NOT EXISTS views (clip_id TEXT NOT NULL, viewer TEXT NOT NULL, ts INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS views_by_clip ON views(clip_id, viewer, ts);
+    CREATE TABLE IF NOT EXISTS activity (
+      id INTEGER PRIMARY KEY, ts INTEGER NOT NULL, actor TEXT NOT NULL, kind TEXT NOT NULL,
+      subject TEXT NOT NULL DEFAULT '', detail TEXT NOT NULL DEFAULT '{}');
+    CREATE INDEX IF NOT EXISTS activity_by_time ON activity(ts);`);
+    addColumn(sqlite, 'clips', 'channel_id', 'INTEGER REFERENCES channels(id)');
+    addColumn(sqlite, 'clips', 'poster', "TEXT DEFAULT ''");
+    addColumn(sqlite, 'clips', 'review', "TEXT NOT NULL DEFAULT 'live' CHECK (review IN ('live','pending','rejected'))");
+    addColumn(sqlite, 'upload_jobs', 'channel_id', 'INTEGER REFERENCES channels(id)');
+    addColumn(sqlite, 'accounts', 'channel_id', 'INTEGER REFERENCES channels(id)');
+    addColumn(sqlite, 'comments', 'hidden', 'INTEGER NOT NULL DEFAULT 0');
+    sqlite.exec(`CREATE INDEX IF NOT EXISTS clips_by_channel ON clips(channel_id, position);
+    CREATE TRIGGER IF NOT EXISTS clips_delete_cascade AFTER DELETE ON clips BEGIN
+      DELETE FROM likes WHERE clip_id=OLD.id;
+      DELETE FROM comments WHERE clip_id=OLD.id;
+      DELETE FROM views WHERE clip_id=OLD.id;
+    END;`);
+    // Existing videos belonged to the install's one channel; give it a row the parent can rename.
+    if (sqlite.prepare('SELECT 1 FROM clips WHERE channel_id IS NULL LIMIT 1').get()) {
+      const first = sqlite.prepare('SELECT id FROM channels ORDER BY position, id LIMIT 1').get()
+        ?? { id: sqlite.prepare("INSERT INTO channels (slug,name,created) VALUES ('main','Main channel',?)").run(Date.now()).lastInsertRowid };
+      sqlite.prepare('UPDATE clips SET channel_id=? WHERE channel_id IS NULL').run(first.id);
+    }
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
