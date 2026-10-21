@@ -72,7 +72,7 @@
 }
 [data-kt-theme="glass-gate"] .gg-title {
   margin: 0;
-  font-weight: 800;
+  font-weight: 700;
   font-size: clamp(28px, 9cqmin, 52px);
   line-height: 1;
   letter-spacing: -0.015em;
