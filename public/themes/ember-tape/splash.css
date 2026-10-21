@@ -1,0 +1,330 @@
+/* Ember Tape. Scoped to the host; sizes follow the host (container units), so the same splash
+   works full screen and as a gallery thumbnail. Backgrounds sit on .et-root, never on the host,
+   because the pause accent shares the host attribute and must stay see-through. */
+[data-kt-theme="ember-tape"] {
+  --et-accent: #FF5C2B;
+  --et-ink: #0B0C10;
+  --et-glow: color-mix(in srgb, var(--et-accent) 55%, transparent);
+  color: #F7F4EC;
+  font-family: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+[data-kt-theme="ember-tape"] .et-root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #05060A;
+}
+[data-kt-theme="ember-tape"] .et-smoke {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  transition: opacity 0.45s ease;
+}
+[data-kt-theme="ember-tape"] .et-no-gl .et-smoke {
+  display: none;
+}
+
+/* CSS smoke for devices without WebGL: three blurred accent clouds drifting slowly. */
+[data-kt-theme="ember-tape"] .et-smoke-css {
+  position: absolute;
+  inset: -10%;
+  display: none;
+  filter: blur(28px);
+  transition: opacity 0.45s ease;
+}
+[data-kt-theme="ember-tape"] .et-no-gl .et-smoke-css {
+  display: block;
+}
+[data-kt-theme="ember-tape"] .et-smoke-css i {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--et-accent) 70%, transparent), transparent);
+}
+[data-kt-theme="ember-tape"] .et-smoke-css i:nth-child(1) {
+  left: 5%; top: 18%; width: 80%; height: 45%;
+  animation: kt-ember-tape-cloud-a 13s ease-in-out infinite alternate;
+}
+[data-kt-theme="ember-tape"] .et-smoke-css i:nth-child(2) {
+  left: 40%; top: 55%; width: 65%; height: 40%;
+  background: radial-gradient(closest-side, rgba(77, 91, 255, 0.28), transparent);
+  animation: kt-ember-tape-cloud-b 17s ease-in-out infinite alternate;
+}
+[data-kt-theme="ember-tape"] .et-smoke-css i:nth-child(3) {
+  left: 20%; top: 35%; width: 50%; height: 30%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--et-accent) 45%, #FFF1DE), transparent);
+  opacity: 0.55;
+  animation: kt-ember-tape-cloud-b 11s ease-in-out infinite alternate-reverse;
+}
+[data-kt-theme="ember-tape"] .et-headbar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 6%;
+  display: none;
+  background: linear-gradient(transparent, rgba(247, 244, 236, 0.07), transparent);
+  animation: kt-ember-tape-roll 15s linear infinite;
+}
+[data-kt-theme="ember-tape"] .et-no-gl .et-headbar {
+  display: block;
+}
+[data-kt-theme="ember-tape"] .et-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.4) 0, rgba(0, 0, 0, 0.4) 2px, transparent 2px, transparent 4px),
+    radial-gradient(ellipse 85% 75% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55));
+}
+[data-kt-theme="ember-tape"] .et-topline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 2px;
+  background: var(--et-accent);
+}
+[data-kt-theme="ember-tape"] .et-osd {
+  position: absolute;
+  top: clamp(14px, 3.5cqmin, 28px);
+  left: clamp(16px, 4cqmin, 32px);
+  margin: 0;
+  font: 500 clamp(11px, 2.8cqmin, 18px) 'DM Mono', ui-monospace, Menlo, monospace;
+  letter-spacing: 0.16em;
+  opacity: 0;
+  text-shadow: 2px 0 0 #FF3D55, -2px 0 0 #4DF6FF;
+  animation: kt-ember-tape-osd 3s linear both;
+}
+
+/* Title block */
+[data-kt-theme="ember-tape"] .et-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 2.6cqmin, 22px);
+  padding: 24px clamp(18px, 6cqw, 80px);
+  text-align: center;
+}
+[data-kt-theme="ember-tape"] .et-kicker {
+  margin: 0;
+  font: 500 clamp(10px, 2.7cqw, 14px)/1.4 'DM Mono', ui-monospace, Menlo, monospace;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--et-accent);
+  animation: kt-ember-tape-up 0.7s 0.1s ease-out both;
+}
+[data-kt-theme="ember-tape"] .et-word {
+  position: relative;
+  margin: 0;
+  max-width: 100%;
+  min-height: 0.9em;
+  font: 400 clamp(44px, min(19cqw, 24cqh), 184px)/0.9 'Anton', Impact, 'Arial Narrow Bold', 'Helvetica Neue', sans-serif;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  color: #F7F4EC;
+  text-shadow: 3px 0 0 #FF3D55, -3px 0 0 #4DF6FF, 0 0 30px var(--et-glow);
+}
+[data-kt-theme="ember-tape"] .et-word::before {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  clip-path: inset(40% 0 48% 0);
+}
+[data-kt-theme="ember-tape"] .et-settled .et-word {
+  animation: kt-ember-tape-split 3.7s steps(1) 0.6s infinite;
+}
+[data-kt-theme="ember-tape"] .et-settled .et-word::before {
+  animation: kt-ember-tape-tear 5.3s steps(1) 1.4s infinite;
+}
+[data-kt-theme="ember-tape"] .et-side {
+  margin: 0;
+  max-width: 60ch;
+  text-wrap: balance;
+  font: 400 clamp(10px, 2.7cqw, 14px)/1.6 'DM Mono', ui-monospace, Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  animation: kt-ember-tape-up 0.7s 0.9s ease-out both;
+}
+[data-kt-theme="ember-tape"] .et-enter {
+  margin-top: 6px;
+  min-height: 44px;
+  padding: 11px 18px;
+  border: 1px solid color-mix(in srgb, var(--et-accent) 60%, transparent);
+  border-radius: 0;
+  background: color-mix(in srgb, var(--et-accent) 14%, transparent);
+  color: #F7F4EC;
+  font: 500 clamp(11px, 3cqw, 15px) 'DM Mono', ui-monospace, Menlo, monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  cursor: pointer;
+  animation: kt-ember-tape-up 0.7s 1.2s ease-out both;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+[data-kt-theme="ember-tape"] .et-enter:hover,
+[data-kt-theme="ember-tape"] .et-enter:focus-visible {
+  background: color-mix(in srgb, var(--et-accent) 30%, transparent);
+  border-color: var(--et-accent);
+  text-shadow: 1px 0 0 #FF3D55, -1px 0 0 #4DF6FF;
+}
+[data-kt-theme="ember-tape"] .et-enter:focus-visible {
+  outline: 2px solid #F7F4EC;
+  outline-offset: 4px;
+}
+[data-kt-theme="ember-tape"] .et-corner {
+  position: absolute;
+  bottom: clamp(14px, 3.5cqmin, 28px);
+  margin: 0;
+  font: 400 clamp(9px, 2.3cqmin, 13px) 'DM Mono', ui-monospace, Menlo, monospace;
+  letter-spacing: 0.16em;
+  color: #F7F4EC;
+}
+[data-kt-theme="ember-tape"] .et-corner-l {
+  left: clamp(16px, 4cqmin, 32px);
+}
+[data-kt-theme="ember-tape"] .et-corner-r {
+  right: clamp(16px, 4cqmin, 32px);
+}
+[data-kt-theme="ember-tape"] .et-rec {
+  color: var(--et-accent);
+  animation: kt-ember-tape-rec 1s steps(1) infinite;
+}
+
+/* Leaving: the picture rolls up and the smoke fades, well inside 600 ms. */
+[data-kt-theme="ember-tape"] .et-leaving .et-stage {
+  animation: kt-ember-tape-out 0.4s ease-in forwards;
+}
+[data-kt-theme="ember-tape"] .et-leaving .et-smoke,
+[data-kt-theme="ember-tape"] .et-leaving .et-smoke-css,
+[data-kt-theme="ember-tape"] .et-leaving .et-corner,
+[data-kt-theme="ember-tape"] .et-leaving .et-osd {
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+/* Pause accent: the VHS pause screen. */
+[data-kt-theme="ember-tape"] .et-pause {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  font-family: 'DM Mono', ui-monospace, Menlo, monospace;
+  color: #F7F4EC;
+}
+[data-kt-theme="ember-tape"] .et-pause::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.3) 0, rgba(0, 0, 0, 0.3) 2px, transparent 2px, transparent 4px),
+    rgba(5, 6, 10, 0.3);
+}
+[data-kt-theme="ember-tape"] .et-pause.et-on {
+  opacity: 1;
+}
+[data-kt-theme="ember-tape"] .et-static {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0.1;
+  mix-blend-mode: screen;
+}
+[data-kt-theme="ember-tape"] .et-bands i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 12%;
+  background: linear-gradient(transparent, rgba(247, 244, 236, 0.09) 45%, rgba(77, 246, 255, 0.05) 55%, transparent);
+  animation: kt-ember-tape-roll 7s linear infinite;
+}
+[data-kt-theme="ember-tape"] .et-bands i + i {
+  height: 6%;
+  animation-duration: 11s;
+  animation-delay: -4s;
+}
+[data-kt-theme="ember-tape"] .et-pause-osd,
+[data-kt-theme="ember-tape"] .et-pause-time,
+[data-kt-theme="ember-tape"] .et-pause-label {
+  position: absolute;
+  top: clamp(16px, 4cqmin, 34px);
+  margin: 0;
+  white-space: nowrap;
+  font-size: clamp(12px, 3.4cqmin, 22px);
+  letter-spacing: 0.12em;
+  text-shadow: 2px 0 0 #FF3D55, -2px 0 0 #4DF6FF, 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+[data-kt-theme="ember-tape"] .et-pause-osd {
+  left: clamp(16px, 4cqmin, 34px);
+}
+[data-kt-theme="ember-tape"] .et-pause-time {
+  right: clamp(16px, 4cqmin, 34px);
+}
+[data-kt-theme="ember-tape"] .et-pause-label {
+  top: auto;
+  bottom: clamp(16px, 4cqmin, 34px);
+  left: clamp(16px, 4cqmin, 34px);
+  font-size: clamp(10px, 2.8cqmin, 16px);
+}
+[data-kt-theme="ember-tape"] .et-pause-mark {
+  color: var(--et-accent);
+}
+[data-kt-theme="ember-tape"] .et-play {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: clamp(56px, 15cqmin, 104px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  background: var(--et-accent);
+  box-shadow: 0 0 44px var(--et-glow);
+}
+[data-kt-theme="ember-tape"] .et-play i {
+  position: absolute;
+  inset: 30% 26% 30% 36%;
+  background: var(--et-ink);
+  clip-path: polygon(0 0, 100% 50%, 0 100%);
+}
+
+@keyframes kt-ember-tape-up {
+  from { opacity: 0; transform: translateY(10px); }
+}
+@keyframes kt-ember-tape-osd {
+  0%, 80% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes kt-ember-tape-rec {
+  50% { opacity: 0; }
+}
+@keyframes kt-ember-tape-split {
+  0%, 88% { text-shadow: 3px 0 0 #FF3D55, -3px 0 0 #4DF6FF, 0 0 30px var(--et-glow); }
+  90% { text-shadow: 7px 0 0 #FF3D55, -5px 0 0 #4DF6FF, 0 0 30px var(--et-glow); }
+  93% { text-shadow: -4px 0 0 #FF3D55, 6px 0 0 #4DF6FF, 0 0 30px var(--et-glow); }
+  96% { text-shadow: 3px 0 0 #FF3D55, -3px 0 0 #4DF6FF, 0 0 30px var(--et-glow); }
+}
+@keyframes kt-ember-tape-tear {
+  0%, 92% { opacity: 0; transform: none; }
+  93% { opacity: 1; transform: translateX(-5%); clip-path: inset(38% 0 50% 0); }
+  95.5% { opacity: 1; transform: translateX(3.5%); clip-path: inset(62% 0 26% 0); }
+  98% { opacity: 0; transform: none; }
+}
+@keyframes kt-ember-tape-roll {
+  from { transform: translateY(-120%); }
+  to { transform: translateY(1700%); }
+}
+@keyframes kt-ember-tape-cloud-a {
+  to { transform: translate(8%, 6%) scale(1.15) rotate(8deg); }
+}
+@keyframes kt-ember-tape-cloud-b {
+  to { transform: translate(-10%, -8%) scale(1.2); }
+}
+@keyframes kt-ember-tape-out {
+  to { opacity: 0; transform: translateY(-7%) skewX(-8deg); filter: blur(3px); }
+}
