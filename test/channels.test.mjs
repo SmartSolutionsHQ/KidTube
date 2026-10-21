@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BRAND_NAME, TAGLINE } from '../server/brand.mjs';
+import { BRAND_NAME, DEFAULT_ACCENT, ENDORSEMENT, TAGLINE } from '../server/brand.mjs';
 import { startInstall, PARENT } from './helpers.mjs';
 
 const VIDEO = '22222222-2222-4222-8222-222222222222';
@@ -25,18 +25,19 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
   await t.test('/api/site is public and lists kids only while kidsPublic is on', async () => {
     const site = await json('/api/site');
     assert.deepEqual(site, {
-      ok: true, brand: BRAND_NAME, tagline: TAGLINE, familyName: '', gateTheme: 'ember-tape', accent: '#FF5C2B',
-      setup: 'complete', kidsPublic: true,
+      ok: true, brand: { name: BRAND_NAME, endorsement: ENDORSEMENT },
+      siteName: '', tagline: TAGLINE, accent: DEFAULT_ACCENT, gateTheme: 'ember-tape', badge: null, splashSound: true,
+      signupMode: 'approval', guestPasses: true, setup: 'complete', kidsPublic: true,
       channels: [
         { slug: 'ana', name: 'Ana', kicker: 'Side A', accent: '#4df6ff', themeId: 'arcade', logoUrl: '/brand/ana.svg?v=3' },
-        { slug: 'ben', name: 'Ben', kicker: '', accent: '#FF5C2B', themeId: 'ember-tape', logoUrl: null },
+        { slug: 'ben', name: 'Ben', kicker: '', accent: DEFAULT_ACCENT, themeId: 'ember-tape', logoUrl: null },
       ],
     });
-    install.db.prepare("INSERT INTO settings VALUES ('kidsPublic','false',0), ('familyName','\"The Riveras\"',0)").run();
+    install.db.prepare("INSERT INTO settings VALUES ('kids_public','false',0), ('site_name','\"The Riveras\"',0)").run();
     const private_ = await json('/api/site');
     assert.equal(private_.kidsPublic, false);
     assert.deepEqual(private_.channels, []);
-    assert.equal(private_.familyName, 'The Riveras');
+    assert.equal(private_.siteName, 'The Riveras');
     assert.ok(!JSON.stringify(private_).includes('Ana'), 'no kid names leak through other fields');
   });
 
@@ -81,9 +82,9 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
     assert.deepEqual([count('likes'), count('comments')], [0, 0]);
   });
 
-  await t.test('moderation toggles close signups and guest passes and hold comments', async () => {
+  await t.test('moderation settings close signups and guest passes and hold or stop comments', async () => {
     const signed = body => ({ body: { email: PARENT.email, t: parent.t, ...body } });
-    install.db.prepare("INSERT INTO settings VALUES ('signups','false',0), ('guestCodes','false',0), ('reviewComments','true',0)").run();
+    install.db.prepare("INSERT INTO settings VALUES ('signup_mode','\"closed\"',0), ('guest_passes','false',0)").run();
     const signup = await install.call('/api/signup', { body: { first: 'New', last: 'Viewer', email: 'new@example.com', pass: 'A-viewer-test-password!' } });
     assert.equal(signup.status, 403);
     assert.equal((await install.call('/api/guest/generate', signed({}))).status, 403);
@@ -91,7 +92,12 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
     const held = await json('/api/comment', signed({ clipId: 'clip-ben', body: 'Waiting for a parent' }));
     assert.equal(held.row.hidden, true);
     const { rows } = await json('/api/comments?c=clip-ben', { cookie: parent.cookie });
-    assert.deepEqual(rows, []);
+    assert.deepEqual(rows, [], 'comments wait for review by default');
+    install.db.prepare("INSERT INTO settings VALUES ('comments_default','\"open\"',0)").run();
+    assert.equal((await json('/api/comment', signed({ clipId: 'clip-ben', body: 'Straight in' }))).row.hidden, undefined);
+    assert.deepEqual((await json('/api/comments?c=clip-ben', { cookie: parent.cookie })).rows.map(row => row.body), ['Straight in']);
+    install.db.prepare("UPDATE settings SET value='\"off\"' WHERE key='comments_default'").run();
+    assert.equal((await install.call('/api/comment', signed({ clipId: 'clip-ben', body: 'Nope' }))).status, 403);
   });
 
   await t.test('the owner can make a kid account for exactly one channel', async () => {

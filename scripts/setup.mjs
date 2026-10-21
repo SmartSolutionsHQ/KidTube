@@ -4,6 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline/promises';
 import { openDatabase } from '../server/db.mjs';
 import { initializeSchema } from '../server/schema.mjs';
+import { createSettings } from '../server/settings.mjs';
 import { passwordRecord } from '../server/passwords.mjs';
 
 // Run from the project directory. Refuse to change an existing installation.
@@ -22,6 +23,7 @@ try {
  mkdirSync(dirname(database),{recursive:true,mode:0o700});
  const {sqlite}=openDatabase(database,{allowEmpty:true});initializeSchema(sqlite);
  sqlite.prepare('INSERT INTO accounts(email,first,last,salt,hash,status,role,created) VALUES (?,?,?,?,?,?,?,?)').run(email,'Parent','Owner',record.salt,record.hash,'approved','super',Date.now());
+ createSettings(sqlite,{}).set('setup_complete',true,email);
  sqlite.close();chmodSync(database,0o600);
  const env=['# Private installation settings. Do not commit this file.',`SITE_URL=${site.origin}`,`SIGN_SECRET=${secret}`,'MAIL_MODE=disabled','BREVO_API_KEY=',`NOTIFY_EMAIL=${email}`,'SENDER_EMAIL=','PORT=3000','HOST=127.0.0.1','PUID=1000','PGID=1000','TRUST_PROXY=0',''].join('\n');
  writeFileSync('.env',env,{flag:'wx',mode:0o600});

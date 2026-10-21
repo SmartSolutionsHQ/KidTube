@@ -24,7 +24,7 @@ export function defaultChannel(sqlite) {
 export function publicChannel(row, site) {
   return {
     slug: row.slug, name: row.name, kicker: row.kicker,
-    accent: row.accent || site.accent, themeId: row.theme_id || site.gateTheme,
+    accent: row.accent || site.family_accent, themeId: row.theme_id || site.gate_theme,
     logoUrl: row.logo_rev ? `/brand/${row.slug}.svg?v=${row.logo_rev}` : null,
   };
 }

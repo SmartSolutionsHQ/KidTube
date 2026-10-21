@@ -1,17 +1,16 @@
 import { listChannels, publicChannel } from './channels.mjs';
-import { BRAND_NAME } from './brand.mjs';
+import { BRAND_NAME, ENDORSEMENT } from './brand.mjs';
 
 export function createSite({ sqlite, settings }) {
-  const owner = sqlite.prepare("SELECT 1 FROM accounts WHERE role='super' AND status='approved' LIMIT 1");
-
   // Public: enough to draw the front door. Kids appear only when the family allows it.
   function info() {
     const site = settings.all();
     return {
-      ok: true, brand: BRAND_NAME, tagline: site.tagline, familyName: site.familyName,
-      gateTheme: site.gateTheme, accent: site.accent, setup: owner.get() ? 'complete' : 'required',
-      kidsPublic: site.kidsPublic,
-      channels: site.kidsPublic ? listChannels(sqlite).map(row => publicChannel(row, site)) : [],
+      ok: true, brand: { name: BRAND_NAME, endorsement: ENDORSEMENT },
+      siteName: site.site_name, tagline: site.site_tagline, accent: site.family_accent, gateTheme: site.gate_theme,
+      badge: site.family_badge, splashSound: site.splash_sound, signupMode: site.signup_mode, guestPasses: site.guest_passes,
+      setup: site.setup_complete ? 'complete' : 'required', kidsPublic: site.kids_public,
+      channels: site.kids_public ? listChannels(sqlite).map(row => publicChannel(row, site)) : [],
     };
   }
 
@@ -20,7 +19,7 @@ export function createSite({ sqlite, settings }) {
     const site = settings.all();
     return {
       ok: true,
-      channels: listChannels(sqlite).map(row => ({ ...publicChannel(row, site), tagline: row.tagline || site.tagline })),
+      channels: listChannels(sqlite).map(row => ({ ...publicChannel(row, site), tagline: row.tagline || site.site_tagline })),
     };
   }
 

@@ -65,7 +65,7 @@ async function db(env, q, params) {
 /* ---------- signup ---------- */
 const CLOSED403 = (what) => J({ ok: false, error: 'This family is not taking new ' + what + ' right now.' }, 403);
 async function signup(req, env) {
-  if (!env.settings.get('signups')) return CLOSED403('accounts');
+  if (env.settings.get('signup_mode') === 'closed') return CLOSED403('accounts');
   const b = await req.json().catch(() => null);
   if (!b) return J({ ok: false, error: 'bad body' }, 400);
   const first = String(b.first || '').trim().slice(0, 40);
@@ -213,7 +213,7 @@ function freshGuestCode() {
 async function guestGenerate(req, env) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
-  if (!env.settings.get('guestCodes')) return CLOSED403('guest passes');
+  if (!env.settings.get('guest_passes')) return CLOSED403('guest passes');
   const now = Date.now();
   for (let attempt = 0; attempt < 20; attempt++) {
     const code = freshGuestCode();
@@ -228,7 +228,7 @@ async function guestGenerate(req, env) {
   return J({ ok: false, error: 'Could not create a code. Try again.' }, 503);
 }
 async function guestRedeem(req, env) {
-  if (!env.settings.get('guestCodes')) return CLOSED403('guest passes');
+  if (!env.settings.get('guest_passes')) return CLOSED403('guest passes');
   const payload = await req.json().catch(() => null);
   if (!payload) return J({ ok: false, error: 'Invalid request.' }, 400);
   const code = String(payload.code || '').trim().toUpperCase();
@@ -541,6 +541,8 @@ async function commentAdd(req, env) {
   if (!body || body.length > 500) return J({ ok: false, error: 'body' }, 400);
   const email = await sessOk(env, String(b.email || '').trim().toLowerCase(), String(b.t || ''));
   if (!email) return J({ ok: false, error: 'log in to comment' }, 401);
+  const mode = env.settings.get('comments_default');
+  if (mode === 'off') return J({ ok: false, error: 'Comments are turned off.' }, 403);
   /* light rate limit per IP: max 10 comments per 10 minutes */
   const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
   await db(env, 'DELETE FROM chits WHERE ts < ?', [Date.now() - 600000]);
@@ -552,8 +554,8 @@ async function commentAdd(req, env) {
   const name = dispName(acc && acc.first, acc && acc.last) || 'A viewer';
   const id = crypto.randomUUID();
   const created = Date.now();
-  /* with comment review on, a parent unhides each comment before others see it */
-  const held = env.settings.get('reviewComments');
+  /* under review, a parent unhides each comment before others see it */
+  const held = mode === 'review';
   await db(env, 'INSERT INTO comments (id, clip_id, email, name, body, created, hidden) VALUES (?,?,?,?,?,?,?)',
     [id, b.clipId, email, name, body, created, held ? 1 : 0]);
   return J({ ok: true, row: { id: id, name: name, body: body, at: created, mine: true, ...(held ? { hidden: true } : {}) } });

@@ -6,7 +6,6 @@ import { viewer, mediaCookie, accountCookie, clearCookie } from './access.mjs';
 import { openDatabase } from './db.mjs';
 import { createUploadManager } from './uploads.mjs';
 import { createVideoNotifications } from './notifications.mjs';
-import { publishClip } from './publish.mjs';
 import { createStatic } from './static.mjs';
 import { initializeSchema } from './schema.mjs';
 import { BRAND_NAME } from './brand.mjs';
@@ -17,31 +16,27 @@ const port = Number(process.env.PORT || 3000);
 const publicDir = resolve(process.env.PUBLIC_DIR || 'public');
 const sendFile = createStatic(publicDir);
 const dbFile = process.env.DATABASE_PATH || 'data/kidtube.sqlite';
-for (const key of ['SIGN_SECRET', 'SITE_URL']) {
-  if (!process.env[key]) throw new Error(`${key} is required`);
-}
+if (!process.env.SIGN_SECRET) throw new Error('SIGN_SECRET is required');
 if(process.env.SIGN_SECRET.length<32) throw new Error('SIGN_SECRET must have at least 32 characters. Run npm run setup.');
-const site=new URL(process.env.SITE_URL);
-if(!['http:','https:'].includes(site.protocol)||site.username||site.password||site.pathname!=='/'||site.search||site.hash)throw new Error('SITE_URL must be an HTTP(S) origin without a path.');
-if(process.env.NODE_ENV==='production'&&site.protocol!=='https:')throw new Error('Production requires HTTPS SITE_URL.');
-if(!['disabled','brevo'].includes(process.env.MAIL_MODE||'disabled'))throw new Error('MAIL_MODE must be disabled or brevo');
-if(process.env.MAIL_MODE==='brevo')for(const key of ['BREVO_API_KEY','NOTIFY_EMAIL','SENDER_EMAIL'])if(!process.env[key])throw new Error(key+' is required for email');
 const { sqlite, DB } = openDatabase(dbFile, { allowEmpty: process.env.ALLOW_EMPTY_DB === '1' });
 initializeSchema(sqlite);
 const settings = createSettings(sqlite);
+if (!settings.get('site_url')) throw new Error('SITE_URL is required');
+if(process.env.NODE_ENV==='production'&&!settings.get('site_url').startsWith('https:'))throw new Error('Production requires HTTPS SITE_URL.');
+if(settings.get('mail_mode')==='brevo')for(const key of ['brevo_api_key','notify_email','sender_email'])if(!settings.get(key))throw new Error(key.toUpperCase()+' is required for email');
+// Site and mail settings are read live, so a parent's change applies without a restart.
 const env = {
   DB,
   SIGN_SECRET: process.env.SIGN_SECRET,
-  BREVO_API_KEY: process.env.BREVO_API_KEY,
-  NOTIFY_EMAIL: process.env.NOTIFY_EMAIL,
-  SENDER_EMAIL: process.env.SENDER_EMAIL,
-  SITE_URL: site.origin,
-  MAIL_MODE: process.env.MAIL_MODE || 'disabled',
+  get SITE_URL() { return settings.get('site_url'); },
+  get MAIL_MODE() { return settings.get('mail_mode'); },
+  get BREVO_API_KEY() { return settings.get('brevo_api_key'); },
+  get NOTIFY_EMAIL() { return settings.get('notify_email'); },
+  get SENDER_EMAIL() { return settings.get('sender_email'); },
   settings,
   site: createSite({ sqlite, settings }),
 };
 const notifications = createVideoNotifications({ sqlite, env });
-env.publishClip = clip => publishClip(sqlite, notifications, clip);
 env.handleVideoUnsubscribe = request => notifications.handleUnsubscribe(request);
 const uploads = createUploadManager({ sqlite, env, databasePath: dbFile, notifications });
 env.deleteLocalVideo = uploads.deleteVideo;
