@@ -49,46 +49,46 @@ import { publishVideo } from '/js/server-upload-v1.js';
 .tztab{display:flex;gap:2px;border-bottom:1px solid var(--tza-line);margin:0 0 18px;flex-wrap:wrap}
 .tztab button{appearance:none;background:none;border:none;color:var(--tza-dim);font:500 11px/1 'DM Mono',monospace;
   letter-spacing:.16em;text-transform:uppercase;padding:10px 14px;cursor:pointer;border-bottom:2px solid transparent}
-.tztab button[aria-selected='true']{color:#F7F4EC;border-bottom-color:#3265FF}
-.tztab button:hover{color:#F7F4EC}
+.tztab button[aria-selected='true']{color:var(--tz-paper);border-bottom-color:var(--tz-flare)}
+.tztab button:hover{color:var(--tz-paper)}
 .tzrow{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid rgba(247,244,236,.12);font-size:12px}
 .tzrow .pos{width:26px;color:var(--tza-dim);text-align:right}
 .tzrow .ttl{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.tzrow input.tzren{flex:1;background:rgba(247,244,236,.08);border:1px solid var(--tza-line);color:#F7F4EC;font:12px 'DM Mono',monospace;padding:4px 8px}
-.tzbtn{appearance:none;background:none;border:1px solid var(--tza-line);color:#F7F4EC;font:500 10px/1 'DM Mono',monospace;
+.tzrow input.tzren{flex:1;background:rgba(247,244,236,.08);border:1px solid var(--tza-line);color:var(--tz-paper);font:12px 'DM Mono',monospace;padding:4px 8px}
+.tzbtn{appearance:none;background:none;border:1px solid var(--tza-line);color:var(--tz-paper);font:500 10px/1 'DM Mono',monospace;
   letter-spacing:.14em;text-transform:uppercase;padding:7px 11px;cursor:pointer;border-radius:2px}
-.tzbtn:hover{border-color:#3265FF;color:#3265FF}
-.tzbtn.primary{border-color:#3265FF;color:#3265FF}
-.tzbtn.primary:hover{background:#3265FF;color:#05060A}
+.tzbtn:hover{border-color:var(--tz-flare);color:var(--tz-flare)}
+.tzbtn.primary{border-color:var(--tz-flare);color:var(--tz-flare)}
+.tzbtn.primary:hover{background:var(--tz-flare);color:var(--tz-flare-ink)}
 .tzbtn:disabled{opacity:.4;cursor:default}
 .tzmini{padding:4px 8px;font-size:9px}
 .tznote{color:var(--tza-dim);font-size:11px;letter-spacing:.06em;margin:10px 0}
-.tzerr{color:#3265FF;font-size:11px;letter-spacing:.06em;min-height:16px;margin:8px 0}
+.tzerr{color:var(--tz-flare);font-size:11px;letter-spacing:.06em;min-height:16px;margin:8px 0}
 .tzform{display:flex;flex-direction:column;gap:10px;max-width:420px;margin:18px 0}
 .tzform label{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--tza-dim)}
-.tzform input,.tzform select{background:rgba(247,244,236,.08);border:1px solid var(--tza-line);color:#F7F4EC;
+.tzform input,.tzform select{background:rgba(247,244,236,.08);border:1px solid var(--tza-line);color:var(--tz-paper);
   font:13px 'DM Mono',monospace;padding:9px 10px;border-radius:2px}
 .tzstats{display:flex;gap:26px;margin:4px 0 16px;flex-wrap:wrap}
-.tzstat b{display:block;font-size:22px;color:#F7F4EC}
+.tzstat b{display:block;font-size:22px;color:var(--tz-paper)}
 .tzstat span{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--tza-dim)}
 .tzcard{border:1px solid rgba(247,244,236,.14);padding:12px 14px;margin:10px 0;font-size:12px}
-.tzcard .who{color:#3265FF;letter-spacing:.08em}
+.tzcard .who{color:var(--tz-flare);letter-spacing:.08em}
 .tzwho{color:var(--tza-dim);font-size:11px;letter-spacing:.08em}
 .tzna-card{position:fixed;inset:0;z-index:230;display:flex;align-items:center;justify-content:center;padding:20px;
   background:rgba(5,6,10,.72);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-.tzna-in{width:100%;max-width:380px;background:#0B0D13;border:1px solid rgba(247,244,236,.28);border-radius:4px;
-  padding:18px 18px 14px;color:#F7F4EC;font:500 12px/1.5 'DM Mono',monospace;box-shadow:0 18px 60px rgba(5,6,10,.7)}
-.tzna-kick{margin:0 0 10px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:#3265FF}
+.tzna-in{width:100%;max-width:380px;background:var(--tz-surface);border:1px solid rgba(247,244,236,.28);border-radius:4px;
+  padding:18px 18px 14px;color:var(--tz-paper);font:500 12px/1.5 'DM Mono',monospace;box-shadow:0 18px 60px rgba(5,6,10,.7)}
+.tzna-kick{margin:0 0 10px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--tz-flare)}
 .tzna-lbl{display:block;margin:0 0 6px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(247,244,236,.6)}
 .tzna-in input{width:100%;box-sizing:border-box;background:rgba(247,244,236,.07);border:1px solid rgba(247,244,236,.3);
-  border-radius:2px;color:#F7F4EC;font:500 14px/1 'DM Mono',monospace;padding:11px 10px}
-.tzna-in input:focus{outline:none;border-color:#3265FF}
+  border-radius:2px;color:var(--tz-paper);font:500 14px/1 'DM Mono',monospace;padding:11px 10px}
+.tzna-in input:focus{outline:none;border-color:var(--tz-flare)}
 .tzna-meta{margin:8px 0 14px;font-size:10px;letter-spacing:.1em;color:rgba(247,244,236,.5)}
 .tzna-acts{display:flex;gap:8px;justify-content:flex-end}
-.tzna-acts button{appearance:none;background:none;border:1px solid rgba(247,244,236,.3);color:#F7F4EC;
+.tzna-acts button{appearance:none;background:none;border:1px solid rgba(247,244,236,.3);color:var(--tz-paper);
   font:500 10px/1 'DM Mono',monospace;letter-spacing:.14em;text-transform:uppercase;padding:10px 13px;border-radius:2px;cursor:pointer}
-.tzna-go{border-color:#3265FF;color:#3265FF}
-.tzna-go:hover{background:#3265FF;color:#05060A}`;
+.tzna-go{border-color:var(--tz-flare);color:var(--tz-flare)}
+.tzna-go:hover{background:var(--tz-flare);color:var(--tz-flare-ink)}`;
   document.head.appendChild(css);
   let data = null;
   let tab = "videos";
@@ -190,7 +190,7 @@ import { publishVideo } from '/js/server-upload-v1.js';
         <div class='who'>One-time guest access</div>
         <p class='tznote'>Share a four-character code with one person. It can be entered once within 24 hours. After entry, they can watch for 24 hours but cannot like or comment.</p>
         <button class='tzbtn primary' id='tza-generate-code' type='button'>Generate code</button>
-        ${lastGuestCode ? `<p class='tznote'>Give this code to your guest:</p><p id='tza-guest-result' style='font:700 32px/1.2 monospace;letter-spacing:.2em;color:#3265FF'>${esc(lastGuestCode.code)}</p><p class='tznote'>Enter by ${esc(new Date(lastGuestCode.expires).toLocaleString())}. This code is shown only here.</p><button class='tzbtn' id='tza-copy-code' type='button'>Copy code</button>` : ''}
+        ${lastGuestCode ? `<p class='tznote'>Give this code to your guest:</p><p id='tza-guest-result' style='font:700 32px/1.2 monospace;letter-spacing:.2em;color:var(--tz-flare)'>${esc(lastGuestCode.code)}</p><p class='tznote'>Enter by ${esc(new Date(lastGuestCode.expires).toLocaleString())}. This code is shown only here.</p><button class='tzbtn' id='tza-copy-code' type='button'>Copy code</button>` : ''}
       </div>`;
     pane.querySelector("#tza-generate-code").addEventListener("click", async (event) => {
       const button = event.currentTarget;

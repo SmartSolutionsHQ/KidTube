@@ -8,18 +8,21 @@ import { createVideoNotifications, videoEmail } from '../server/notifications.mj
 import { migrate } from '../server/schema.mjs';
 import { ROOT } from './helpers.mjs';
 
-// The product will be renamed before launch; only server/brand.mjs may spell its name.
-test('the server names the product only through server/brand.mjs', () => {
-  const server = join(ROOT, 'server');
-  const hits = [];
-  for (const name of readdirSync(server, { recursive: true })) {
-    if (name === 'brand.mjs' || !/\.m?js$/.test(name)) continue;
-    readFileSync(join(server, name), 'utf8').split('\n').forEach((line, index) => {
-      if (/KidTube|KIDTUBE/.test(line)) hits.push(`server/${name}:${index + 1}: ${line.trim()}`);
-    });
-  }
-  assert.deepEqual(hits, []);
-});
+// The product will be renamed before launch; only server/brand.mjs may spell its name. Pages use the
+// {{brand.*}} tokens static.mjs fills in, and scripts read the name from /api/site.
+const TEXT = /\.(?:m?js|css|html|json|svg|txt|md|webmanifest)$/;
+for (const folder of ['server', 'public']) {
+  test(`${folder}/ names the product only through server/brand.mjs`, () => {
+    const hits = [];
+    for (const name of readdirSync(join(ROOT, folder), { recursive: true })) {
+      if ((folder === 'server' && name === 'brand.mjs') || !TEXT.test(name)) continue;
+      readFileSync(join(ROOT, folder, name), 'utf8').split('\n').forEach((line, index) => {
+        if (/KidTube|KIDTUBE/.test(line)) hits.push(`${folder}/${name}:${index + 1}: ${line.trim().slice(0, 120)}`);
+      });
+    }
+    assert.deepEqual(hits, []);
+  });
+}
 
 test('server copy takes the brand name from the brand module', async t => {
   const sqlite = new DatabaseSync(':memory:');

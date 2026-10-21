@@ -18,6 +18,12 @@ const HASH_LENGTH = 12;
 // Root-relative script and stylesheet references in a page's src and href attributes.
 const ASSET_REFERENCE = /(\b(?:src|href)=)(["'])(\/[^"'?#\s]+\.(?:js|css))\2/g;
 const IMMUTABLE = 'public, max-age=31536000, immutable';
+// Every page gets the same policy as a header, so no page can forget it or weaken it with a <meta>.
+export const PAGE_POLICY = [
+  "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:",
+  "media-src 'self' blob:", "font-src 'self'", "connect-src 'self'", "worker-src 'self' blob:", "manifest-src 'self'",
+  "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'",
+].join('; ');
 // Pages name the product through {{brand.name}} and friends, filled in from server/brand.mjs.
 const BRAND_TOKEN = /\{\{brand\.(\w+)\}\}/g;
 const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -116,6 +122,7 @@ export function createStatic(publicDir) {
       ETag: etag, 'Last-Modified': new Date(mtimeMs).toUTCString(),
       'X-Content-Type-Options': 'nosniff',
     };
+    if (stamped) headers['Content-Security-Policy'] = PAGE_POLICY;
     const compressible = textTypes.has(ext);
     if (compressible) headers.Vary = 'Accept-Encoding';
     const matches = req.headers['if-none-match'];

@@ -112,7 +112,23 @@ Email starts disabled. With `MAIL_MODE=disabled`, the parent checks pending requ
 
 ## Make it your own
 
-Edit `public/index.html` for the channel name and welcome text, `public/about/index.html` for your family's introduction, `public/assets/logo.svg` for the logo, and `public/css/kid.css` for colors and layout. No build framework is needed. Email branding lives in `server/mail.mjs`, `server/api.js`, and `server/notifications.mjs`; timestamps in video emails use UTC. Rebuild the Docker image after source changes so compressed assets are regenerated.
+Your family's name, tagline and accent color are settings, not code. Add them to `.env` and restart:
+
+```
+SITE_NAME=The Example Tapes
+SITE_TAGLINE=A little channel. A big imagination.
+FAMILY_ACCENT="#FF5C2B"
+```
+
+The name (up to 60 characters) and tagline (up to 120) show on the front door, in the header and in page titles. The accent is a `#rrggbb` color used for buttons, progress bars and highlights; keep the quotes, because `.env` reads an unquoted `#` as the start of a comment. Pick a color that reads well on near-black. Leave a line out to keep its default. A value set in `.env` locks that setting, so nothing else can change it while it is there.
+
+For deeper changes, no build framework is needed:
+
+- `public/css/base.css` holds the shared look: background and text colors, the default accent and the fonts. `feed.css` styles the video feed, `kid.css` the front door and sign-in card, and `page.css` the about and parent pages.
+- `public/about/index.html` is the about page and `public/assets/logo.svg` the logo.
+- The product name lives only in `server/brand.mjs`; see [renaming](docs/RENAMING.md).
+
+Email copy lives in `server/mail.mjs`, `server/api.js`, and `server/notifications.mjs`; timestamps in video emails use UTC. Rebuild the Docker image after source changes so compressed assets are regenerated.
 
 One installation is one channel. For siblings with different channels, create separate directories, secrets, databases, Compose project names, and host ports. See [deployment options](docs/DEPLOYMENT.md).
 
