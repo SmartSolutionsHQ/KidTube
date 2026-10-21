@@ -1,15 +1,29 @@
 import { existsSync, writeFileSync, mkdirSync, chmodSync } from 'node:fs';
-import { resolve, dirname } from 'node:path';
+import { dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createInterface } from 'node:readline/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { openDatabase } from '../server/db.mjs';
 import { migrate } from '../server/schema.mjs';
 import { createSettings } from '../server/settings.mjs';
 import { passwordRecord } from '../server/passwords.mjs';
+import { installPaths } from '../server/config.mjs';
 
-// Run from the project directory. Refuse to change an existing installation.
-const database=resolve(process.env.DATABASE_PATH||'data/kidtube.sqlite');
-if(existsSync('.env')||existsSync(database))throw new Error('An installation already exists. Setup never overwrites .env or a database. See docs/OPERATIONS.md.');
+// The terminal alternative to the browser wizard, for tests and power users. Run it from the install
+// folder: it writes .env into the current folder. It refuses to touch an existing installation,
+// including one the server created on its first start (which is finished in the browser instead).
+const {database,secretFile,tokenFile}=installPaths();
+function refuse(){
+ if(existsSync('.env'))return 'An installation already exists (.env is here). Setup never overwrites it. See docs/OPERATIONS.md.';
+ if(!existsSync(database)&&!existsSync(secretFile))return null;
+ let owner=false;
+ try{const db=new DatabaseSync(database,{readOnly:true});owner=!!db.prepare("SELECT 1 FROM accounts WHERE role='super' LIMIT 1").get();db.close();}catch{}
+ if(owner)return 'An installation already exists. Setup never overwrites a database. See docs/OPERATIONS.md.';
+ return 'The server already created this install on its first start. Finish setup in the browser: open the /setup page'+
+  ' it printed (for example http://localhost:3000/setup) and enter the setup code from the log or '+tokenFile+'.';
+}
+const refusal=refuse();
+if(refusal){console.error(refusal);process.exit(1);}
 const rl=createInterface({input:process.stdin,output:process.stdout});
 try {
  const email=String(process.env.KIDTUBE_ADMIN_EMAIL||await rl.question('Parent email: ')).trim().toLowerCase();
