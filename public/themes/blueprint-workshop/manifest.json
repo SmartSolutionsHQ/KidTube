@@ -1,0 +1,15 @@
+{
+  "contract": 1,
+  "id": "blueprint-workshop",
+  "name": "Blueprint Workshop",
+  "description": "The original bright starter look. Graph paper, a chunky offset title and a stamp. Bright and friendly for younger kids.",
+  "author": "Smart Solutions",
+  "version": "1.0.0",
+  "tags": ["light", "css only", "paper tear", "bright"],
+  "weight": "light",
+  "modes": ["gate", "channel"],
+  "sound": true,
+  "defaultAccent": "#FFE14F",
+  "accents": { "pause": false },
+  "feed": { "--tz-flare": "#8DAAFF", "--tz-ink": "#080D1B", "--tz-paper": "#F5F7FF", "--tz-surface": "#111D38", "--tz-dim": "#B6C3E0", "--tz-rad-frame": "0px", "--tz-rad-sheet": "0px" }
+}
