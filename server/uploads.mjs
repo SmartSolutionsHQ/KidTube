@@ -60,12 +60,12 @@ export function runProcess(command, args, { timeoutMs, stallMs, onStdout = () =>
     let errorText = '', failure = null, stall = null;
     const stop = reason => { failure ??= new Error(`${command} ${reason}`); child.kill('SIGKILL'); };
     const deadline = setTimeout(() => stop(`timed out after ${timeoutMs} ms`), timeoutMs);
-    const quiet = () => {
+    const armStall = () => {
       clearTimeout(stall);
       if (stallMs) stall = setTimeout(() => stop(`stalled for ${stallMs} ms`), stallMs);
     };
-    quiet();
-    child.stdout.on('data', chunk => { quiet(); onStdout(chunk); });
+    armStall();
+    child.stdout.on('data', chunk => { armStall(); onStdout(chunk); });
     child.stderr.on('data', chunk => { errorText = (errorText + chunk.toString()).slice(-2048); });
     child.once('error', error => { failure ??= error; });
     child.once('close', code => {
