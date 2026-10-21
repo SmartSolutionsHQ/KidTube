@@ -99,9 +99,9 @@ ${action ? `<form method="post" action="${esc(action)}"><button style="backgroun
         WHERE d.status='pending' AND d.next_attempt<=? ORDER BY d.next_attempt, d.rowid LIMIT 1`).get(now());
       if (!row) return;
       const account = sqlite.prepare('SELECT status FROM accounts WHERE email=?').get(row.email);
-      const clip = sqlite.prepare('SELECT hidden FROM clips WHERE id=?').get(row.clip_id);
+      const clip = sqlite.prepare('SELECT hidden, review FROM clips WHERE id=?').get(row.clip_id);
       const preference = sqlite.prepare('SELECT unsubscribed FROM video_email_preferences WHERE email=?').get(row.email);
-      if (account?.status !== 'approved' || !clip || clip.hidden || preference?.unsubscribed) {
+      if (account?.status !== 'approved' || !clip || clip.hidden || clip.review !== 'live' || preference?.unsubscribed) {
         sqlite.prepare("UPDATE video_notification_deliveries SET status='skipped', last_error='Account or clip no longer eligible' WHERE clip_id=? AND email=?")
           .run(row.clip_id, row.email);
         continue;
