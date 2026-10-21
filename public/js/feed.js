@@ -1122,11 +1122,12 @@ function bootFeed() {
     if (!s) return null;
     if (s.guest) return s;
     if (s.role === "admin" || s.role === "super") return s;
+    // Without a token /api/check answers "none" with an empty role, which says nothing about this
+    // account, so only a confirmed check may change the stored role.
+    if (!s.t) return s;
     try {
-      const q = "?e=" + b64uParam(s.email) + (s.t ? "&t=" + encodeURIComponent(s.t) : "");
-      const j = await fetch("/api/check" + q).then((r) => r.json());
-      if (j && j.ok) {
-        if (j.t && !s.t) s.t = j.t;
+      const j = await fetch("/api/check?e=" + b64uParam(s.email) + "&t=" + encodeURIComponent(s.t)).then((r) => r.json());
+      if (j && j.ok && j.status === "approved") {
         s.role = j.role || "";
         sessWrite(s);
       }

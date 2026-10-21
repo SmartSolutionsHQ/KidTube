@@ -79,6 +79,8 @@ including 304s; assets don't get it. There are no `<meta>` policies, inline scri
   swipe lands on a frame at once. The slot's empty colour is `--tz-surface`, not black, for clips without a poster.
 - Colour literals now read the tokens (ember fallbacks); the guest prompt uses the tokens.
 - `sessToken()` no longer calls `/api/check` without a token (that never returned one, per M1's notes).
+- `seedRole()` only checks the role with a token and only stores a role from an approved check, so a
+  tokenless or expired check no longer wipes the stored role.
 - `setMode()` no longer throws when the viewport crosses 900px before the reel is built (it scrolled to a
   slide that didn't exist yet).
 - Nothing else changed. The VHS pause overlay is M3's (Ember Tape pause accent).
