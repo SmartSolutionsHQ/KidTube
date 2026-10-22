@@ -2,10 +2,12 @@
 // Log in, Sign up and Code, plus the signed-in profile. Themes restyle it only through the --kt-auth-*
 // variables in kid.css; nothing here knows about themes.
 //
-// The session lives in localStorage 'kid-session' (feed.js reads it for likes, comments and uploads):
+// This module also owns the session every page shares, in localStorage 'kid-session' (the feed, the
+// dashboard, the setup wizard, badge saving and the demo all read it through the functions below):
 //   { email, t, role, exp }                for an account (t is the 7-day session token)
 //   { guest: true, guestToken, role: 'guest', exp, scope }   for a guest pass
 // The server also sets the signed kid_access cookie, which is what /api/me and the videos check.
+// Nothing runs on import, so the dashboard and the Node tests can import it too.
 
 const DAY = 86400000;
 const KEY = 'kid-session';
@@ -26,6 +28,7 @@ const FIELDS = {
 };
 const SUBMITS = { login: 'Log in', signup: 'Ask to join', guest: 'Use guest code' };
 
+// The stored session while it lasts: an account's or a guest pass's.
 export function readSession() {
   try {
     const session = JSON.parse(localStorage.getItem(KEY));
@@ -33,8 +36,21 @@ export function readSession() {
   } catch { return null; }
 }
 
+// Only an account's session (it has the email and token the server checks), never a guest pass.
+export function accountSession() {
+  const session = readSession();
+  return session?.email && session.t ? session : null;
+}
+
 export function writeSession(session) {
   try { localStorage.setItem(KEY, JSON.stringify(session)); } catch {}
+}
+
+// Keeps an account session from a sign-in reply ({ email, t, role }) for as long as its token lasts.
+export function keepSession({ email, t, role }) {
+  const session = { email, t, role, exp: Date.now() + 7 * DAY };
+  writeSession(session);
+  return session;
 }
 
 export function clearSession() {

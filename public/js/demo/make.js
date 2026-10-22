@@ -6,9 +6,8 @@
 import { renderKids } from '/setup/kids.js';
 import { el, note, setBusy } from '/setup/ui.js';
 import { badgeFor } from '/js/shell/picker.js';
+import { accountSession, keepSession } from '/js/shell/auth-dialog.js';
 
-const KEY = 'kid-session';
-const DAY = 86400000;
 const NOTE = 'Your changes are only on this device and disappear at the next reset.';
 const STEPS = ["Make your kid's page", 'Watch it'];
 const $ = id => document.getElementById(id);
@@ -19,27 +18,19 @@ let sandbox = null;
 let brand = '';
 const family = { accent: '#FF5C2B' };
 
-function session() {
-  try {
-    const value = JSON.parse(localStorage.getItem(KEY) || 'null');
-    return value?.email && value?.t && value.exp > Date.now() ? value : null;
-  } catch { return null; }
-}
-const auth = () => { const value = session(); return value ? { email: value.email, t: value.t } : null; };
-
 async function asParent() {
-  if (session()?.role === 'super') return;
+  if (accountSession()?.role === 'super') return;
   const response = await fetch('/api/demo/enter', {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ role: 'parent' }), credentials: 'same-origin',
   });
   const reply = await response.json().catch(() => null);
   if (!response.ok || !reply?.ok) throw new Error(reply?.error || 'The demo is busy. Try again in a moment.');
-  try { localStorage.setItem(KEY, JSON.stringify({ email: reply.email, t: reply.t, role: reply.role, exp: Date.now() + 7 * DAY })); } catch {}
+  keepSession(reply);
 }
 
 async function call(path, { method = 'GET', body: payload } = {}) {
   const headers = { accept: 'application/json' };
-  const who = auth();
+  const who = accountSession();
   if (who) Object.assign(headers, { 'X-Kid-Email': who.email, 'X-Kid-Token': who.t });
   if (payload !== undefined) headers['Content-Type'] = 'application/json';
   try {
@@ -115,7 +106,7 @@ async function resetMine(button) {
 
 function makeView(kids) {
   const view = renderKids({
-    state: { kids, family }, api, auth, refresh, go: () => location.assign('/'), primary, secondary, form,
+    state: { kids, family }, api, auth: accountSession, refresh, go: () => location.assign('/'), primary, secondary, form,
     basic: true, maxKids: sandbox.createdMax,
   });
   return {

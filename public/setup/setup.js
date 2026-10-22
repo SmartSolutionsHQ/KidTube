@@ -7,9 +7,8 @@ import { badgeImage, el, field, check, note, errorLine, setBusy } from './ui.js'
 import { saveFamilyBadge } from '/js/badge/save.js';
 import { createBadgeBuilder } from '/js/badge/builder.js';
 import { INK } from '/js/badge/spec.js';
+import { accountSession, keepSession } from '/js/shell/auth-dialog.js';
 
-const DAY = 86400000;
-const SESSION = 'kid-session';
 const $ = id => document.getElementById(id);
 const body = $('su-body');
 
@@ -20,23 +19,10 @@ let account = {};
 let firstPaint = true;
 let cleanup = () => {};
 
-function session() {
-  try {
-    const value = JSON.parse(localStorage.getItem(SESSION) || 'null');
-    return value?.email && value?.t && value.exp > Date.now() ? value : null;
-  } catch { return null; }
-}
-
-function keepSession({ email, t, role }) {
-  localStorage.setItem(SESSION, JSON.stringify({ email, t, role, exp: Date.now() + 7 * DAY }));
-}
-
-const auth = () => { const value = session(); return value ? { email: value.email, t: value.t } : null; };
-
 export async function api(path, { method = 'GET', body: payload } = {}) {
   const headers = {};
   if (payload !== undefined) headers['Content-Type'] = 'application/json';
-  const who = auth();
+  const who = accountSession();
   if (who) { headers['X-Kid-Email'] = who.email; headers['X-Kid-Token'] = who.t; }
   let response;
   try {
@@ -324,7 +310,7 @@ function familyStep() {
       const { data } = await api('/api/setup/family', { method: 'POST', body: payload });
       if (!data.ok) { done(); error.textContent = data.error; return; }
       try {
-        await saveFamilyBadge(spec, auth());
+        await saveFamilyBadge(spec, accountSession());
       } catch (problem) {
         done();
         error.textContent = `Saved the name, but not the badge: ${problem.message}`;
@@ -488,7 +474,7 @@ function doneStep() {
 function view(number) {
   switch (number) {
     case 3: return familyStep();
-    case 4: return renderKids({ state, api, auth, refresh, go, primary, secondary, form });
+    case 4: return renderKids({ state, api, auth: accountSession, refresh, go, primary, secondary, form });
     case 5: return watchStep();
     case 6: return emailStep();
     default: return doneStep();

@@ -8,6 +8,7 @@ import { lockedSlideMarkup, lockedThumbMarkup, runUnlock, wantsUnlock, watchSeal
 import { attachReactions, chipsMarkup, railButtonMarkup } from '/js/shell/reactions.js';
 import { attachWatch } from '/js/shell/watch.js';
 import { DEEP_LINK } from '/js/shell/route.mjs';
+import { readSession, writeSession } from '/js/shell/auth-dialog.js';
 var familyZone = () => window.__ktChannel?.timezone || undefined;
 var serverBudget = null;
 // A spent daily tape: the slides carry no video at all, so nothing asks for a file the server will refuse.
@@ -461,7 +462,7 @@ var postBtn = $(".tz-post");
 async function renderComments() {
   const c = clips[state.index];
   if (!c) return;
-  const s = sessRead();
+  const s = readSession();
   let j;
   try {
     j = await fetch("/api/comments?c=" + encodeURIComponent(c.id), { headers: sessHeaders(s) }).then((r) => r.json());
@@ -519,7 +520,7 @@ async function saveDraft(id, draft) {
   showDraft();
   let held = false;
   try {
-    const s = sessRead();
+    const s = readSession();
     const j = await apiPost("/api/comment", { clipId: id, email: s.email, t: s.t, body: draft.body });
     if (!j || !j.ok) throw new Error("save");
     held = !!(j.row && j.row.hidden);
@@ -916,16 +917,8 @@ window.addEventListener("resize", () => {
   });
 }, { passive: true });
 var likeState = /* @__PURE__ */ new Map();
-function sessRead() {
-  try {
-    const s = JSON.parse(localStorage.getItem("kid-session") || "null");
-    return s && s.exp && s.exp > Date.now() && (s.guest ? s.guestToken : s.email) ? s : null;
-  } catch (err) {
-    return null;
-  }
-}
 function guestSession() {
-  return !!sessRead()?.guest;
+  return !!readSession()?.guest;
 }
 function guestPrompt() {
   if (document.getElementById("tz-guest-prompt")) return;
@@ -948,16 +941,10 @@ function guestPrompt() {
   document.body.appendChild(wrap);
   wrap.querySelector("[data-guest-close]").focus();
 }
-function sessWrite(s) {
-  try {
-    localStorage.setItem("kid-session", JSON.stringify(s));
-  } catch (err) {
-  }
-}
 // The signed-in session, or null for guests and visitors. /api/check never hands out a token without one,
 // so there is nothing to fetch here; callers already treat a session without `t` as signed out.
 async function sessToken() {
-  const s = sessRead();
+  const s = readSession();
   return s && !s.guest ? s : null;
 }
 async function apiPost(path, body2) {
@@ -988,7 +975,7 @@ async function seedLikes() {
   }
 }
 async function serverDeleteComment(id, cid) {
-  const s = sessRead();
+  const s = readSession();
   if (!s || !s.t) throw new Error("log in");
   const j = await apiPost("/api/comment/delete", { id: cid, email: s.email, t: s.t });
   if (!j || !j.ok) throw new Error("delete");
@@ -1035,7 +1022,7 @@ function heartBurst(slide, x, y) {
 // Reactions, the daily tape, and capsules whose date arrives while the feed is open (js/shell/*).
 function bootLaunchStory() {
   const clipOf = (slide) => clips[Number(slide.dataset.i)];
-  reactionsUi = attachReactions({ session: () => { const s = sessRead(); return s && !s.guest ? s : null; }, isGuest: guestSession, guestPrompt, failNote, clipOf });
+  reactionsUi = attachReactions({ session: () => { const s = readSession(); return s && !s.guest ? s : null; }, isGuest: guestSession, guestPrompt, failNote, clipOf });
   attachWatch({ budget: serverBudget, channel: window.__ktChannel || {}, clipOf });
   watchSealed(() => clips, familyZone(), openSealed);
 }
@@ -1074,7 +1061,7 @@ function bootFeed() {
   syncMode();
   setSound(false);
   async function seedRole() {
-    const s = sessRead();
+    const s = readSession();
     if (!s) return null;
     if (s.guest) return s;
     if (s.role === "admin" || s.role === "super") return s;
@@ -1085,11 +1072,11 @@ function bootFeed() {
       const j = await fetch("/api/check", { headers: sessHeaders(s) }).then((r) => r.json());
       if (j && j.ok && j.status === "approved") {
         s.role = j.role || "";
-        sessWrite(s);
+        writeSession(s);
       }
     } catch (err) {
     }
-    return sessRead();
+    return readSession();
   }
   function mountUploadFab() {
     if ($(".tz-upload-fab")) return;
@@ -1164,7 +1151,7 @@ function bootFeed() {
         file && file.size ? (file.size / 1048576).toFixed(1) + " MB" : ""
       ].filter(Boolean).join(" \xB7 ");
       // Parents' uploads go live; anyone else's may wait for a parent, depending on the kid's settings.
-      const role = sessRead()?.role || "";
+      const role = readSession()?.role || "";
       $(".tz-namecard-note", card).textContent = role === "admin" || role === "super"
         ? "Up to 5 minutes. It goes on the channel as soon as it's converted."
         : "Up to 5 minutes. A parent may check it before it goes on your channel.";

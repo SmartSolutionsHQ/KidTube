@@ -3,7 +3,8 @@
 import { createBadgeBuilder } from '/js/badge/builder.js';
 import { createBadgeData } from '/js/badge/data.js';
 import { renderBadge } from '/js/badge/render.js';
-import { ICONS, removeChannelImage, saveChannelBadge, saveFamilyBadge, storedSession, uploadChannelImage } from '/js/badge/save.js';
+import { ICONS, removeChannelImage, saveChannelBadge, saveFamilyBadge, uploadChannelImage } from '/js/badge/save.js';
+import { accountSession } from '/js/shell/auth-dialog.js';
 
 // The design board's twelve examples, with invented names.
 const EXAMPLES = [
@@ -58,7 +59,7 @@ for (const spec of EXAMPLES) {
 }
 
 /* ---------- saving to this server ---------- */
-const session = storedSession();
+const session = accountSession();
 if (session) $('pg-session').textContent = `Signed in as ${session.email}. Saving sends only the choices; the server draws the SVG and this page compares it with the preview.`;
 else for (const id of ['pg-save-channel', 'pg-save-family', 'pg-picture', 'pg-remove-picture']) $(id).disabled = true;
 

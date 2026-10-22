@@ -1,24 +1,7 @@
-// Talking to the server as the signed-in parent. The session is the one the rest of the app keeps in
-// localStorage 'kid-session' ({ email, t, role, exp }); every dashboard call sends it in the X-Kid-Email and
-// X-Kid-Token headers (the cookie alone is not enough, which keeps other sites from acting as the parent).
-
-const KEY = 'kid-session';
-const DAY = 86400000;
-
-export function readSession() {
-  try {
-    const session = JSON.parse(localStorage.getItem(KEY) || 'null');
-    return session?.email && session?.t && session.exp > Date.now() ? session : null;
-  } catch { return null; }
-}
-
-export function writeSession(session) {
-  try { localStorage.setItem(KEY, JSON.stringify(session)); } catch {}
-}
-
-export function clearSession() {
-  try { localStorage.removeItem(KEY); } catch {}
-}
+// Talking to the server as the signed-in parent. The session is the account session the whole app shares
+// (js/shell/auth-dialog.js); every dashboard call sends it in the X-Kid-Email and X-Kid-Token headers (the
+// cookie alone is not enough, which keeps other sites from acting as the parent).
+import { accountSession, clearSession, keepSession } from '/js/shell/auth-dialog.js';
 
 export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
@@ -27,7 +10,7 @@ export class ApiError extends Error {
 const OFFLINE = 'Could not reach the server. Check the connection and try again.';
 
 async function send(method, path, body) {
-  const session = readSession();
+  const session = accountSession();
   const headers = { accept: 'application/json' };
   if (session) Object.assign(headers, { 'X-Kid-Email': session.email, 'X-Kid-Token': session.t });
   if (body !== undefined) headers['content-type'] = 'application/json';
@@ -67,9 +50,7 @@ export async function signIn(email, pass) {
   const reply = await response.json().catch(() => ({}));
   if (!response.ok || !reply.ok) throw new ApiError(response.status, response.status === 429 ? reply.error : 'That email and password don\'t match.');
   if (reply.status !== 'approved') throw new ApiError(403, 'This account is still waiting for a parent to approve it.');
-  const session = { email: reply.email || email, t: reply.t, role: reply.role, exp: Date.now() + 7 * DAY };
-  writeSession(session);
-  return session;
+  return keepSession({ email: reply.email || email, t: reply.t, role: reply.role });
 }
 
 export async function signOut() {

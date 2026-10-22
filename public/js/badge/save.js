@@ -6,6 +6,9 @@
 //   await saveFamilyBadge(spec)                   → { spec, svg, url, icons: { 192, 512, maskable-512, apple-180 } }
 //   await uploadChannelImage(channelId, file)     → { url, width, height }
 //   await removeChannelImage(channelId)
+//
+// Each call takes an optional { email, t }; without it, the shared account session is used.
+import { accountSession } from '/js/shell/auth-dialog.js';
 
 // Sizes and padding for each icon. Maskable icons keep the badge inside the 80% safe zone; Apple
 // draws its own rounded corners over an opaque square.
@@ -16,16 +19,8 @@ export const ICONS = [
   { variant: 'apple-180', size: 180, inset: 0.08, background: '#05060A' },
 ];
 
-// The parent's session, as the rest of the app stores it.
-export function storedSession() {
-  try {
-    const session = JSON.parse(localStorage.getItem('kid-session') || 'null');
-    return session?.email && session?.t && session.exp > Date.now() ? { email: session.email, t: session.t } : null;
-  } catch { return null; }
-}
-
 function authHeaders(auth) {
-  const session = auth || storedSession();
+  const session = auth || accountSession();
   if (!session) throw new Error('Sign in as a parent first.');
   return { 'X-Kid-Email': session.email, 'X-Kid-Token': session.t };
 }

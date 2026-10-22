@@ -1,7 +1,7 @@
 // Videos: one kid at a time. Upload to that kid, rename, change the order, hide or show, delete.
 // Hidden videos leave the feed and their file stops playing for viewers; parents can still watch them.
 import { publishVideo } from '/js/server-upload-v1.js';
-import { readSession } from './api.js';
+import { accountSession } from '/js/shell/auth-dialog.js';
 import { el, button, primary, ask, field, errorLine, setBusy } from './dom.js';
 import { agoLong } from './format.js';
 import { thumb } from './review.js';
@@ -41,7 +41,7 @@ export async function render(main, ctx) {
     if (!title.value.trim()) { error.textContent = 'Give the video a name.'; title.focus(); return; }
     const done = setBusy(send, 'Uploading');
     try {
-      const clip = await publishVideo(file.files[0], title.value.trim(), readSession(), text => { progress.textContent = text; }, chosen);
+      const clip = await publishVideo(file.files[0], title.value.trim(), accountSession(), text => { progress.textContent = text; }, chosen);
       progress.textContent = '';
       form.reset();
       ctx.say(`"${clip.title || title.value}" is on ${kidName()}'s channel.`);
