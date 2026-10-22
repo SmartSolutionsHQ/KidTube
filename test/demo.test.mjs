@@ -5,8 +5,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { once } from 'node:events';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
@@ -15,71 +14,18 @@ import {
 } from '../server/demo.mjs';
 import { migrate } from '../server/schema.mjs';
 import { SEEDED_AT, buildDatabase, writeSnapshot } from '../scripts/demo-seed.mjs';
-import { ROOT } from './helpers.mjs';
+import { ROOT, cleanEnv, dump, scratch, seededDemo, startServer } from './helpers.mjs';
 import { startFamily } from './family-fixture.mjs';
 
 const HOUR = 3600000;
-const scratch = t => {
-  const dir = mkdtempSync(join(tmpdir(), 'kidtube-demo-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return dir;
-};
-
-// Every table, every row, in a stable order: what "exactly" means for a reset.
-function dump(sqlite) {
-  const out = {};
-  for (const { name } of sqlite.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all()) {
-    out[name] = sqlite.prepare(`SELECT * FROM "${name}"`).all().map(row => JSON.stringify(row, (key, value) => typeof value === 'bigint' ? String(value) : value)).sort();
-  }
-  out.triggers = sqlite.prepare("SELECT name, sql FROM sqlite_schema WHERE type='trigger' ORDER BY name").all().map(row => row.sql);
-  return out;
-}
-
-// A data folder with a snapshot in it (no clips), as `npm run demo:seed` leaves one.
-async function seeded(t) {
-  const dir = scratch(t);
-  const dataDir = join(dir, 'data');
-  mkdirSync(dataDir);
-  await writeSnapshot(join(dataDir, 'demo-snapshot'), { render: false });
-  return { dir, dataDir, database: join(dataDir, 'kidtube.sqlite') };
-}
 
 // The server in a scratch folder, as `DEMO_MODE=1 npm start` runs it.
-async function startServer(t, dir, env = {}) {
-  const base = { ...process.env };
-  for (const key of ['DATABASE_PATH', 'DATA_DIR', 'DEMO_MODE', 'DEMO_RESET_MINUTES', 'DEMO_SNAPSHOT_DIR', 'SITE_URL', 'MAIL_MODE']) delete base[key];
-  const child = spawn(process.execPath, [join(ROOT, 'server/index.mjs')], {
-    cwd: dir, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...base, PORT: '0', HOST: '127.0.0.1', PUBLIC_DIR: join(ROOT, 'public'), DATABASE_PATH: join(dir, 'data/kidtube.sqlite'), ...env },
-  });
-  let logs = '';
-  child.stderr.on('data', chunk => { logs += chunk; });
-  child.stdout.on('data', chunk => { logs += chunk; });
-  t.after(async () => { child.kill(); await once(child, 'exit').catch(() => {}); });
-  const port = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Startup timeout ' + logs)), 10000);
-    child.stdout.on('data', chunk => {
-      const match = /listening on (\d+)/.exec(String(chunk));
-      if (match) { clearTimeout(timer); resolve(match[1]); }
-    });
-    child.once('exit', code => { clearTimeout(timer); reject(Object.assign(new Error(logs), { code })); });
-  });
-  const origin = `http://127.0.0.1:${port}`;
-  const call = (path, { body, method, headers = {} } = {}) => fetch(origin + path, {
-    method: method || (body === undefined ? 'GET' : 'POST'),
-    headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  return { origin, call, logs: () => logs };
-}
+const demoServer = (t, dir, env = {}) => startServer(t, { cwd: dir, env: cleanEnv({ DATABASE_PATH: join(dir, 'data/kidtube.sqlite'), ...env }) });
 
 // Runs the server until it exits on its own, for the refusals.
 async function failedStart(dir, env) {
-  const base = { ...process.env };
-  for (const key of ['DATABASE_PATH', 'DATA_DIR', 'DEMO_MODE', 'DEMO_SNAPSHOT_DIR']) delete base[key];
   const child = spawn(process.execPath, [join(ROOT, 'server/index.mjs')], {
-    cwd: dir, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...base, PORT: '0', HOST: '127.0.0.1', PUBLIC_DIR: join(ROOT, 'public'), DATABASE_PATH: join(dir, 'data/kidtube.sqlite'), ...env },
+    cwd: dir, stdio: ['ignore', 'pipe', 'pipe'], env: cleanEnv({ DATABASE_PATH: join(dir, 'data/kidtube.sqlite'), ...env }),
   });
   let logs = '';
   child.stderr.on('data', chunk => { logs += chunk; });
@@ -168,7 +114,7 @@ test('DEMO_MODE and DEMO_RESET_MINUTES: on only when asked, and a typo stops the
 });
 
 test('the seed is deterministic', async t => {
-  const dir = scratch(t);
+  const dir = scratch(t, 'kidtube-demo-');
   const files = [join(dir, 'one.sqlite'), join(dir, 'two.sqlite')];
   for (const file of files) await buildDatabase(file);
   const [one, two] = files.map(file => { const sqlite = new DatabaseSync(file); try { return dump(sqlite); } finally { sqlite.close(); } });
@@ -212,7 +158,7 @@ test('every timestamp column in the schema is moved on reset, or named here as n
 });
 
 test('a reset puts the snapshot back exactly, moves every time forward, and keeps the triggers', async t => {
-  const { dataDir, database } = await seeded(t);
+  const { dataDir, database } = await seededDemo(t);
   const snapshot = readSnapshot(join(dataDir, 'demo-snapshot'));
   const sqlite = new DatabaseSync(database);
   t.after(() => sqlite.close());
@@ -255,7 +201,7 @@ test('a reset puts the snapshot back exactly, moves every time forward, and keep
 });
 
 test('the guard refuses a family database and a family folder, and leaves them untouched', async t => {
-  const { dataDir } = await seeded(t);
+  const { dataDir } = await seededDemo(t);
   const snapshot = readSnapshot(join(dataDir, 'demo-snapshot'));
   const sqlite = new DatabaseSync(':memory:');
   t.after(() => sqlite.close());
@@ -278,7 +224,7 @@ test('the guard refuses a family database and a family folder, and leaves them u
   const empty = new DatabaseSync(':memory:');
   t.after(() => empty.close());
   await migrate(empty);
-  const familyDir = join(scratch(t), 'data');
+  const familyDir = join(scratch(t, 'kidtube-demo-'), 'data');
   mkdirSync(join(familyDir, 'videos'), { recursive: true });
   writeFileSync(join(familyDir, 'videos', 'their-video.mp4'), 'a family video');
   assert.throws(() => guard({ sqlite: empty, dataDir: familyDir }), /belongs to a family's install/);
@@ -295,7 +241,7 @@ test('DEMO_MODE on a family install stops the server before anything is written'
 });
 
 test('demo mode without a snapshot says how to make one', async t => {
-  const dir = scratch(t);
+  const dir = scratch(t, 'kidtube-demo-');
   const result = await failedStart(dir, { DEMO_MODE: '1' });
   assert.equal(result.code, 1);
   assert.match(result.logs, /npm run demo:seed/);
@@ -331,8 +277,8 @@ test('every write works normally without DEMO_MODE', async t => {
 });
 
 test('demo mode: one-tap roles, every write refused for every role, likes and reactions only', async t => {
-  const { dir, database } = await seeded(t);
-  const server = await startServer(t, dir, { DEMO_MODE: '1' });
+  const { dir, database } = await seededDemo(t);
+  const server = await demoServer(t, dir, { DEMO_MODE: '1' });
   const db = new DatabaseSync(database);
   t.after(() => db.close());
 
@@ -410,21 +356,21 @@ test('demo mode: one-tap roles, every write refused for every role, likes and re
 });
 
 test('demo mode restores the snapshot on boot, over whatever visitors left', async t => {
-  const { dir, database } = await seeded(t);
-  let server = await startServer(t, dir, { DEMO_MODE: '1' });
+  const { dir, database } = await seededDemo(t);
+  let server = await demoServer(t, dir, { DEMO_MODE: '1' });
   const enter = await (await server.call('/api/demo/enter', { body: { role: 'grandma' } })).json();
   await server.call('/api/like', { body: { email: enter.email, t: enter.t, clipId: 'demo-juni-rocket', on: false } });
   const db = new DatabaseSync(database);
   t.after(() => db.close());
   const liked = () => db.prepare("SELECT COUNT(*) n FROM likes WHERE clip_id='demo-juni-rocket' AND email=?").get(enter.email).n;
   assert.equal(liked(), 0);
-  server = await startServer(t, dir, { DEMO_MODE: '1' });
+  server = await demoServer(t, dir, { DEMO_MODE: '1' });
   assert.equal(liked(), 1);
   assert.match(server.logs(), /restored the invented family/);
 });
 
 test('the reset script resets a running demo and refuses everything else', async t => {
-  const { dir, database } = await seeded(t);
+  const { dir, database } = await seededDemo(t);
   const run = async env => {
     const child = spawn(process.execPath, [join(ROOT, 'scripts/demo-reset.mjs')], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, DATABASE_PATH: database, DATA_DIR: '', DEMO_SNAPSHOT_DIR: '', ...env } });
@@ -435,7 +381,7 @@ test('the reset script resets a running demo and refuses everything else', async
     return { code, logs };
   };
   assert.match((await run({ DEMO_MODE: '' })).logs, /Set DEMO_MODE=1/);
-  const server = await startServer(t, dir, { DEMO_MODE: '1' });
+  const server = await demoServer(t, dir, { DEMO_MODE: '1' });
   const enter = await (await server.call('/api/demo/enter', { body: { role: 'grandma' } })).json();
   await server.call('/api/like', { body: { email: enter.email, t: enter.t, clipId: 'demo-juni-rocket', on: false } });
   const result = await run({ DEMO_MODE: '1' });
@@ -447,7 +393,7 @@ test('the reset script resets a running demo and refuses everything else', async
 });
 
 test('the seed refuses to overwrite a folder that is not a demo snapshot', async t => {
-  const dir = scratch(t);
+  const dir = scratch(t, 'kidtube-demo-');
   const target = join(dir, 'not-a-snapshot');
   mkdirSync(target);
   writeFileSync(join(target, 'keep.txt'), 'mine');
