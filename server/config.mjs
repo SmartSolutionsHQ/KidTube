@@ -1,9 +1,9 @@
+// First boot needs no .env: the data folder, the signing secret and the database are made here.
+// Every problem is an InstallError with a message a parent can act on; index.mjs prints it and exits.
 import { randomBytes } from 'node:crypto';
 import { accessSync, chmodSync, constants, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-// First boot needs no .env: the data folder, the signing secret and the database are made here.
-// Every problem is an InstallError with a message a parent can act on; index.mjs prints it and exits.
 export class InstallError extends Error {}
 
 export const DEFAULT_DATABASE = 'data/kidtube.sqlite';

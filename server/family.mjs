@@ -1,8 +1,8 @@
+// Kids and their channels: what the setup wizard and the parent dashboard create and edit.
+// Every function checks its own input and throws FamilyError with a status and a plain message.
 import { KID_PASSWORD_MIN, PASSWORD_MAX, passwordRecord } from './passwords.mjs';
 import { DEFAULT_CHANNEL_ID, channelById, listChannels } from './channels.mjs';
 
-// Kids and their channels: what the setup wizard (and later the parent dashboard) creates and edits.
-// Every function checks its own input and throws FamilyError with a status and a plain message.
 export class FamilyError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }

@@ -1,3 +1,4 @@
+// What GET /api/site and GET /api/channels answer: the front door's facts and the kids a viewer may see.
 import { canViewChannel, listChannels, publicChannel } from './channels.mjs';
 import { BRAND_NAME, ENDORSEMENT } from './brand.mjs';
 

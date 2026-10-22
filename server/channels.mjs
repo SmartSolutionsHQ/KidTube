@@ -1,3 +1,5 @@
+// Kids' channels and who may watch them: the lookups, what viewers may see about a channel, and the
+// rule for playing a clip that api.js, uploads, reactions and the watch log all follow.
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 
 export function listChannels(sqlite) {

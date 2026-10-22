@@ -1,3 +1,5 @@
+// Putting a clip live: a finished upload, or a parent's yes or no to one waiting for review. Each change
+// and the new-video emails it queues commit in one transaction.
 import { DEFAULT_CHANNEL_ID, channelById } from './channels.mjs';
 import { openCapsule } from './capsules.mjs';
 
@@ -40,8 +42,8 @@ const logReview = (sqlite, actor, clipId, detail) => sqlite.prepare(
   "INSERT INTO activity (ts,actor,kind,subject,detail) VALUES (?,?,'review',?,?)").run(Date.now(), actor, clipId, JSON.stringify(detail));
 
 // A parent says yes to a clip waiting for review: it goes live at the top of its channel and the
-// new-video email goes out, linking to #/c/<slug>/v/<id>. The dashboard (M7) calls this; so does
-// POST /api/admin/clips/review. Returns the clip's channel slug, or null when nothing was waiting.
+// new-video email goes out, linking to #/c/<slug>/v/<id>. The dashboard (monitor.mjs) calls this; so
+// does POST /api/admin/clips/review. Returns the clip's channel slug, or null when nothing was waiting.
 export function approveClip(sqlite, notifications, clipId, actor = 'system') {
   let channel = null;
   sqlite.exec('BEGIN IMMEDIATE');

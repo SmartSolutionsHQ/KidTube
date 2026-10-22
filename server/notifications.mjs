@@ -1,3 +1,5 @@
+// New-video emails: an outbox in SQLite, filled when a clip goes live and drained with retries, and the
+// signed unsubscribe link every email carries.
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { sendMail } from './mail.mjs';
 import { BRAND_NAME, WORDMARK, escapeHtml } from './brand.mjs';

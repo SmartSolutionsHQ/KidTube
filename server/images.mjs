@@ -1,8 +1,7 @@
-import { crc32 } from 'node:zlib';
-
 // Parent pictures and home-screen icons: PNG, JPEG or WebP picked by their bytes (never the name or the
 // Content-Type), size-capped, and rebuilt from only the parts that draw the picture, so camera EXIF,
 // GPS, XMP, comments, colour profiles, thumbnails and anything appended after the image are dropped.
+import { crc32 } from 'node:zlib';
 
 export const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
 const MAX_IMAGE_SIDE = 4096;

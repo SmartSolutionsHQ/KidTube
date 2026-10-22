@@ -1,3 +1,6 @@
+// Setup mode: until an owner (role 'super') exists, the app only serves the wizard. A one-time code
+// printed at boot and written to DATA_DIR/setup-token proves the person claiming the install can see
+// the server. After the claim, every wizard step uses the owner's normal session.
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { isIP } from 'node:net';
@@ -10,10 +13,6 @@ import { HttpError, headerStaff, readJson, sendJson } from './jsonio.mjs';
 import { sendMail } from './mail.mjs';
 import { PASSWORD_MAX, PASSWORD_MIN, passwordRecord } from './passwords.mjs';
 import { SettingError } from './settings.mjs';
-
-// Setup mode: until an owner (role 'super') exists, the app only serves the wizard. A one-time code
-// printed at boot and written to DATA_DIR/setup-token proves the person claiming the install can see
-// the server. After the claim, every wizard step uses the owner's normal session.
 
 // Crockford's base32: no I, L, O or U. People still type O for 0 and I or L for 1, so input is folded
 // back before comparing. 20 symbols of 5 bits each make 100 bits.

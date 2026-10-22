@@ -1,3 +1,4 @@
+// Password hashing (scrypt with a random salt) and the length rules every account follows.
 import { scrypt as derive, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 const scrypt = promisify(derive);

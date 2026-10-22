@@ -1,9 +1,9 @@
+// Splash themes are folders under public/themes. Only first-party folders shipped with the app are
+// listed; nothing is fetched from elsewhere. See docs/THEMES.md for the contract.
 import { createHash } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
-// Splash themes are folders under public/themes. Only first-party folders shipped with the app are
-// listed; nothing is fetched from elsewhere. See docs/THEMES.md for the contract.
 export const CONTRACT = 1;
 export const FALLBACK = 'glass-gate';
 // The launch set keeps this order in galleries; themes added later follow by name.

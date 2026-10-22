@@ -1,3 +1,6 @@
+// Badges, parent pictures and home-screen icons live under DATA_DIR/brand: family/* for the family's
+// badge and icons, channels/<id>/* for each kid. Files are named by content hash and never change, so
+// they are cached forever; index.json in each folder names the current revision of each kind.
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdirSync } from 'node:fs';
 import { mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
@@ -9,9 +12,6 @@ import { canViewChannel, channelById, channelBySlug } from './channels.mjs';
 import { ImageError, MAX_IMAGE_BYTES, cleanIcon, cleanImage, imageExtension } from './images.mjs';
 import { HttpError, headerStaff, sendJson } from './jsonio.mjs';
 
-// Badges, parent pictures and home-screen icons live under DATA_DIR/brand: family/* for the family's
-// badge and icons, channels/<id>/* for each kid. Files are named by content hash and never change, so
-// they are cached forever; index.json in each folder names the current revision of each kind.
 const ICON_SIDES = { 192: 192, 512: 512, 'maskable-512': 512, 'apple-180': 180 };
 const FILE = /^(badge|image|icon-(?:192|512|maskable-512|apple-180))-([a-f0-9]{16})\.(svg|png|jpg|webp)$/;
 const CHANNEL_ID = /^[1-9]\d{0,8}$/;
@@ -268,7 +268,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
     }
   }
 
-  // For the web app manifest (M8): the family's badge and icons, or nulls before a parent saves them.
+  // For the web app manifest (pwa.mjs): the family's badge and icons, or nulls before a parent saves them.
   async function family() {
     const index = await readIndex(familyDir);
     return {
@@ -277,7 +277,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
     };
   }
 
-  // For channel deletion (M7): drops the kid's files with the channel.
+  // For removing a kid (family.mjs): drops the kid's files with the channel.
   function removeChannel(id) {
     if (!CHANNEL_ID.test(String(id))) return Promise.resolve();
     return serialized(channelDir(id), () => rm(channelDir(id), { recursive: true, force: true }));

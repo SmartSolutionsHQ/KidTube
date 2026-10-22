@@ -1,3 +1,7 @@
+// The parent dashboard's API. Every route needs a parent's session in X-Kid-Email / X-Kid-Token, like
+// the setup and badge routes; 'super' is the owner, 'admin' a co-parent. Every change writes an activity row.
+// Where api.js already does the work (rename, reorder, delete, approvals, roles, passwords, guest codes) this
+// module calls it through api.fetch and adds the activity row, so each rule lives in one place.
 import { createHmac } from 'node:crypto';
 import { readdir, stat, statfs } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -11,11 +15,6 @@ import { HttpError, headerStaff, readJson, sendJson } from './jsonio.mjs';
 import { sendMail } from './mail.mjs';
 import { approveClip, rejectClip } from './publish.mjs';
 import { SettingError } from './settings.mjs';
-
-// The parent dashboard's API (M7). Every route needs a parent's session in X-Kid-Email / X-Kid-Token, like
-// the setup and badge routes; 'super' is the owner, 'admin' a co-parent. Every change writes an activity row.
-// Where api.js already does the work (rename, reorder, delete, approvals, roles, passwords, guest codes) this
-// module calls it through api.fetch and adds the activity row, so each rule lives in one place.
 
 const MAX_BODY = 64 * 1024;
 // Presence: a viewer's "last seen" is one activity row per person, refreshed at most every five minutes.

@@ -1,3 +1,5 @@
+// Uploads and video files: chunked uploads into DATA_DIR/incoming, one FFmpeg job at a time to a small
+// MP4 and poster in DATA_DIR/videos, and GET /api/video/<id> for viewers who may play the clip.
 import { randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';

@@ -1,3 +1,5 @@
+// Serves public/: pages with the brand filled in and their scripts and stylesheets stamped with content
+// hashes (kept forever), precompressed .br/.gz files when the browser takes them, and byte ranges.
 import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { resolve, relative, sep, extname, join } from 'node:path';

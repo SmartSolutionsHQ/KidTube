@@ -1,3 +1,5 @@
+// Opens the SQLite database (WAL, foreign keys, mode 0600 for a new file). Everything uses the
+// node:sqlite handle except api.js, which runs its SQL through DB.
 import { DatabaseSync } from 'node:sqlite';
 import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
@@ -13,7 +15,8 @@ export function openDatabase(file, { allowEmpty = false } = {}) {
   if (created) chmodSync(file, 0o600);
   sqlite.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
 
-  // The former Worker uses D1's prepare().bind().run() interface for all SQL.
+  // api.js was written for a hosted database's prepare().bind().run(); this adapter answers SELECTs with
+  // { results } and writes with { meta: { changes } }, which is all it reads.
   const DB = {
     prepare(sql) {
       return {

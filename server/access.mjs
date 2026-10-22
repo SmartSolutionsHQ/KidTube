@@ -1,3 +1,5 @@
+// The signed kid_access cookie: who a browser is (an approved account or a guest pass). Requests that
+// cannot carry a session token, such as <video> and poster loads, are checked with it.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 const hmac = (env, text) => createHmac('sha256',env.SIGN_SECRET).update(text).digest('hex');
 export function mediaCookie(env, session, maxAge=7*86400) {
