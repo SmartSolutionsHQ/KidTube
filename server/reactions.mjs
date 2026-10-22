@@ -8,7 +8,7 @@ import { sealedFor } from './capsules.mjs';
 
 export const KINDS = ['wow', 'flame', 'star', 'party', 'cool'];
 export const RATE_LIMIT = 60;
-export const RATE_WINDOW_MS = 60 * 1000;
+const RATE_WINDOW_MS = 60 * 1000;
 
 export function createReactions({ sqlite, env, now = Date.now }) {
   // Per account: 60 writes a minute is far beyond tapping, well under a script.

@@ -31,19 +31,19 @@ export class DemoError extends Error {}
 export const DEMO_MARKER = 'kidtube-demo-v1';
 // The marker lives in the settings table under a key settings.mjs does not know, so no screen shows it.
 export const MARKER_KEY = 'demo_marker';
-export const FOLDER_MARKER = 'demo-mode.json';
+const FOLDER_MARKER = 'demo-mode.json';
 export const SNAPSHOT_META = 'demo.json';
 export const SNAPSHOT_DATABASE = 'demo.sqlite';
 export const SNAPSHOT_FILES = 'files';
 // Rewritten by every reset, so the running server sees a reset made by scripts/demo-reset.mjs and drops
 // every visitor's sandbox with it.
-export const RESET_STAMP = 'demo-last-reset.json';
+const RESET_STAMP = 'demo-last-reset.json';
 // The folders under DATA_DIR the snapshot fills. Restores add and replace files there, never delete.
-export const FILE_ROOTS = ['videos', 'brand'];
-export const DEFAULT_RESET_MINUTES = 60;
+const FILE_ROOTS = ['videos', 'brand'];
+const DEFAULT_RESET_MINUTES = 60;
 // The README's install section, from package.json's repository, so a rename never has to touch this file.
 // DEMO_INSTALL_URL overrides it (a landing page, say).
-export const INSTALL_URL = (() => {
+const INSTALL_URL = (() => {
   try {
     const { repository } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
     return `${String(repository.url || repository).replace(/^git\+/, '').replace(/\.git$/, '')}#install-in-three-lines`;
@@ -109,7 +109,7 @@ const BANNER_SCRIPT = '/js/shell/demo-banner.js';
 const BANNER_STYLE = '/css/demo.css';
 // "Make your own kid's page" (public/js/demo/make.js). Its page lives here, not in public/, so a family's
 // install has no such page at all.
-export const MAKE_PATH = '/demo/make';
+const MAKE_PATH = '/demo/make';
 const MAKE_PAGE = new URL('./demo-make.html', import.meta.url);
 
 const MINUTE = 60000;
@@ -222,7 +222,7 @@ export async function prepareBase(snapshot, dataDir) {
 
 // Copies every snapshot file that is missing or different into DATA_DIR, each through a temporary
 // name so a reader never sees half a file. Returns how many it wrote.
-export function syncFiles(snapshot, dataDir) {
+function syncFiles(snapshot, dataDir) {
   let written = 0;
   for (const [rel, hash] of Object.entries(snapshot.meta.files)) {
     const target = join(dataDir, rel);
@@ -245,7 +245,7 @@ const quote = name => `"${String(name).replace(/"/g, '""')}"`;
 // every timestamp forward by `shift` ms. Triggers are set aside inside the transaction (the first
 // channel's guard would refuse the delete) and put back before it commits, so no reader ever sees a
 // database without them, or half a reset. Synchronous: nothing else runs on this connection meanwhile.
-export function restoreDatabase(sqlite, baseFile, { shift = 0 } = {}) {
+function restoreDatabase(sqlite, baseFile, { shift = 0 } = {}) {
   sqlite.prepare('ATTACH DATABASE ? AS demo_base').run(baseFile);
   try {
     const marker = sqlite.prepare('SELECT value FROM demo_base.settings WHERE key=?').get(MARKER_KEY);

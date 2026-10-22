@@ -13,10 +13,10 @@ const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const HANDLE = /^[a-z][a-z0-9-]{1,23}$/;
 const ACCENT = /^#[0-9a-f]{6}$/i;
 // /brand/family.svg is the family badge, so a channel called "family" would be shadowed by it.
-export const RESERVED_SLUGS = new Set(['family']);
+const RESERVED_SLUGS = new Set(['family']);
 
 export const kidEmail = handle => `${handle}@${KID_DOMAIN}`;
-export const handleOf = email => String(email || '').endsWith('@' + KID_DOMAIN) ? email.slice(0, -KID_DOMAIN.length - 1) : '';
+const handleOf = email => String(email || '').endsWith('@' + KID_DOMAIN) ? email.slice(0, -KID_DOMAIN.length - 1) : '';
 
 // "Zoë Ann" → "zoe-ann". Never empty, never reserved; the caller makes it unique.
 export function slugFrom(name) {

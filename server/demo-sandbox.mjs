@@ -32,7 +32,7 @@ export const SANDBOX_LIMITS = Object.freeze({
 });
 // A made kid's channel: id 900000001 and slug my-kid-1, out of the way of any real channel.
 export const CREATED_BASE_ID = 900000000;
-export const createdSlug = n => `my-kid-${n}`;
+const createdSlug = n => `my-kid-${n}`;
 const CREATED_SLUG = /^my-kid-([1-9])$/;
 const ID = /^[A-Za-z0-9_-]{22}$/;
 const ACCENT = /^#[0-9a-f]{6}$/i;

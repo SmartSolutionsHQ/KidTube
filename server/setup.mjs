@@ -19,9 +19,9 @@ import { SettingError } from './settings.mjs';
 // back before comparing. 20 symbols of 5 bits each make 100 bits.
 export const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const GROUPS = 4, GROUP = 5;
-export const FAIL_WINDOW = 10 * 60 * 1000;
-export const FAILS_PER_IP = 5;
-export const FAILS_TOTAL = 30;
+const FAIL_WINDOW = 10 * 60 * 1000;
+const FAILS_PER_IP = 5;
+const FAILS_TOTAL = 30;
 // While there is no owner these still answer; every other API says 503 {setup:true}.
 const OPEN_APIS = new Set(['/api/health', '/api/site', '/api/themes']);
 const PAGES = new Set(['/', '/parents', '/about']);
@@ -64,7 +64,7 @@ export function addressKey(ip) {
 }
 
 // The origin a browser on this request would send: the socket's scheme (or the trusted proxy's) and Host.
-export function requestOrigin(req) {
+function requestOrigin(req) {
   const forwarded = process.env.TRUST_PROXY === '1' && String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
   const proto = forwarded === 'https' || forwarded === 'http' ? forwarded : req.socket.encrypted ? 'https' : 'http';
   return req.headers.host ? `${proto}://${req.headers.host}` : '';

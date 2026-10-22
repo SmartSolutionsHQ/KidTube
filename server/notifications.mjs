@@ -8,7 +8,7 @@ const MAX_ATTEMPTS = 8;
 
 // Links open the clip on its kid's channel; a clip announced before channels existed keeps the old form,
 // which the viewer resolves through /api/clips/locate.
-export function watchLink(clip, siteUrl) {
+function watchLink(clip, siteUrl) {
   const slug = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(clip.channel || '') ? `c/${clip.channel}/` : '';
   return new URL(`/#/${slug}v/${encodeURIComponent(clip.id)}`, siteUrl).href;
 }

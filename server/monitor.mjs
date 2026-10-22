@@ -19,11 +19,11 @@ import { SettingError } from './settings.mjs';
 
 const MAX_BODY = 64 * 1024;
 // Presence: a viewer's "last seen" is one activity row per person, refreshed at most every five minutes.
-export const SEEN_EVERY = 5 * 60 * 1000;
+const SEEN_EVERY = 5 * 60 * 1000;
 const DAY = 86400000;
 const FEED_KINDS = ['review', 'upload', 'comment', 'people', 'guest', 'kids', 'videos', 'settings'];
 // Settings a parent may change from the dashboard; the rest belong to setup or the environment.
-export const EDITABLE = ['site_name', 'site_tagline', 'family_accent', 'gate_theme', 'kids_public', 'signup_mode',
+const EDITABLE = ['site_name', 'site_tagline', 'family_accent', 'gate_theme', 'kids_public', 'signup_mode',
   'guest_passes', 'comments_default', 'review_uploads_default', 'splash_sound', 'views_retention_days',
   'activity_retention_days', 'mail_mode', 'brevo_api_key', 'sender_email', 'notify_email', 'site_url'];
 
@@ -84,7 +84,7 @@ export function describeActivity(row, { names = () => '', kids = () => '' } = {}
   }
 }
 
-export const SETTING_NAMES = {
+const SETTING_NAMES = {
   site_name: 'family name', site_tagline: 'tagline', family_accent: 'family color', gate_theme: 'front door splash',
   kids_public: 'front door names', signup_mode: 'new viewers', guest_passes: 'guest codes',
   comments_default: 'comments', review_uploads_default: 'upload review for new kids', splash_sound: 'splash sound',
@@ -145,15 +145,8 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
   // Called for the shell's /api/me and the feed's /api/clips: who the cookie names, at most every five minutes.
   function touch(req) {
     const who = cookieViewer(req, sqlite, env);
-    if (!who) return;
-    let subject = who.email;
-    if (who.role === 'guest') {
-      try {
-        const value = (req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('kid_access=')).slice(11);
-        const session = JSON.parse(Buffer.from(value.split('.')[0], 'base64url'));
-        subject = 'guest:' + hmac('guest-session|' + session.guest).slice(0, 12);
-      } catch { return; }
-    }
+    // A guest pass is named the way the watch log names it, without its token.
+    const subject = who?.role === 'guest' ? `guest:${who.guestId}` : who?.email;
     if (!subject) return;
     const at = now();
     if ((seen.get(subject) || 0) > at - SEEN_EVERY) return;
@@ -175,14 +168,10 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
     for (const table of ['hits', 'chits', 'guest_code_attempts']) sqlite.prepare(`DELETE FROM ${table} WHERE ts < ?`).run(before);
   }
 
-  // Activity and watch history older than the family's settings go, at boot and once a day.
+  // Activity older than the family's setting goes, at boot and once a day. watch.mjs prunes watch history.
   function prune() {
     pruneAddresses();
-    const at = now();
-    sqlite.prepare('DELETE FROM activity WHERE ts < ?').run(at - settings.get('activity_retention_days') * DAY);
-    const columns = sqlite.prepare('PRAGMA table_info(views)').all().map(column => column.name);
-    const time = columns.includes('started') ? 'started' : columns.includes('ts') ? 'ts' : null;
-    if (time) sqlite.prepare(`DELETE FROM views WHERE ${time} < ?`).run(at - settings.get('views_retention_days') * DAY);
+    sqlite.prepare('DELETE FROM activity WHERE ts < ?').run(now() - settings.get('activity_retention_days') * DAY);
   }
 
   /* ---------- counts and storage ---------- */
@@ -318,8 +307,8 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
         family: { name: site.site_name, accent: site.family_accent, siteUrl: site.site_url, guestPasses: site.guest_passes,
           comments: site.comments_default, signupMode: site.signup_mode, kidsPublic: site.kids_public, viewsDays: site.views_retention_days },
         counts: counts(user.role),
-        // Watch history arrives with the launch-story milestone's views table (it has a started column).
-        features: { views: sqlite.prepare('PRAGMA table_info(views)').all().some(column => column.name === 'started') },
+        // Every install has watch history since schema v4; the pages still ask before showing it.
+        features: { views: true },
         kids: listChannels(sqlite).map(row => ({ id: row.id, slug: row.slug, name: row.name, accent: row.accent || site.family_accent,
           logoUrl: row.logo_rev ? `/brand/${row.slug}.svg?v=${row.logo_rev}` : null })),
       };

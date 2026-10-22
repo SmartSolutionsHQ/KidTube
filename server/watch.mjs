@@ -10,13 +10,13 @@ import { CLIP_ACCESS_SQL, canPlayClip, isClipId, isStaff } from './channels.mjs'
 import { sealedFor } from './capsules.mjs';
 import { SERVER_TIMEZONE } from './settings.mjs';
 
-export const BUDGET_CHOICES = [0, 15, 30, 45, 60, 90, 120, 180];
-export const BONUS_MIN = 15;
-export const BONUS_MAX = 120;
+const BUDGET_CHOICES = [0, 15, 30, 45, 60, 90, 120, 180];
+const BONUS_MIN = 15;
+const BONUS_MAX = 120;
 export const BEAT_SLACK_S = 2;
 // A view starts after a few seconds of play; those seconds count too, up to this many.
-export const START_CREDIT_S = 5;
-export const PRUNE_MS = 24 * 60 * 60 * 1000;
+const START_CREDIT_S = 5;
+const PRUNE_MS = 24 * 60 * 60 * 1000;
 const START_LIMIT = 240;
 const VIEW_OPEN_MS = 12 * 60 * 60 * 1000;
 const MINUTE = 60000;

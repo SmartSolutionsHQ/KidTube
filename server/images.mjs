@@ -5,7 +5,7 @@ import { crc32 } from 'node:zlib';
 // GPS, XMP, comments, colour profiles, thumbnails and anything appended after the image are dropped.
 
 export const MAX_IMAGE_BYTES = 2 * 1024 * 1024;
-export const MAX_IMAGE_SIDE = 4096;
+const MAX_IMAGE_SIDE = 4096;
 
 export class ImageError extends Error {}
 const fail = message => { throw new ImageError(message); };
@@ -13,7 +13,6 @@ const fail = message => { throw new ImageError(message); };
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const TYPES = { png: 'image/png', jpeg: 'image/jpeg', webp: 'image/webp' };
 const EXTENSIONS = { png: 'png', jpeg: 'jpg', webp: 'webp' };
-export const imageType = kind => TYPES[kind];
 export const imageExtension = kind => EXTENSIONS[kind];
 
 export function sniff(bytes) {

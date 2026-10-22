@@ -187,9 +187,3 @@ export function createStatic(publicDir) {
   };
   return sendFile;
 }
-
-const senders = new Map();
-export function sendFile(publicDir, req, res, pathname) {
-  if (!senders.has(publicDir)) senders.set(publicDir, createStatic(publicDir));
-  senders.get(publicDir)(req, res, pathname);
-}

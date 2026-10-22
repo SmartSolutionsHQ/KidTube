@@ -7,8 +7,8 @@ import { isClipId, isStaff } from './channels.mjs';
 
 export const MIN_LEAD_MS = 60 * 60 * 1000;
 export const MAX_LEAD_MS = Math.round(25 * 365.25 * 86400000);
-export const NOTE_MAX = 140;
-export const TICK_MS = 60 * 1000;
+const NOTE_MAX = 140;
+const TICK_MS = 60 * 1000;
 
 // opensAt in ms: at least an hour and at most 25 years away, on a whole minute. The note is optional.
 export function validateSeal(opensAt, note, now = Date.now()) {

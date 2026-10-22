@@ -73,7 +73,7 @@ export function runProcess(command, args, { timeoutMs, stallMs, onStdout = () =>
 // Input options for every file FFmpeg opens. An upload is only ever a local file in a container phones make
 // (MP4/MOV/M4V/3GP or WebM/MKV), so playlists, concat lists, other protocols and every other demuxer are
 // refused before FFmpeg follows anything inside them.
-export const INPUT_GUARD = ['-protocol_whitelist', 'file', '-format_whitelist', 'mov,mp4,m4a,3gp,3g2,mj2,matroska,webm'];
+const INPUT_GUARD = ['-protocol_whitelist', 'file', '-format_whitelist', 'mov,mp4,m4a,3gp,3g2,mj2,matroska,webm'];
 
 export async function probe(file) {
   const { stdout } = await execFileAsync('ffprobe', [
