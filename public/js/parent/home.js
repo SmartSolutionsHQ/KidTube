@@ -27,20 +27,22 @@ export async function render(main, ctx) {
     ctx.api.get('/api/admin/review'),
     ctx.api.get('/api/admin/activity?limit=10'),
     ctx.api.get('/api/admin/storage').catch(() => null),
-    owner ? ctx.api.maybe('/api/admin/views?limit=5').then(data => watchState(data)).catch(() => null) : null,
+    owner && ctx.summary.features?.views ? ctx.api.maybe('/api/admin/views?limit=5').then(data => watchState(data)).catch(() => null) : null,
   ]);
-  const { counts } = await ctx.refresh();
-  const cards = el('div', { class: 'kd-cards' },
+  const cards = el('div', { class: 'kd-cards' });
+  const paintCards = ({ counts }) => cards.replaceChildren(
     card(counts.review, countLine('review', counts.review), '#/review', counts.review > 0),
     card(counts.comments, countLine('comments', counts.comments), '#/comments', counts.comments > 0),
-    owner ? card(counts.people, countLine('people', counts.people), '#/people', counts.people > 0) : null,
-    storage ? card(bytes(storage.free), 'free for videos', null, false) : null);
+    owner ? card(counts.people, countLine('people', counts.people), '#/people', counts.people > 0) : '',
+    storage ? card(bytes(storage.free), 'free for videos', null, false) : '');
+  paintCards(await ctx.refresh());
+  const done = () => ctx.refresh().then(paintCards).catch(() => {});
 
   const waiting = queue.clips.slice(0, 3);
   const left = el('div', { class: 'kd-section' },
     el('h2', {}, 'Waiting for review'),
     waiting.length
-      ? el('ul', { class: 'kd-rows' }, ...waiting.map((clip, i) => reviewItem(clip, ctx, { lead: i === 0, onDone: () => ctx.refresh().catch(() => {}) })))
+      ? el('ul', { class: 'kd-rows' }, ...waiting.map((clip, i) => reviewItem(clip, ctx, { lead: i === 0, onDone: done })))
       : el('p', { class: 'kp-small' }, 'Nothing waiting. New uploads from kids show up here.'),
     queue.clips.length > waiting.length ? el('p', {}, el('a', { href: '#/review' }, `See all ${queue.clips.length} waiting`)) : null,
     el('h2', {}, 'Recent activity'),

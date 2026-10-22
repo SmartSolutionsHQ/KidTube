@@ -9,7 +9,7 @@ export function qrImage(text, label) {
   const qr = encodeQr(text);
   const span = qr.size + 8;
   return svg('svg', { class: 'kd-qr', viewBox: `0 0 ${span} ${span}`, role: 'img', 'aria-label': label, 'shape-rendering': 'crispEdges' },
-    svg('rect', { width: span, height: span }), svg('path', { d: qrPath(qr) }));
+    svg('rect', { width: span, height: span, fill: '#FFFFFF' }), svg('path', { d: qrPath(qr), fill: '#0B0C10' }));
 }
 
 function badgeFor(kid) {
@@ -28,6 +28,7 @@ function describe(code) {
     active: `In use. Watching ends ${until(code.sessionExpires)}.${code.lastUsed ? ` Last used ${agoLong(code.lastUsed)}.` : ''}`,
     ended: `Ended${code.lastUsed ? `. Last used ${agoLong(code.lastUsed)}` : ''}.`,
     expired: 'Never used. It has run out.',
+    cancelled: 'Cancelled before anyone used it.',
   }[code.state];
   return { title: code.note ? `For ${code.note}` : 'Guest code', line: `${scope} · ${made}`, state };
 }
@@ -42,7 +43,7 @@ export async function render(main, ctx) {
   const kid = el('select', { class: 'kp-input kd-select' }, el('option', { value: '' }, 'All kids'),
     ...ctx.kids.map(entry => el('option', { value: entry.slug }, `${entry.name} only`)));
   const error = errorLine('kd-guest-error');
-  const make = primary('Make a code');
+  const make = primary('Make a code', null, { type: 'submit' });
   const form = el('form', { class: 'kd-upload', novalidate: true },
     el('h2', { class: 'kp-heading' }, 'New guest code'),
     el('div', { class: 'kp-grid-2' }, field('Who is it for?', note, 'Only you see this. Optional.'), field('Which kids can they watch?', kid)),

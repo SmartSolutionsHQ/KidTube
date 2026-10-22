@@ -21,7 +21,7 @@ export async function render(main, ctx) {
     const titleId = `kd-comment-${comment.id}`;
     const item = el('li', { class: 'kd-item kd-item-plain', 'aria-labelledby': titleId });
     const act = (action, label) => async () => {
-      if (action === 'delete' && !await ask({ title: 'Delete this comment?', body: `"${comment.body.slice(0, 120)}" by ${comment.name}. This can't be undone.`, confirm: 'Delete it', danger: true })) return;
+      if (action === 'delete' && !await ask({ title: 'Delete this comment?', body: `${comment.name} wrote "${comment.body.slice(0, 120)}". This can't be undone.`, confirm: 'Delete it', danger: true })) return;
       try {
         await ctx.api.post('/api/admin/comments/moderate', { id: comment.id, action });
         ctx.say(label);

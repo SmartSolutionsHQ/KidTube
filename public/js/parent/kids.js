@@ -28,17 +28,18 @@ function art(kid, size = 52) {
   return box;
 }
 
-export async function render(main, ctx, { open = null } = {}) {
+export async function render(main, ctx, { open = null, focus = null } = {}) {
   editor?.dispose();
   editor = null;
   const [{ kids, reviewDefault }, registry] = await Promise.all([ctx.api.get('/api/admin/kids'), loadRegistry().catch(() => ({ themes: [] }))]);
   const themeNames = new Map(registry.themes.map(theme => [theme.id, theme.name]));
   const listHost = el('ol', { class: 'kd-rows' });
   const editorHost = el('div', {});
-  const redraw = async (message, openId) => {
+  // Redraws the tab; focus goes to the kid named (their row), the editor when one opens, or the heading.
+  const redraw = async (message, openId, focusId) => {
     if (message) ctx.say(message);
     await ctx.refresh().catch(() => {});
-    await render(main, ctx, { open: openId });
+    await render(main, ctx, { open: openId, focus: focusId });
   };
 
   const summary = kid => [
@@ -50,7 +51,7 @@ export async function render(main, ctx, { open = null } = {}) {
   async function move(index, step) {
     const order = kids.map(kid => kid.id);
     [order[index], order[index + step]] = [order[index + step], order[index]];
-    try { await ctx.api.post('/api/admin/kids/order', { order }); await redraw('Order saved. The front door shows the kids in this order.'); }
+    try { await ctx.api.post('/api/admin/kids/order', { order }); await redraw('Order saved. The front door shows the kids in this order.', null, kids[index].id); }
     catch (problem) { ctx.say(problem.message, 'bad'); }
   }
 
@@ -64,7 +65,7 @@ export async function render(main, ctx, { open = null } = {}) {
       down.disabled = i === kids.length - 1;
       const edit = button('Edit', () => openEditor(kid), described);
       if (editor?.kid?.id === kid.id) edit.disabled = true;
-      return el('li', { class: 'kd-item', 'aria-labelledby': nameId }, art(kid),
+      return el('li', { class: 'kd-item', 'aria-labelledby': nameId, 'data-kid': String(kid.id) }, art(kid),
         el('div', { class: 'kd-item-main' }, el('div', { class: 'kd-item-text' }, el('strong', { id: nameId }, kid.name), el('span', {}, summary(kid))),
           el('div', { class: 'kd-buttons' }, edit, up, down)));
     }));
@@ -191,7 +192,7 @@ export async function render(main, ctx, { open = null } = {}) {
           catch (problem) { done(); error.textContent = `Saved ${kidName}, but not the badge: ${problem.message}`; return; }
         }
         done();
-        await redraw(kid ? `Saved ${kidName}.` : `Added ${kidName}.`);
+        await redraw(kid ? `Saved ${kidName}.` : `Added ${kidName}.`, null, saved.id);
       } catch (problem) { done(); error.textContent = problem.message; }
     }
 
@@ -228,6 +229,9 @@ export async function render(main, ctx, { open = null } = {}) {
     el('div', {}, button('Add a kid', () => openEditor(null))),
     editorHost);
   paintList();
-  if (open) { const kid = kids.find(entry => entry.id === open); if (kid) openEditor(kid); }
+  const opening = open && kids.find(entry => entry.id === open);
+  if (opening) openEditor(opening);
+  else if (focus != null) (listHost.querySelector(`[data-kid="${focus}"] button:not(:disabled)`) || main.querySelector('h1')).focus();
+  else if (editor === null && main.contains(document.activeElement) === false && document.activeElement === document.body) main.querySelector('h1').focus();
   return () => { editor?.dispose(); editor = null; };
 }

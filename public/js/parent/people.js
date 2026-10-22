@@ -11,7 +11,14 @@ const disposers = [];
 export async function render(main, ctx) {
   for (const d of disposers.splice(0)) d();
   const { people } = await ctx.api.get('/api/admin/people');
-  const reload = async message => { if (message) ctx.say(message); ctx.refresh().catch(() => {}); await render(main, ctx); };
+  // Redraws the tab and puts focus back on the same person (or the heading when they are gone).
+  const reload = async (message, email) => {
+    if (message) ctx.say(message);
+    ctx.refresh().catch(() => {});
+    await render(main, ctx);
+    const row = email && [...main.querySelectorAll('[data-person]')].find(node => node.dataset.person === email);
+    (row?.querySelector('button, select') || main.querySelector('h1')).focus();
+  };
   let leadUsed = false;
 
   function person(p) {
@@ -22,12 +29,12 @@ export async function render(main, ctx) {
       p.lastSeen ? `last seen ${agoLong(p.lastSeen)}` : 'not seen yet'];
     const buttons = el('div', { class: 'kd-buttons' });
     const panel = el('div', { class: 'kd-item-main', hidden: true });
-    const item = el('li', { class: 'kd-item kd-item-plain', 'aria-labelledby': nameId },
+    const item = el('li', { class: 'kd-item kd-item-plain', 'aria-labelledby': nameId, 'data-person': p.email },
       el('div', { class: 'kd-item-main' },
         el('div', { class: 'kd-item-text' }, el('strong', { id: nameId }, p.name, me ? ' (you)' : ''), el('span', {}, detail.join(' · '))),
         buttons, panel));
     const post = async (path, body, message) => {
-      try { await ctx.api.post(path, { target: p.email, ...body }); await reload(message); } catch (problem) { ctx.say(problem.message, 'bad'); }
+      try { await ctx.api.post(path, { target: p.email, ...body }); await reload(message, path.endsWith('/delete') ? null : p.email); } catch (problem) { ctx.say(problem.message, 'bad'); }
     };
     if (p.status === 'pending') {
       const make = leadUsed ? button : primary;

@@ -37,8 +37,12 @@ async function send(method, path, body) {
   } catch { throw new ApiError(0, OFFLINE); }
   const data = await response.json().catch(() => null);
   if (!response.ok || !data?.ok) {
-    const error = new ApiError(response.status, data?.error || `Something went wrong (${response.status}). Try again.`);
-    if (response.status === 403 && /sign in/i.test(error.message)) api.onSignedOut?.();
+    // The server refuses changes sent from anywhere but the family's web address, with no body.
+    const moved = response.status === 403 && !data && method !== 'GET';
+    const error = new ApiError(response.status, data?.error || (moved
+      ? 'Changes only work from the family\'s web address. Open the dashboard there and sign in.'
+      : `Something went wrong (${response.status}). Try again.`));
+    if (response.status === 403 && data && /sign in/i.test(error.message)) api.onSignedOut?.();
     throw error;
   }
   return data;

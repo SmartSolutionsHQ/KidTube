@@ -33,7 +33,8 @@ export async function render(main, ctx) {
 
   async function load(older) {
     more.disabled = true;
-    const data = await ctx.api.maybe(viewsQuery({ channel: kid.value, viewer: viewer.value, before: older ? next : null }));
+    // Before the watch-history milestone lands there is no route to ask, so nothing is requested.
+    const data = ctx.summary.features?.views ? await ctx.api.maybe(viewsQuery({ channel: kid.value, viewer: viewer.value, before: older ? next : null })) : null;
     const state = watchState(data);
     rows = older ? rows.concat(state.rows) : state.rows;
     next = state.next;

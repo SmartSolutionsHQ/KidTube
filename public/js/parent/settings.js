@@ -92,13 +92,6 @@ export async function render(main, ctx) {
   controls.mail_mode = mail.value;
   const key = el('input', { class: 'kp-input kp-input-mono', type: 'password', autocomplete: 'off', placeholder: value('brevo_api_key') ? 'Saved. Paste a new key to replace it.' : '', disabled: locked('brevo_api_key') });
   controls.brevo_api_key = () => key.value.trim();
-  const mailFields = el('div', { class: 'kp-grid-2' },
-    field('Brevo API key', key, lockNote('brevo_api_key')),
-    field('Send from', text('sender_email', { type: 'email', autocomplete: 'off' }), lockNote('sender_email') || 'An address you verified in Brevo.'),
-    field('Send notices to', text('notify_email', { type: 'email', autocomplete: 'email' }), lockNote('notify_email') || 'Where sign-up requests go.'));
-  const syncMail = () => { mailFields.hidden = mail.value() !== 'brevo'; };
-  mail.node.addEventListener('change', syncMail);
-  syncMail();
   const testResult = el('p', { class: 'kp-small', 'aria-live': 'polite' });
   const test = button('Send a test email', async () => {
     const done = setBusy(test, 'Sending');
@@ -107,9 +100,17 @@ export async function render(main, ctx) {
     done();
   });
 
+  const mailFields = el('div', { class: 'kp-grid-2' },
+    field('Brevo API key', key, lockNote('brevo_api_key')),
+    field('Send from', text('sender_email', { type: 'email', autocomplete: 'off' }), lockNote('sender_email') || 'An address you verified in Brevo.'),
+    field('Send notices to', text('notify_email', { type: 'email', autocomplete: 'email' }), lockNote('notify_email') || 'Where sign-up requests go.'),
+    el('div', { class: 'kp-stack-tight' }, el('p', { class: 'kp-small' }, 'Save first, then send a test to the notice address.'), el('div', { class: 'kd-buttons' }, test), testResult));
+  const syncMail = () => { mailFields.hidden = mail.value() !== 'brevo'; };
+  mail.node.addEventListener('change', syncMail);
+  syncMail();
   /* save */
   const error = errorLine('kd-settings-error');
-  const save = primary('Save changes');
+  const save = primary('Save changes', null, { type: 'submit' });
   const form = el('form', { class: 'kp-stack', novalidate: true });
   form.addEventListener('submit', async event => {
     event.preventDefault();
@@ -147,7 +148,7 @@ export async function render(main, ctx) {
       el('div', { class: 'kp-grid-2' },
         field('Keep watch history for (days)', number('views_retention_days'), lockNote('views_retention_days')),
         field('Keep activity for (days)', number('activity_retention_days'), lockNote('activity_retention_days')))),
-    section('Email', mail.node, mailFields, el('div', { class: 'kd-buttons' }, test), testResult),
+    section('Email', mail.node, mailFields),
     error, el('div', {}, save));
 
   /* the web address: its own step, because the dashboard moves with it */

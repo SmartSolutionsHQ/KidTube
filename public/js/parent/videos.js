@@ -26,7 +26,7 @@ export async function render(main, ctx) {
   const title = el('input', { class: 'kp-input', type: 'text', maxlength: '80', autocomplete: 'off' });
   const progress = el('p', { class: 'kd-progress', 'aria-live': 'polite' });
   const error = errorLine('kd-upload-error');
-  const send = primary(`Upload to ${kidName()}`);
+  const send = primary(`Upload to ${kidName()}`, null, { type: 'submit' });
   file.addEventListener('change', () => {
     if (file.files[0] && !title.value.trim()) title.value = file.files[0].name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').slice(0, 80);
   });
@@ -52,7 +52,7 @@ export async function render(main, ctx) {
   });
 
   /* the list */
-  async function load(focusId) {
+  async function load(focusId, act = '') {
     for (const d of disposers.splice(0)) d();
     const { clips } = await ctx.api.get(`/api/admin/clips?channel=${encodeURIComponent(chosen)}`);
     if (!clips.length) {
@@ -64,7 +64,7 @@ export async function render(main, ctx) {
       const at = order.indexOf(id);
       const next = order.slice();
       [next[at], next[at + step]] = [next[at + step], next[at]];
-      try { await ctx.api.post('/api/admin/clips/order', { channel: chosen, order: next }); await load(id); ctx.say('Order saved.'); }
+      try { await ctx.api.post('/api/admin/clips/order', { channel: chosen, order: next }); await load(id, step < 0 ? 'up' : 'down'); ctx.say('Order saved.'); }
       catch (problem) { ctx.say(problem.message, 'bad'); }
     };
     list.replaceChildren(el('h2', {}, `${kidName()}'s videos (${clips.length})`),
@@ -77,15 +77,15 @@ export async function render(main, ctx) {
         const editor = el('div', { hidden: true });
         const slot = el('div', {});
         const described = { 'aria-describedby': titleId };
-        const up = button('Move up', () => move(clip.id, -1), { ...described, 'data-move': 'up' });
-        const down = button('Move down', () => move(clip.id, 1), { ...described, 'data-move': 'down' });
+        const up = button('Move up', () => move(clip.id, -1), { ...described, 'data-act': 'up' });
+        const down = button('Move down', () => move(clip.id, 1), { ...described, 'data-act': 'down' });
         up.disabled = i === 0;
         down.disabled = i === clips.length - 1;
         const rename = button('Rename', () => {
           const input = el('input', { class: 'kp-input', type: 'text', maxlength: '80', value: clip.title });
           const save = button('Save name', async () => {
             if (!input.value.trim()) { input.focus(); return; }
-            try { await ctx.api.post('/api/admin/clips/rename', { id: clip.id, title: input.value.trim() }); ctx.say('Renamed.'); await load(clip.id); }
+            try { await ctx.api.post('/api/admin/clips/rename', { id: clip.id, title: input.value.trim() }); ctx.say('Renamed.'); await load(clip.id, 'rename'); }
             catch (problem) { ctx.say(problem.message, 'bad'); }
           });
           const cancel = button('Cancel', () => { editor.hidden = true; rename.focus(); }, { class: 'kp-btn kp-btn-quiet' });
@@ -93,14 +93,15 @@ export async function render(main, ctx) {
           editor.replaceChildren(field(`New name for "${clip.title}"`, input), el('div', { class: 'kd-buttons' }, save, cancel));
           editor.hidden = false;
           input.focus();
-        }, described);
+          input.select();
+        }, { ...described, 'data-act': 'rename' });
         const hide = clip.review === 'approved' ? button(clip.hidden ? 'Show again' : 'Hide', async () => {
           try {
             await ctx.api.post('/api/admin/clips/hide', { id: clip.id, hidden: !clip.hidden });
             ctx.say(clip.hidden ? `"${clip.title}" is back in the feed.` : `"${clip.title}" is hidden. Viewers can't see or play it.`);
-            await load(clip.id);
+            await load(clip.id, 'hide');
           } catch (problem) { ctx.say(problem.message, 'bad'); }
-        }, described) : null;
+        }, { ...described, 'data-act': 'hide' }) : null;
         const remove = button('Delete', async () => {
           const sure = await ask({ title: `Delete "${clip.title}"?`, body: 'The video, its hearts and comments, and its watch history are deleted. This can\'t be undone.', confirm: 'Delete it', danger: true });
           if (!sure) return;
@@ -116,7 +117,10 @@ export async function render(main, ctx) {
             el('div', {}, el('span', { class: `kd-tag ${tone}` }, state)),
             buttons, editor, slot));
       })));
-    if (focusId) list.querySelector(`[data-clip="${CSS.escape(focusId)}"] .kd-buttons button:not(:disabled)`)?.focus();
+    if (focusId) {
+      const row = list.querySelector(`[data-clip="${CSS.escape(focusId)}"]`);
+      (row?.querySelector(`[data-act="${act}"]:not(:disabled)`) || row?.querySelector('.kd-buttons button:not(:disabled)'))?.focus();
+    }
   }
 
   kidSelect.addEventListener('change', () => {

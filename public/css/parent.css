@@ -442,6 +442,8 @@ svg.kp-avatar { border-radius: 0; background: none; }
   border-bottom: 1px solid var(--kp-line);
 }
 
+.kd-menu { min-height: 44px; }
+
 .kd-top-name {
   min-width: 0;
   overflow: hidden;
@@ -571,6 +573,7 @@ a.kd-card:hover { background: var(--kp-raised); }
 }
 
 .kd-item-plain { grid-template-columns: minmax(0, 1fr); }
+.kd-item:has(> .kd-badge-art) { grid-template-columns: 52px minmax(0, 1fr); }
 .kd-item-main { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
 .kd-item-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .kd-item-text strong { font-size: 17px; font-weight: 600; overflow-wrap: anywhere; }
@@ -671,9 +674,7 @@ a.kd-card:hover { background: var(--kp-raised); }
 
 /* guest codes */
 .kd-code { font: 500 clamp(40px, 12vw, 56px)/1 var(--tz-mono); letter-spacing: .18em; color: var(--kp-text); }
-.kd-qr { display: block; width: 168px; height: 168px; background: #fff; }
-.kd-qr path { fill: #0B0C10; }
-.kd-qr rect { fill: #fff; }
+.kd-qr { display: block; width: 168px; height: 168px; }
 .kd-new-code { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; align-items: start; }
 
 .kd-print-card {
@@ -689,10 +690,13 @@ a.kd-card:hover { background: var(--kp-raised); }
 .kd-print-card .kd-badge-art, .kd-print-card .kd-badge-art img { width: 72px; height: 72px; }
 .kd-print-card .kd-qr { grid-row: span 2; }
 .kd-print-card p { font-size: 15px; color: var(--kp-soft); }
+.kd-print-card p.kd-code { color: var(--kp-text); font-size: 40px; }
+.kd-print-card > p { grid-column: 1 / -1; }
 
 /* kid editor (the wizard's, dashboard-sized) */
 .kd-editor { display: flex; flex-direction: column; gap: 24px; }
 .kd-editor-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.kd-editor-head h2:focus, .kd-section h2:focus { outline: none; }
 .kd-field-group { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .kd-field-label { font-size: 14px; font-weight: 600; }
 .kd-badge { display: grid; grid-template-columns: 96px minmax(0, 1fr); align-items: center; gap: 16px; }
