@@ -1,4 +1,4 @@
-import { passwordRecord } from './passwords.mjs';
+import { KID_PASSWORD_MIN, PASSWORD_MAX, passwordRecord } from './passwords.mjs';
 import { DEFAULT_CHANNEL_ID, channelById, listChannels } from './channels.mjs';
 
 // Kids and their channels: what the setup wizard (and later the parent dashboard) creates and edits.
@@ -9,7 +9,6 @@ export class FamilyError extends Error {
 
 // Kid logins are ordinary accounts on a reserved top-level domain, so they can never receive email.
 export const KID_DOMAIN = 'kids.invalid';
-export const KID_PASSWORD_MIN = 8;
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 const HANDLE = /^[a-z][a-z0-9-]{1,23}$/;
 const ACCENT = /^#[0-9a-f]{6}$/i;
@@ -105,7 +104,7 @@ export function createFamily({ sqlite, themeIds = () => [], removeChannelFiles =
       handle = String(login.handle || '').trim().toLowerCase();
       if (!HANDLE.test(handle)) throw new FamilyError(400, 'Login names use 2 to 24 lowercase letters, numbers or dashes, starting with a letter.');
       pass = login.pass == null ? '' : String(login.pass);
-      if (pass && (pass.length < KID_PASSWORD_MIN || pass.length > 128)) throw new FamilyError(400, `Kid passwords need at least ${KID_PASSWORD_MIN} characters.`);
+      if (pass && (pass.length < KID_PASSWORD_MIN || pass.length > PASSWORD_MAX)) throw new FamilyError(400, `Kid passwords need at least ${KID_PASSWORD_MIN} characters.`);
     }
 
     let row = input.id == null ? null : channelById(sqlite, Number(input.id));

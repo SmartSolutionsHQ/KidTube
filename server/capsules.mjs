@@ -3,13 +3,12 @@
 // is sealed while opens_at is in the future, read from the clock on every request, so a late or missed
 // tick can never open one early. The tick only does the opening ceremony: lead the channel, announce, log.
 import { HttpError, answer, readJson, sendJson, staffFor } from './jsonio.mjs';
-import { isStaff } from './channels.mjs';
+import { isClipId, isStaff } from './channels.mjs';
 
 export const MIN_LEAD_MS = 60 * 60 * 1000;
 export const MAX_LEAD_MS = Math.round(25 * 365.25 * 86400000);
 export const NOTE_MAX = 140;
 export const TICK_MS = 60 * 1000;
-const CLIP_OK = /^[A-Za-z0-9_-]{1,80}$/;
 
 // opensAt in ms: at least an hour and at most 25 years away, on a whole minute. The note is optional.
 export function validateSeal(opensAt, note, now = Date.now()) {
@@ -123,7 +122,7 @@ export function createCapsules({ sqlite, notifications, env, now = Date.now }) {
     if (p === '/api/comments') clipId = new URL(req.url).searchParams.get('c') || '';
     else if (req.method === 'POST' && (p === '/api/comment' || p === '/api/like')) clipId = (await req.clone().json().catch(() => null))?.clipId || '';
     else if (p.startsWith('/api/media/')) clipId = sqlite.prepare('SELECT id FROM clips WHERE src=?').get(p)?.id || '';
-    if (!clipId || !CLIP_OK.test(String(clipId))) return null;
+    if (!isClipId(clipId)) return null;
     const sealed = sealedFor(sqlite, clipId, viewer, at);
     return sealed ? refusal(sealed.opensAt) : null;
   }
@@ -150,7 +149,7 @@ export function createCapsules({ sqlite, notifications, env, now = Date.now }) {
         const staff = await staffFor(env, req, who, body);
         if (!staff) throw new HttpError(403, 'Sign in as a parent.');
         const id = String(body.id || '');
-        if (!CLIP_OK.test(id)) throw new HttpError(400, 'Choose a video.');
+        if (!isClipId(id)) throw new HttpError(400, 'Choose a video.');
         sendJson(res, 200, { ok: true, clip: seal(id, body.opensAt, body.note, staff.email) });
       });
       return true;
@@ -161,7 +160,7 @@ export function createCapsules({ sqlite, notifications, env, now = Date.now }) {
         const staff = await staffFor(env, req, who, body);
         if (!staff) throw new HttpError(403, 'Sign in as a parent.');
         const id = String(body.id || '');
-        if (!CLIP_OK.test(id)) throw new HttpError(400, 'Choose a video.');
+        if (!isClipId(id)) throw new HttpError(400, 'Choose a video.');
         sendJson(res, 200, { ok: true, clip: unseal(id, staff.email) });
       });
       return true;

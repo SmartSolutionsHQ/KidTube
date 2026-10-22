@@ -2,13 +2,13 @@ import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { accountCookie, viewer } from './access.mjs';
-import { sessToken } from './api.js';
+import { isEmail, sessToken } from './api.js';
 import { BRAND_NAME, ENDORSEMENT } from './brand.mjs';
 import { checkSiteUrl, InstallError } from './config.mjs';
 import { FamilyError } from './family.mjs';
 import { HttpError, headerStaff, readJson, sendJson } from './jsonio.mjs';
 import { sendMail } from './mail.mjs';
-import { passwordRecord } from './passwords.mjs';
+import { PASSWORD_MAX, PASSWORD_MIN, passwordRecord } from './passwords.mjs';
 import { SettingError } from './settings.mjs';
 
 // Setup mode: until an owner (role 'super') exists, the app only serves the wizard. A one-time code
@@ -69,8 +69,6 @@ export function requestOrigin(req) {
   const proto = forwarded === 'https' || forwarded === 'http' ? forwarded : req.socket.encrypted ? 'https' : 'http';
   return req.headers.host ? `${proto}://${req.headers.host}` : '';
 }
-
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export function createSetup({ sqlite, settings, env, paths, family, sendFile, log = console.log }) {
   let codeHash = null;
@@ -204,8 +202,8 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
     const last = String(body.last || '').trim().slice(0, 40);
     const email = String(body.email || '').trim().toLowerCase();
     if (!first) throw new HttpError(400, 'Add your first name.');
-    if (!EMAIL.test(email) || email.length >= 120) throw new HttpError(400, 'Use your email address.');
-    if (typeof body.pass !== 'string' || body.pass.length < 12 || body.pass.length > 128) throw new HttpError(400, 'Use a password of 12 to 128 characters.');
+    if (!isEmail(email)) throw new HttpError(400, 'Use your email address.');
+    if (typeof body.pass !== 'string' || body.pass.length < PASSWORD_MIN || body.pass.length > PASSWORD_MAX) throw new HttpError(400, `Use a password of ${PASSWORD_MIN} to ${PASSWORD_MAX} characters.`);
     const record = await passwordRecord(body.pass);
     // Two people with the code may press Continue at once; the write lock lets exactly one win.
     sqlite.exec('BEGIN IMMEDIATE');
@@ -278,7 +276,7 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
       const key = String(body.key || '').trim();
       if (!key && !settings.get('brevo_api_key')) throw new HttpError(400, 'Paste your Brevo API key.');
       for (const [field, label] of [['sender', 'the sender address'], ['notify', 'where to send notices']]) {
-        if (!EMAIL.test(String(body[field] || '').trim())) throw new HttpError(400, `Add ${label}.`);
+        if (!isEmail(String(body[field] || '').trim())) throw new HttpError(400, `Add ${label}.`);
       }
       saveSettings({ brevo_api_key: key || undefined, sender_email: body.sender, notify_email: body.notify, mail_mode: 'brevo' }, actor);
     } else {

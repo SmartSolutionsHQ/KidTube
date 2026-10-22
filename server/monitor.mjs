@@ -1,10 +1,10 @@
 import { createHmac } from 'node:crypto';
 import { readdir, stat, statfs } from 'node:fs/promises';
 import { join } from 'node:path';
-import api from './api.js';
+import api, { isEmail } from './api.js';
 import { viewer as cookieViewer } from './access.mjs';
 import { BRAND_NAME } from './brand.mjs';
-import { DEFAULT_CHANNEL_ID, channelById, channelBySlug, isStaff, listChannels } from './channels.mjs';
+import { DEFAULT_CHANNEL_ID, channelById, channelBySlug, isClipId, isStaff, listChannels } from './channels.mjs';
 import { InstallError, checkSiteUrl } from './config.mjs';
 import { FamilyError, erasePerson } from './family.mjs';
 import { HttpError, headerStaff, readJson, sendJson } from './jsonio.mjs';
@@ -18,8 +18,6 @@ import { SettingError } from './settings.mjs';
 // module calls it through api.fetch and adds the activity row, so each rule lives in one place.
 
 const MAX_BODY = 64 * 1024;
-const CLIP = /^[A-Za-z0-9_-]{1,80}$/;
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 // Presence: a viewer's "last seen" is one activity row per person, refreshed at most every five minutes.
 export const SEEN_EVERY = 5 * 60 * 1000;
 const DAY = 86400000;
@@ -298,7 +296,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
   /* ---------- routes ---------- */
   const clipRow = id => sqlite.prepare(`SELECT c.*, ch.slug AS channel FROM clips c LEFT JOIN channels ch ON ch.id=c.channel_id WHERE c.id=?`).get(id);
   const needClip = id => {
-    if (!CLIP.test(String(id || ''))) throw new HttpError(400, 'Pick a video.');
+    if (!isClipId(id)) throw new HttpError(400, 'Pick a video.');
     const clip = clipRow(id);
     if (!clip) throw new HttpError(404, 'That video is gone. Reload the page.');
     return clip;
@@ -404,7 +402,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
       const body = await readJson(req, MAX_BODY);
       const channel = channelBySlug(sqlite, String(body.channel || ''));
       if (!channel) throw new HttpError(404, 'That kid is gone. Reload the page.');
-      const order = Array.isArray(body.order) ? body.order.map(String).filter(id => CLIP.test(id)) : [];
+      const order = Array.isArray(body.order) ? body.order.map(String).filter(isClipId) : [];
       const mine = new Set(sqlite.prepare('SELECT id FROM clips WHERE channel_id=?').all(channel.id).map(row => row.id));
       if (!order.length || order.some(id => !mine.has(id))) throw new HttpError(400, 'Reload the page and try again.');
       await delegate(user, '/api/clips/reorder', { order });
@@ -660,7 +658,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
   function needPerson(target) {
     const email = String(target || '').trim().toLowerCase();
-    const person = EMAIL.test(email) && sqlite.prepare('SELECT * FROM accounts WHERE email=?').get(email);
+    const person = isEmail(email) && sqlite.prepare('SELECT * FROM accounts WHERE email=?').get(email);
     if (!person) throw new HttpError(404, 'That person is gone. Reload the page.');
     return person;
   }

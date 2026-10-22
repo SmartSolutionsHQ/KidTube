@@ -5,7 +5,8 @@
 // The log stores who, what, when and how long: no IP address, no user agent. Rows older than
 // views_retention_days are pruned at boot and daily. GET /api/admin/views reads it for "Who watched".
 import { HttpError, answer, readJson, sendJson, staffFor } from './jsonio.mjs';
-import { CLIP_ACCESS_SQL, canPlayClip } from './channels.mjs';
+import { displayName, isEmail } from './api.js';
+import { CLIP_ACCESS_SQL, canPlayClip, isClipId, isStaff } from './channels.mjs';
 import { sealedFor } from './capsules.mjs';
 import { SERVER_TIMEZONE } from './settings.mjs';
 
@@ -18,9 +19,6 @@ export const START_CREDIT_S = 5;
 export const PRUNE_MS = 24 * 60 * 60 * 1000;
 const START_LIMIT = 240;
 const VIEW_OPEN_MS = 12 * 60 * 60 * 1000;
-const STAFF_ROLES = new Set(['admin', 'super']);
-const EMAIL_OK = value => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(value) && value.length < 120;
-const CLIP_OK = /^[A-Za-z0-9_-]{1,80}$/;
 const MINUTE = 60000;
 
 const formatters = new Map();
@@ -57,8 +55,6 @@ export function dayStart(now, timezone) {
   return firstMinute(minute - 48 * 60, minute, time => dayKey(time, timezone) === today);
 }
 
-const displayName = (first, last) => `${String(first || '').trim()}${String(last || '').trim() ? ` ${String(last).trim()[0].toUpperCase()}.` : ''}`.trim();
-
 export function createWatch({ sqlite, settings, env, now = Date.now }) {
   const starts = new Map();
   let timer = null;
@@ -79,7 +75,7 @@ export function createWatch({ sqlite, settings, env, now = Date.now }) {
   function budgetFor(email, at = now()) {
     if (!email) return null;
     const account = sqlite.prepare('SELECT role, status, watch_budget_minutes m FROM accounts WHERE email=?').get(email);
-    if (!account || account.status !== 'approved' || STAFF_ROLES.has(account.role) || !account.m) return null;
+    if (!account || account.status !== 'approved' || isStaff(account) || !account.m) return null;
     const day = today(email, at);
     const limit = (account.m + day.bonus) * 60;
     return { limit, used: day.used, remaining: Math.max(0, limit - day.used), resetsAt: day.resetsAt };
@@ -106,7 +102,7 @@ export function createWatch({ sqlite, settings, env, now = Date.now }) {
     const key = viewerKey(who);
     if (!key) throw new HttpError(401, 'Log in to view this channel.');
     const clipId = String(body.clipId || '');
-    if (!CLIP_OK.test(clipId)) throw new HttpError(400, 'Choose a video.');
+    if (!isClipId(clipId)) throw new HttpError(400, 'Choose a video.');
     const clip = sqlite.prepare(`${CLIP_ACCESS_SQL} WHERE c.id=?`).get(clipId);
     if (!canPlayClip(who, clip)) throw new HttpError(404, 'That video is gone.');
     const at = now();
@@ -176,17 +172,17 @@ export function createWatch({ sqlite, settings, env, now = Date.now }) {
   function budgetState(email, at = now()) {
     const row = account(email);
     const day = today(email, at);
-    return { ok: true, target: row.email, first: row.first, role: row.role, staff: STAFF_ROLES.has(row.role), minutes: row.m,
+    return { ok: true, target: row.email, first: row.first, role: row.role, staff: isStaff(row), minutes: row.m,
       usedToday: day.used, bonusToday: day.bonus, resetsAt: day.resetsAt, budget: budgetFor(email, at), timezone: timezone() };
   }
 
   async function setBudget(body, staff) {
     const target = String(body.target || '').trim().toLowerCase();
     const minutes = Number(body.minutes);
-    if (!EMAIL_OK(target)) throw new HttpError(400, 'Choose an account.');
+    if (!isEmail(target)) throw new HttpError(400, 'Choose an account.');
     if (!BUDGET_CHOICES.includes(minutes)) throw new HttpError(400, `Use one of ${BUDGET_CHOICES.join(', ')} minutes.`);
     const row = account(target);
-    if (STAFF_ROLES.has(row.role)) throw new HttpError(400, 'Parents are never limited.');
+    if (isStaff(row)) throw new HttpError(400, 'Parents are never limited.');
     sqlite.prepare('UPDATE accounts SET watch_budget_minutes=? WHERE email=?').run(minutes, target);
     log(staff.email, 'budget.set', target, { minutes });
     return budgetState(target);
@@ -195,10 +191,10 @@ export function createWatch({ sqlite, settings, env, now = Date.now }) {
   async function addBonus(body, staff) {
     const target = String(body.target || '').trim().toLowerCase();
     const minutes = Number(body.minutes);
-    if (!EMAIL_OK(target)) throw new HttpError(400, 'Choose an account.');
+    if (!isEmail(target)) throw new HttpError(400, 'Choose an account.');
     if (!Number.isInteger(minutes) || minutes < BONUS_MIN || minutes > BONUS_MAX) throw new HttpError(400, `Add ${BONUS_MIN} to ${BONUS_MAX} minutes.`);
     const row = account(target);
-    if (STAFF_ROLES.has(row.role) || !row.m) throw new HttpError(409, 'This account has no daily limit.');
+    if (isStaff(row) || !row.m) throw new HttpError(409, 'This account has no daily limit.');
     const at = now();
     const day = dayKey(at, timezone());
     sqlite.prepare('INSERT INTO watch_bonus (email,day,minutes,actor,created) VALUES (?,?,?,?,?)').run(target, day, minutes, staff.email, at);

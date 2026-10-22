@@ -3,13 +3,12 @@
 // Guests watch only; sealed clips take none. No emails or activity rows, just counts.
 import { HttpError, answer, readJson, sendJson } from './jsonio.mjs';
 import { sessOk } from './api.js';
-import { CLIP_ACCESS_SQL, canPlayClip, canViewChannel } from './channels.mjs';
+import { CLIP_ACCESS_SQL, canPlayClip, canViewChannel, isClipId } from './channels.mjs';
 import { sealedFor } from './capsules.mjs';
 
 export const KINDS = ['wow', 'flame', 'star', 'party', 'cool'];
 export const RATE_LIMIT = 60;
 export const RATE_WINDOW_MS = 60 * 1000;
-const CLIP_OK = /^[A-Za-z0-9_-]{1,80}$/;
 
 export function createReactions({ sqlite, env, now = Date.now }) {
   const writes = new Map();
@@ -51,7 +50,7 @@ export function createReactions({ sqlite, env, now = Date.now }) {
     const email = await sessOk(env, String(body.email || '').trim().toLowerCase(), String(body.t || ''));
     if (!email) throw new HttpError(401, 'log in to react');
     const clipId = String(body.clipId || '');
-    if (!CLIP_OK.test(clipId)) throw new HttpError(400, 'Choose a video.');
+    if (!isClipId(clipId)) throw new HttpError(400, 'Choose a video.');
     const viewer = { email, role: sqlite.prepare('SELECT role FROM accounts WHERE email=?').get(email)?.role || '' };
     if (!canPlayClip(viewer, sqlite.prepare(`${CLIP_ACCESS_SQL} WHERE c.id=?`).get(clipId))) throw new HttpError(404, 'That video is gone.');
     const at = now();

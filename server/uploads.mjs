@@ -5,7 +5,7 @@ import { open, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'no
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { asCreator } from './api.js';
-import { CLIP_ACCESS_SQL, DEFAULT_CHANNEL_ID, canPlayClip, channelById, channelBySlug } from './channels.mjs';
+import { CLIP_ACCESS_SQL, DEFAULT_CHANNEL_ID, canPlayClip, channelById, channelBySlug, isStaff } from './channels.mjs';
 import { publishClip } from './publish.mjs';
 import { validateSeal } from './capsules.mjs';
 import { HttpError, sendJson } from './jsonio.mjs';
@@ -22,7 +22,6 @@ const POSTER_TIMEOUT = 30000;
 const TRANSCODE_STALL = 2 * 60000;
 const transcodeTimeout = duration => Math.max(10 * 60000, duration * 20 * 1000);
 const SPARE_BYTES = 1024 ** 3;
-const STAFF = new Set(['admin', 'super']);
 // An upload nobody finished still holds the phone's raw file, GPS and all, so it goes after a day.
 export const STALE_UPLOAD_MS = 24 * 60 * 60 * 1000;
 const SWEEP_EVERY = 60 * 60 * 1000;
@@ -200,7 +199,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications, 
         });
       await rename(temporary, output);
       const uploader = sqlite.prepare('SELECT role FROM accounts WHERE email=?').get(job.email);
-      const reviewed = channelById(sqlite, job.channel_id)?.review_uploads && !STAFF.has(uploader?.role);
+      const reviewed = channelById(sqlite, job.channel_id)?.review_uploads && !isStaff(uploader);
       const clipId = randomUUID();
       const now = Date.now();
       publishClip(sqlite, notifications, {
