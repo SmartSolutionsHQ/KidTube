@@ -26,12 +26,16 @@ public issues.
 - The signing secret lives in `DATA_DIR/secret` (created once, mode 0600) unless `SIGN_SECRET` is set. Anyone
   with it can mint sessions: keep it out of backups you share and out of Git.
 - Login, signup and guest-code tries are rate limited per connecting address; an IPv6 /64 counts as one
-  address. Ten wrong passwords for one account in 15 minutes pause that login from every address, and 30 wrong
+  address. Ten wrong passwords for one account in 15 minutes, or 50 in a day, pause that login from every
+  address (a parent setting a new password lifts it), and 30 wrong
   guest codes in ten minutes pause redeeming for everyone. Signup answers the same whether or not an email
   already has an account.
 - Behind a reverse proxy, set `TRUST_PROXY=1` only when every request passes through a proxy that adds or
   overwrites `X-Forwarded-For`. KidTube believes only the last entry, the one your proxy wrote.
 - Requests that change anything must come from the family's own web address (an Origin check).
+- Once the web address is set, requests must use it, an IP address or `localhost`; other names get 421, which
+  stops DNS rebinding. Add any other name you open KidTube by to `ALLOWED_HOSTS`. The health check always
+  answers.
 
 ## Setup claim
 
@@ -73,6 +77,8 @@ A new install has no parent until someone claims it at `/setup`.
 - FFmpeg converts every video and drops its metadata and chapters, so phone GPS and device details don't reach
   viewers. Conversion runs one job at a time with a time limit. An upload that isn't finished within a day is
   deleted with its raw pieces.
+- FFmpeg opens an upload only as a local file in a container phones make (MP4, MOV, M4V, 3GP, WebM, MKV), so
+  playlists, concat lists and other protocols or formats are refused before anything inside them is followed.
 - Badges are never uploaded as SVG. The browser sends a small JSON spec (4 KB at most) of whitelisted shapes,
   colours, fonts, stickers and effects; the server validates it and draws the SVG itself with the same renderer.
   A test checks that the output only ever contains whitelisted elements and attributes.
@@ -118,5 +124,11 @@ family.
 - Approved viewers can record or save what they are allowed to watch. Approval is access control, not DRM.
 - Backups contain personal data and the means to sign in. Keep them private and off public repositories.
 - KidTube has no automatic moderation. A parent stays responsible for who is invited and what is shared.
+
+## The container
+
+The Compose file runs the app as uid 1000 with a read-only root, no Linux capabilities and `no-new-privileges`.
+Behind the HTTPS overlay only Caddy can reach it. The base image is pinned by digest and the CI actions by
+commit; Dependabot proposes updates to both.
 
 Use supported updates, HTTPS, separate data per family and tested backups.
