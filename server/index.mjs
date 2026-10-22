@@ -79,7 +79,7 @@ const setup = createSetup({ sqlite, settings, env, paths: install, family, sendF
 const pwa = createPwa({ settings, brandFiles, dataDir, publicDir, pageHtml: sendFile.pageHtml });
 const monitor = (await import('./monitor.mjs')).createMonitor({ sqlite, settings, env, family, paths: install });
 notifications.kick();
-demo?.start(env);
+demo?.start(env, { themeIds: () => themes.list().map(theme => theme.id) });
 
 async function sendApi(req, res, who) {
   const chunks = [];

@@ -5,17 +5,24 @@
 //     is, offers the three one-tap roles and links to installing your own;
 //   - "Try it as: a kid / Grandma / a parent" on the front door, on the sign-in card and on the
 //     dashboard's sign-in, each signing in through POST /api/demo/enter;
+//   - "Make your own kid's page" (/demo/make) and "Customize Juni's page" (the dashboard's Kids tab) on
+//     the front door and in the card, with "Reset my changes" once the visitor has any. Those changes
+//     live in the visitor's private sandbox on the server (server/demo-sandbox.mjs), never anyone else's;
 //   - the feed's upload button and comment box explain that they are off here. The server refuses
 //     those writes itself; this only says why before anyone types.
 const KEY = 'kid-session';
 const DAY = 86400000;
 const UPLOAD_NOTE = 'On your own install, kids record here and a parent can check each video before anyone sees it.';
 const COMMENT_NOTE = 'Comments are read-only in the demo, so nothing you write reaches other visitors. On your own install, a parent can read new comments first.';
+const SANDBOX_NOTE = 'Your changes are only on this device and disappear at the next reset.';
+const MAKE_PAGE = '/demo/make';
 
 window.__ktDemo = { on: true };
 document.documentElement.dataset.ktDemo = '';
 
 let info = null;
+let sandbox = null;
+let kids = [];
 let skew = 0;
 let panel = null;
 let pill = null;
@@ -55,8 +62,8 @@ function go(path) {
   } else location.assign(target);
 }
 
-async function enter(role, button) {
-  const buttons = document.querySelectorAll('[data-ktd-role]');
+async function enter(role, button, target = '') {
+  const buttons = document.querySelectorAll('[data-ktd-role], [data-ktd-go]');
   buttons.forEach(node => { node.disabled = true; });
   button.setAttribute('aria-busy', 'true');
   try {
@@ -66,12 +73,68 @@ async function enter(role, button) {
     const reply = await response.json().catch(() => null);
     if (!response.ok || !reply?.ok) throw new Error(reply?.error || 'That did not work. Try again.');
     try { localStorage.setItem(KEY, JSON.stringify({ email: reply.email, t: reply.t, role: reply.role, exp: Date.now() + 7 * DAY })); } catch {}
-    go(reply.go || '/');
+    go(target || reply.go || '/');
   } catch (error) {
     buttons.forEach(node => { node.disabled = false; });
     button.removeAttribute('aria-busy');
-    say(button.closest('.ktd-try'), error.message);
+    say(button.closest('.ktd-try, .ktd-mine'), error.message);
   }
+}
+
+// ---------- making it yours ----------
+
+// The kid a "Customize" button names: the one on screen, else the first on the front door, as this
+// visitor sees them (their own name for Juni if they renamed her).
+function kidToCustomize() {
+  const here = window.__ktChannel?.slug;
+  return kids.find(kid => kid.slug === here) || kids[0] || null;
+}
+
+async function customize(button) {
+  const kid = kidToCustomize();
+  const target = `/parents#/kids/${encodeURIComponent(kid?.slug || '')}`;
+  if (currentRole()?.id === 'parent') { go(target); return; }
+  await enter('parent', button, target);
+}
+
+async function resetMine(button) {
+  button.disabled = true;
+  button.setAttribute('aria-busy', 'true');
+  try {
+    const response = await fetch('/api/demo/sandbox/reset', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}', credentials: 'same-origin' });
+    if (!response.ok) throw new Error('That did not work. Try again.');
+    location.reload();
+  } catch (error) {
+    button.disabled = false;
+    button.removeAttribute('aria-busy');
+    say(button.closest('.ktd-mine'), error.message);
+  }
+}
+
+// "Make your own kid's page", "Customize Juni's page" and, once there are changes, "Reset my changes".
+function mineBlock({ compact = false } = {}) {
+  const kid = kidToCustomize();
+  const make = el('a', { className: 'ktd-role ktd-go', href: MAKE_PAGE },
+    el('span', { className: 'ktd-role-name' }, 'Make your own kid\'s page'),
+    el('span', { className: 'ktd-role-who' }, 'name, badge and splash'));
+  const change = kid ? el('button', { type: 'button', className: 'ktd-role ktd-go' },
+    el('span', { className: 'ktd-role-name' }, `Customize ${kid.name}'s page`),
+    el('span', { className: 'ktd-role-who' }, 'in the parent dashboard')) : null;
+  if (change) {
+    change.dataset.ktdGo = 'customize';
+    change.addEventListener('click', () => customize(change));
+  }
+  let reset = null;
+  if (sandbox?.active) {
+    reset = el('button', { type: 'button', className: 'ktd-reset' }, 'Reset my changes');
+    reset.addEventListener('click', () => resetMine(reset));
+  }
+  return el('div', { className: 'ktd-mine' + (compact ? ' ktd-try-compact' : '') },
+    el('p', { className: 'ktd-try-head' }, 'Or make it yours'),
+    el('div', { className: 'ktd-gos' }, make, change),
+    // The card already says where changes live, so there it carries only the reset.
+    compact && !reset ? null : el('p', { className: 'ktd-try-note' }, compact ? null : SANDBOX_NOTE, !compact && reset ? ' ' : null, reset),
+    el('p', { className: 'ktd-error', role: 'alert' }));
 }
 
 function say(box, message) {
@@ -118,6 +181,7 @@ function openPanel(open = true) {
   pill.setAttribute('aria-expanded', String(open));
   if (open) {
     panel.querySelector('.ktd-panel-body .ktd-try')?.replaceWith(tryBlock({ compact: true, heading: currentRole() ? 'Switch to' : 'Try it as' }));
+    panel.querySelector('.ktd-panel-body .ktd-mine')?.replaceWith(mineBlock({ compact: true }));
     paintPill();
     panel.querySelector('.ktd-close').focus();
   }
@@ -140,9 +204,11 @@ function mountBanner() {
       el('button', { type: 'button', className: 'ktd-close', ariaLabel: 'Close' }, '×')),
     el('div', { className: 'ktd-panel-body' },
       el('p', {}, `${info.family || 'This family'} is invented: the kids, the relatives and every video. Look around as anyone you like.`),
-      el('p', {}, 'Likes and reactions work. Everything else is read-only, so nothing you do reaches another visitor, and the whole family is put back every hour.'),
+      el('p', {}, 'Likes and reactions work, and you can customize a kid or make your own kid\'s page. Everything else is read-only, so nothing you do reaches another visitor, and the whole family is put back every hour.'),
+      el('p', { className: 'ktd-sandbox' }, SANDBOX_NOTE),
       el('p', { className: 'ktd-when' }),
       tryBlock({ compact: true }),
+      mineBlock({ compact: true }),
       install));
   panel.setAttribute('aria-labelledby', 'ktd-title');
   panel.querySelector('.ktd-close').addEventListener('click', () => { openPanel(false); pill.focus(); });
@@ -177,12 +243,16 @@ function tick() {
 function watchDoor() {
   const door = document.getElementById('kt-door');
   if (!door) return;
+  // "Try it as" while nobody is signed in; "make it yours" whenever the kids are on the door.
   const place = () => {
     const inner = door.querySelector('.kt-door-in');
-    const wanted = door.dataset.mode === 'door' && !session() && inner;
-    const block = door.querySelector('.ktd-try');
-    if (wanted && !block) inner.querySelector('[data-door="kids"]')?.after(tryBlock());
-    else if (!wanted && block) block.remove();
+    const kidsList = inner?.querySelector('[data-door="kids"]');
+    const open = door.dataset.mode === 'door' && kidsList;
+    const block = door.querySelector('.ktd-try'), mine = door.querySelector('.ktd-mine');
+    if (open && !session() && !block) kidsList.after(tryBlock());
+    else if ((!open || session()) && block) block.remove();
+    if (open && !mine) (door.querySelector('.ktd-try') || kidsList).after(mineBlock());
+    else if (!open && mine) mine.remove();
   };
   new MutationObserver(place).observe(door, { attributes: true, attributeFilter: ['data-mode'] });
   place();
@@ -259,6 +329,11 @@ async function load() {
     skew = next.now - Math.round((started + Date.now()) / 2);
     info = next;
   } catch {}
+  // This visitor's own changes, and the kids as they see them, for the "make it yours" buttons.
+  const read = path => fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' } }).then(response => response.json()).catch(() => null);
+  const [mine, site] = await Promise.all([read('/api/demo/sandbox'), read('/api/site')]);
+  sandbox = mine?.ok ? mine : null;
+  kids = Array.isArray(site?.channels) ? site.channels.filter(kid => kid && typeof kid.slug === 'string' && typeof kid.name === 'string') : [];
 }
 
 async function boot() {

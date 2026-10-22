@@ -200,3 +200,29 @@ html[data-kt-demo] .kd-main { padding-bottom: 110px; }
 @media (prefers-reduced-motion: no-preference) {
   .ktd-pill { transition: border-color var(--tz-t1, 140ms) var(--tz-ease, ease); }
 }
+
+/* "Or make it yours": the visitor's private sandbox (server/demo-sandbox.mjs). */
+.ktd-mine { margin: 14px 0; text-align: left; }
+.kt-door .ktd-mine { width: min(420px, 100%); margin: 6px auto 4px; }
+.kt-door .ktd-mine .ktd-try-head, .kt-door .ktd-mine .ktd-try-note { text-align: center; }
+.ktd-gos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ktd-gos > :only-child { grid-column: 1 / -1; }
+.ktd-go { text-decoration: none; }
+.ktd-go:hover { color: var(--tz-paper, #F7F4EC); }
+.ktd-reset {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: #FFD23F;
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.ktd-reset:focus-visible, .ktd-go:focus-visible { outline: 2px solid var(--tz-paper, #F7F4EC); outline-offset: 2px; }
+.ktd-sandbox { color: #FFD23F; }
+html[data-kt-demo] .kd-sandbox { display: grid; gap: 10px; border-left-color: #FFD23F; }
+html[data-kt-demo] .kd-sandbox p { margin: 0; }
+/* The make page (/demo/make) ends clear of the pill, like the dashboard. */
+html[data-kt-demo] .su-page { padding-bottom: 64px; }

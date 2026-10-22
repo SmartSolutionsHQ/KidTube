@@ -7,7 +7,9 @@
 //   - the seeded snapshot (scripts/demo-seed.mjs) restored at boot and every DEMO_RESET_MINUTES, in one
 //     SQLite transaction on the live connection, with every time moved forward so the family looks fresh;
 //   - a banner on every page (public/js/shell/demo-banner.js), injected here so a normal install never
-//     loads it.
+//     loads it;
+//   - a private sandbox per visitor (server/demo-sandbox.mjs) where they may customize a demo kid or make
+//     two of their own, kept in memory under a cookie and never written to the family's tables or files.
 //
 // It refuses to run on a family's install: both the database (a marker row in settings) and the data
 // folder (demo-mode.json) must say they are the demo, or be empty. Nothing here stores a visitor's IP.
@@ -17,9 +19,10 @@ import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { accountCookie, viewer } from './access.mjs';
 import { sessToken } from './api.js';
-import { BRAND_NAME } from './brand.mjs';
+import { BRAND_NAME, BRAND_TOKENS } from './brand.mjs';
 import { migrate, SCHEMA_VERSION } from './schema.mjs';
 import { clientIp } from './setup.mjs';
+import { createSandboxes } from './demo-sandbox.mjs';
 import { PAGE_POLICY } from './static.mjs';
 
 export class DemoError extends Error {}
@@ -31,6 +34,9 @@ export const FOLDER_MARKER = 'demo-mode.json';
 export const SNAPSHOT_META = 'demo.json';
 export const SNAPSHOT_DATABASE = 'demo.sqlite';
 export const SNAPSHOT_FILES = 'files';
+// Rewritten by every reset, so the running server sees a reset made by scripts/demo-reset.mjs and drops
+// every visitor's sandbox with it.
+export const RESET_STAMP = 'demo-last-reset.json';
 // The folders under DATA_DIR the snapshot fills. Restores add and replace files there, never delete.
 export const FILE_ROOTS = ['videos', 'brand'];
 export const DEFAULT_RESET_MINUTES = 60;
@@ -87,16 +93,25 @@ const REFUSALS = [
   [/^\/api\/comment/, 'Comments are read-only in the demo, so nothing you write reaches other visitors.'],
   [/^\/api\/(?:guest|admin\/guests)/, 'Guest codes are off in the demo. On your own install, a parent makes one-day codes here.'],
   [/^\/api\/(?:admin\/)?settings\/email-test$|^\/api\/setup\/email/, 'Email is off in the demo, so nothing is ever sent.'],
+  [/^\/api\/admin\/kids\/order$/, 'The kids keep their order in the demo. Your own changes to a kid stay on this device.'],
+  [/^\/api\/admin\/channels\/[^/]+\/image$/, 'Pictures are off in the demo, like uploads. Try the badge builder instead.'],
 ];
 // Writes a visitor may make: signing out, checking a stored guest pass (read only), likes and reactions.
 // Views are answered here without being logged. Everything else that is not a GET is refused.
 const OPEN_WRITES = new Set(['/api/logout', '/api/guest/validate', '/api/like', '/api/react']);
-const LIMITED = { '/api/like': 40, '/api/react': 40, '/api/demo/enter': 12 };
+// sandbox:new counts new sandboxes per visitor, so clearing cookies in a loop cannot push others out.
+const LIMITED = { '/api/like': 40, '/api/react': 40, '/api/demo/enter': 12, 'sandbox:new': 6 };
 const LIMIT_WINDOW_MS = 60 * 1000;
 // Pages that answer a bare path, as in static.mjs.
 const PRETTY = new Set(['/about', '/parents', '/install']);
 const BANNER_SCRIPT = '/js/shell/demo-banner.js';
 const BANNER_STYLE = '/css/demo.css';
+// "Make your own kid's page" (public/js/demo/make.js). Its page lives here, not in public/, so a family's
+// install has no such page at all.
+export const MAKE_PATH = '/demo/make';
+const MAKE_PAGE = new URL('./demo-make.html', import.meta.url);
+const ASSET_REFERENCE = /(\b(?:src|href)=)(["'])(\/[^"'?#\s]+\.(?:js|css))\2/g;
+const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const MINUTE = 60000;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -291,6 +306,7 @@ export function resetDemo({ sqlite, dataDir, snapshot, base, at = Date.now(), da
   const shift = Math.floor((at - snapshot.meta.seededAt) / MINUTE) * MINUTE;
   restoreDatabase(sqlite, base, { shift });
   try { sqlite.exec('PRAGMA wal_checkpoint(PASSIVE)'); } catch {}
+  writeFileSync(join(dataDir, RESET_STAMP), JSON.stringify({ at }) + '\n', { mode: 0o600 });
   return { files, shift };
 }
 
@@ -306,7 +322,7 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
   const installUrl = processEnv.DEMO_INSTALL_URL || INSTALL_URL;
   const salt = randomBytes(32);
   const hits = new Map();
-  let base = null, env = null, timer = null, lastReset = 0, nextReset = 0;
+  let base = null, env = null, timer = null, lastReset = 0, nextReset = 0, sandboxes = null;
 
   const interval = minutes * MINUTE;
   const nextAfter = at => Math.floor(at / interval) * interval + interval;
@@ -328,6 +344,7 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
     const at = now();
     const result = resetDemo({ sqlite, dataDir, snapshot, base, at, database });
     lastReset = at;
+    sandboxes?.clearAll();
     return result;
   }
 
@@ -347,9 +364,14 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
     console.log(`Demo mode: restored the invented family (${files} files copied); resets every ${minutes === 1 ? 'minute' : `${minutes} minutes`}.`);
   }
 
-  // Once the app's env exists (the routes read settings and watch from it): one reset every interval.
-  function start(appEnv) {
+  // Once the app's env exists (the routes read settings and watch from it): one reset every interval, and
+  // the visitors' sandboxes. themeIds lists the splash screens a sandboxed kid may pick.
+  function start(appEnv, { themeIds = () => [] } = {}) {
     env = appEnv;
+    sandboxes = createSandboxes({
+      sqlite, env, themeIds, now, nextReset: () => nextReset, resetStamp: join(dataDir, RESET_STAMP),
+      limitNew: req => limited(req, 'sandbox:new'),
+    });
     schedule();
   }
 
@@ -414,9 +436,11 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
       enter(req, res).catch(error => { console.error('Demo sign-in failed', error); if (!res.headersSent) json(res, 500, { ok: false, error: 'Something went wrong. Try again.' }); });
       return true;
     }
+    // A visitor's own sandbox, and the dashboard's kid routes it answers for the demo's parent.
+    if (sandboxes?.handle(req, res, pathname, refuse)) return true;
     // An unsubscribe link is a GET that writes; the demo's accounts have no inbox anyway.
     if (pathname === '/api/notifications/unsubscribe') { refuse(req, res, pathname); return true; }
-    if (method === 'GET' || method === 'OPTIONS') return false;
+    if (method === 'GET' || method === 'OPTIONS') { sandboxes?.overlay(req, res, pathname); return false; }
     if (pathname === '/api/view' || pathname === '/api/view/beat') {
       watched(req, res, pathname).catch(error => { console.error('Demo view failed', error); if (!res.headersSent) json(res, 500, { ok: false, error: 'Something went wrong.' }); });
       return true;
@@ -447,11 +471,16 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
         return stamps.get(path).value;
       } catch { return path; }
     };
+    // The make page, branded and stamped the way static.mjs does a page in public/.
+    const makePage = () => readFileSync(MAKE_PAGE, 'utf8')
+      .replace(/\{\{brand\.(\w+)\}\}/g, (token, name) => Object.hasOwn(BRAND_TOKENS, name) ? escapeHtml(BRAND_TOKENS[name]) : token)
+      .replace(ASSET_REFERENCE, (reference, attribute, quote, path) => `${attribute}${quote}${stamp(path)}${quote}`);
     const served = (req, res, pathname) => {
       const tags = `<link rel="stylesheet" href="${stamp(BANNER_STYLE)}">\n  <script type="module" src="${stamp(BANNER_SCRIPT)}"></script>\n`;
+      const make = pathname === MAKE_PATH;
       const target = pathname === '/' ? '/index.html' : PRETTY.has(pathname) ? `${pathname}/index.html` : pathname;
-      if (!['GET', 'HEAD'].includes(req.method) || !target.endsWith('.html')) return sendFile(req, res, pathname);
-      const html = sendFile.pageHtml(target);
+      if (!['GET', 'HEAD'].includes(req.method) || (!make && !target.endsWith('.html'))) return sendFile(req, res, pathname);
+      const html = make ? makePage() : sendFile.pageHtml(target);
       if (!html) return sendFile(req, res, pathname);
       const body = Buffer.from(html.replace('</head>', `  ${tags}</head>`));
       const etag = `W/"demo-${sha256(body).slice(0, 16)}"`;
