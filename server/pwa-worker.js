@@ -1,7 +1,8 @@
-/* The service worker. server/pwa.mjs serves it at /sw.js with SW_VERSION and SW_SHELL defined above
-   this text. It keeps the app's shell (pages' styles, scripts, fonts and icons) so the home-screen app
-   opens fast, and shows a calm offline page when the family's box can't be reached. It never stores
-   anything private: no API answers, no videos, no posters, no kids' badges. */
+/* The service worker. server/pwa.mjs serves it at /sw.js with SW_VERSION, SW_SHELL (the shell's
+   unstamped paths) and SW_SHELL_URLS (everything to precache) defined above this text. It keeps the
+   app's shell (pages' styles, scripts, fonts and icons) so the home-screen app opens fast, and shows a
+   calm offline page when the family's box can't be reached. It never stores anything private: no API
+   answers, no videos, no posters, no kids' badges. */
 const SHELL_CACHE = 'kt-shell-' + SW_VERSION;
 const OFFLINE_PAGE = '/offline.html';
 const MEDIA = /\.(?:mp4|m4v|webm|mov|mkv|mp3|m4a|aac|wav|ogg|oga|opus|flac)$/i;

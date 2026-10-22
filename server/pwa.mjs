@@ -76,7 +76,8 @@ export function buildWorker({ publicDir, pageHtml }) {
   }
   for (const icon of [DEFAULT_ICONS[192], DEFAULT_ICONS[512]]) if (existsSync(join(root, icon))) urls.add(icon);
   const list = [...urls].sort();
-  const paths = list.map(url => url.split('?')[0]);
+  // Files without a ?v= stamp (fonts, icons, the offline page) are matched by path.
+  const paths = list.filter(url => !url.includes('?'));
   const template = readFileSync(WORKER, 'utf8');
   // Versioned URLs carry their content hash already; the rest are hashed here.
   const contents = list.map(url => url.includes('?v=') ? url
