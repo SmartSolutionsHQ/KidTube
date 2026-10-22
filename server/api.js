@@ -2,7 +2,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { KID_PASSWORD_MIN, PASSWORD_MAX, PASSWORD_MIN, passwordRecord, passwordMatches } from './passwords.mjs';
 import { sendMail } from './mail.mjs';
-import { BRAND_NAME, WORDMARK } from './brand.mjs';
+import { BRAND_NAME, WORDMARK, escapeHtml } from './brand.mjs';
 import { KID_DOMAIN, kidEmail } from './family.mjs';
 import { CLIP_ACCESS_SQL, canPlayClip, canViewChannel, isClipId, isStaff } from './channels.mjs';
 import { approveClip, rejectClip } from './publish.mjs';
@@ -64,7 +64,6 @@ const unb64u = (s) => atob(s.replace(/-/g, '+').replace(/_/g, '/'));
 const unb64uSafe = (s) => { try { return unb64u(s || ''); } catch (e) { return ''; } };
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 export const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s) && s.length < 120;
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 async function hmac(secret, msg) {
   const k = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -117,10 +116,10 @@ async function signup(req, env, ip) {
 /* ---------- notify email via Brevo; the request is saved either way ---------- */
 async function notify(env, first, last, email) {
   const link = new URL('/parents',env.SITE_URL).href;
-  const who = esc(first+' '+last+' ('+email+')');
+  const who = escapeHtml(first+' '+last+' ('+email+')');
   try {
     await sendMail(env,{email:env.NOTIFY_EMAIL},`${BRAND_NAME}: new account request`,
-      '<p>'+who+' requested access.</p><p><a href="'+esc(link)+'">Open the parent dashboard</a> to approve or deny this request.</p>',
+      '<p>'+who+' requested access.</p><p><a href="'+escapeHtml(link)+'">Open the parent dashboard</a> to approve or deny this request.</p>',
       'New account request. Review it at '+link);
     return true;
   } catch (error) {
@@ -131,7 +130,7 @@ async function notify(env, first, last, email) {
 
 /* ---------- approval email to the approved viewer ---------- */
 async function approvalMail(env, email, first) {
-  const who = esc(first || 'Viewer');
+  const who = escapeHtml(first || 'Viewer');
   const site = env.SITE_URL;
   const html = `<div style="font-family:Arial,sans-serif;background:#0B0C10;color:#F7F4EC;padding:26px;border-radius:10px">
     <p style="color:#3265FF;letter-spacing:.3em;font-size:11px;margin:0 0 10px">${WORDMARK}</p>
@@ -733,6 +732,6 @@ function PAGE(msg, code) {
 <title>${BRAND_NAME}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#05060A;color:#F7F4EC;
 font-family:'Inter Tight',system-ui,sans-serif}div{max-width:420px;padding:30px;border:1px solid rgba(247,244,236,.25);border-radius:16px;
 background:rgba(255,255,255,.06)}p.k{color:#3265FF;letter-spacing:.3em;font-size:11px;margin:0 0 10px;font-weight:600}</style></head>
-<body><div><p class="k">${WORDMARK}</p><p style="margin:0;line-height:1.5">${esc(msg)}</p></div></body></html>`,
+<body><div><p class="k">${WORDMARK}</p><p style="margin:0;line-height:1.5">${escapeHtml(msg)}</p></div></body></html>`,
     { status: code, headers: { 'content-type': 'text/html; charset=utf-8' } });
 }

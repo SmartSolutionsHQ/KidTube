@@ -1,11 +1,10 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { sendMail } from './mail.mjs';
-import { BRAND_NAME, WORDMARK } from './brand.mjs';
+import { BRAND_NAME, WORDMARK, escapeHtml } from './brand.mjs';
 import { DEFAULT_CHANNEL_ID } from './channels.mjs';
 
 const DEFAULT_SUBJECT = `New video on ${BRAND_NAME}`;
 const MAX_ATTEMPTS = 8;
-const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Links open the clip on its kid's channel; a clip announced before channels existed keeps the old form,
 // which the viewer resolves through /api/clips/locate.
@@ -28,21 +27,21 @@ export function videoEmail(clip, { siteUrl, unsubscribeUrl }) {
   }).format(new Date(clip.published));
   const joke = capsule ? `It was sealed until now.${clip.capsule_note ? ` "${clip.capsule_note}"` : ''}` : 'A new video is ready on your family channel.';
   const text = `${SUBJECT}\n\n${joke}\n\n${clip.title}\nLength: ${duration}\nPosted: ${posted} (UTC)${clip.blurb ? `\n${clip.blurb}` : ''}\n\nWatch the new vid: ${watchUrl}\n\nLog in with your ${BRAND_NAME} account to watch.\n\nYou received this because you have an approved ${BRAND_NAME} account.\nStop new-video emails: ${unsubscribeUrl}`;
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(SUBJECT)}</title></head>
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escapeHtml(SUBJECT)}</title></head>
 <body style="margin:0;background:#0B0C10;color:#F7F4EC;font-family:Arial,sans-serif">
-<div style="display:none;max-height:0;overflow:hidden">${esc(clip.title)} · A new moment to share.</div>
+<div style="display:none;max-height:0;overflow:hidden">${escapeHtml(clip.title)} · A new moment to share.</div>
 <main style="max-width:560px;margin:0 auto;padding:32px 24px">
   <p style="color:#3265FF;letter-spacing:3px;font-size:12px;font-weight:bold">${WORDMARK}</p>
-  <h1 style="font-size:30px;line-height:1.2">${esc(SUBJECT)}</h1>
-  <p style="line-height:1.6">${esc(joke)}</p>
+  <h1 style="font-size:30px;line-height:1.2">${escapeHtml(SUBJECT)}</h1>
+  <p style="line-height:1.6">${escapeHtml(joke)}</p>
   <div style="border:1px solid #44404A;border-radius:10px;padding:20px;margin:24px 0">
-    <h2 style="font-size:22px;margin:0 0 12px">${esc(clip.title)}</h2>
-    <p style="color:#C4BEC9;font-size:14px;margin:0;line-height:1.7">Length: ${duration}<br>Posted: ${esc(posted)} (UTC)</p>
-    ${clip.blurb ? `<p style="line-height:1.6">${esc(clip.blurb)}</p>` : ''}
+    <h2 style="font-size:22px;margin:0 0 12px">${escapeHtml(clip.title)}</h2>
+    <p style="color:#C4BEC9;font-size:14px;margin:0;line-height:1.7">Length: ${duration}<br>Posted: ${escapeHtml(posted)} (UTC)</p>
+    ${clip.blurb ? `<p style="line-height:1.6">${escapeHtml(clip.blurb)}</p>` : ''}
   </div>
-  <p style="margin:28px 0"><a href="${esc(watchUrl)}" style="display:inline-block;background:#3265FF;color:#0B0C10;padding:14px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Watch the new vid</a></p>
+  <p style="margin:28px 0"><a href="${escapeHtml(watchUrl)}" style="display:inline-block;background:#3265FF;color:#0B0C10;padding:14px 22px;border-radius:6px;text-decoration:none;font-weight:bold">Watch the new vid</a></p>
   <p style="line-height:1.6">Log in with your ${BRAND_NAME} account to watch.</p>
-  <p style="color:#A6A0AE;font-size:12px;line-height:1.7;margin-top:32px">You received this because you have an approved ${BRAND_NAME} account.<br><a href="${esc(unsubscribeUrl)}" style="color:#C4BEC9">Stop new-video emails</a></p>
+  <p style="color:#A6A0AE;font-size:12px;line-height:1.7;margin-top:32px">You received this because you have an approved ${BRAND_NAME} account.<br><a href="${escapeHtml(unsubscribeUrl)}" style="color:#C4BEC9">Stop new-video emails</a></p>
 </main></body></html>`;
   return { subject: SUBJECT, html, text };
 }
@@ -86,9 +85,9 @@ export function createVideoNotifications({ sqlite, env, fetchImpl = fetch, now =
   function preferencesPage(message, { status = 200, action } = {}) {
     return new Response(`<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${BRAND_NAME} email settings</title></head>
 <body style="background:#0B0C10;color:#F7F4EC;font:16px/1.6 Arial,sans-serif;margin:0"><main style="max-width:480px;margin:50px auto;padding:24px">
-<p style="color:#3265FF;letter-spacing:3px">${WORDMARK}</p><h1>New-video emails</h1><p>${esc(message)}</p>
-${action ? `<form method="post" action="${esc(action)}"><button style="background:#3265FF;color:#0B0C10;border:0;border-radius:6px;padding:12px 18px;font:inherit;font-weight:bold;cursor:pointer" type="submit">Stop new-video emails</button></form>` : ''}
-<p><a href="${esc(new URL('/', site()).href)}" style="color:#3265FF">Back to ${BRAND_NAME}</a></p></main></body></html>`, {
+<p style="color:#3265FF;letter-spacing:3px">${WORDMARK}</p><h1>New-video emails</h1><p>${escapeHtml(message)}</p>
+${action ? `<form method="post" action="${escapeHtml(action)}"><button style="background:#3265FF;color:#0B0C10;border:0;border-radius:6px;padding:12px 18px;font:inherit;font-weight:bold;cursor:pointer" type="submit">Stop new-video emails</button></form>` : ''}
+<p><a href="${escapeHtml(new URL('/', site()).href)}" style="color:#3265FF">Back to ${BRAND_NAME}</a></p></main></body></html>`, {
       status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
         'referrer-policy': 'no-referrer', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'" },
     });

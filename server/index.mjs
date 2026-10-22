@@ -73,7 +73,7 @@ const uploads = createUploadManager({ sqlite, env, databasePath: dbFile, notific
 env.deleteLocalVideo = uploads.deleteVideo;
 const brandFiles = createBrandFiles({ sqlite, env, dataDir });
 const family = createFamily({ sqlite, themeIds: () => themes.list().map(theme => theme.id), removeChannelFiles: brandFiles.removeChannel });
-const pages = demo ? demo.pages(sendFile, publicDir) : sendFile;
+const pages = demo ? demo.pages(sendFile) : sendFile;
 const setup = createSetup({ sqlite, settings, env, paths: install, family, sendFile: pages });
 // The home-screen app: manifest, Apple icon and the service worker, built from the shell as it is now.
 const pwa = createPwa({ settings, brandFiles, dataDir, publicDir, pageHtml: sendFile.pageHtml });

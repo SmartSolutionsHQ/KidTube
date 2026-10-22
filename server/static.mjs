@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { createReadStream, existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { resolve, relative, sep, extname, join } from 'node:path';
 import { brotliCompressSync, gzipSync, constants } from 'node:zlib';
-import { BRAND_TOKENS } from './brand.mjs';
+import { fillBrand } from './brand.mjs';
 
 const types = {
   '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
@@ -27,9 +27,6 @@ export const PAGE_POLICY = [
   "media-src 'self' blob:", "font-src 'self'", "connect-src 'self'", "worker-src 'self' blob:", "manifest-src 'self'",
   "object-src 'none'", "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'",
 ].join('; ');
-// Pages name the product through {{brand.name}} and friends, filled in from server/brand.mjs.
-const BRAND_TOKEN = /\{\{brand\.(\w+)\}\}/g;
-const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function encodingQuality(header, encoding) {
   const values = header.toLowerCase().split(',').map(value => value.trim().split(';'));
@@ -61,28 +58,30 @@ export function createStatic(publicDir) {
     return entry;
   }
 
+  // Pages name the product through {{brand.name}} and friends (server/brand.mjs), and every script and
+  // stylesheet they load gets its ?v= content hash. assets collects [file, fingerprint] for each one.
+  function stampHtml(html, assets = []) {
+    return fillBrand(html).replace(ASSET_REFERENCE, (reference, attribute, quote, path) => {
+      const asset = resolve(root, '.' + path);
+      const entry = inside(asset) && fingerprint(asset);
+      if (!entry) return reference;
+      assets.push([asset, entry]);
+      return `${attribute}${quote}${path}?v=${entry.hash}${quote}`;
+    });
+  }
+
   // Pages are stamped and compressed in memory, so .br/.gz always match the stamped bytes.
   function page(file, info) {
     const key = `${info.size}:${info.mtimeMs}`;
     const cached = pages.get(file);
     if (cached?.key === key && cached.assets.every(([asset, hash]) => fingerprint(asset)?.hash === hash)) return cached;
-    const assets = [];
-    let mtimeMs = info.mtimeMs;
-    const stampAsset = (reference, attribute, quote, path) => {
-      const asset = resolve(root, '.' + path);
-      const entry = inside(asset) && fingerprint(asset);
-      if (!entry) return reference;
-      assets.push([asset, entry.hash]);
-      // A changed script must also move Last-Modified, or If-Modified-Since would keep the old page.
-      mtimeMs = Math.max(mtimeMs, entry.mtimeMs);
-      return `${attribute}${quote}${path}?v=${entry.hash}${quote}`;
-    };
-    const html = readFileSync(file, 'utf8')
-      .replace(BRAND_TOKEN, (token, name) => Object.hasOwn(BRAND_TOKENS, name) ? escapeHtml(BRAND_TOKENS[name]) : token)
-      .replace(ASSET_REFERENCE, stampAsset);
-    const identity = Buffer.from(html);
+    const used = [];
+    const identity = Buffer.from(stampHtml(readFileSync(file, 'utf8'), used));
     const stamped = {
-      key, assets, mtimeMs, identity, etag: `W/"${digest(identity).slice(0, 16)}"`,
+      key, assets: used.map(([asset, entry]) => [asset, entry.hash]),
+      // A changed script must also move Last-Modified, or If-Modified-Since would keep the old page.
+      mtimeMs: Math.max(info.mtimeMs, ...used.map(([, entry]) => entry.mtimeMs)),
+      identity, etag: `W/"${digest(identity).slice(0, 16)}"`,
       br: brotliCompressSync(identity, { params: { [constants.BROTLI_PARAM_QUALITY]: 9 } }),
       gzip: gzipSync(identity, { level: 9 }),
     };
@@ -178,6 +177,8 @@ export function createStatic(publicDir) {
     res.on('close', () => stream.destroy());
     stream.pipe(res);
   }
+  // For HTML that lives outside public/ (the demo's pages): stamped the same way as a page.
+  sendFile.stampHtml = html => stampHtml(html);
   // A page as it is served (brand filled in, assets stamped), so the service worker can list the shell.
   sendFile.pageHtml = path => {
     const file = resolve(root, '.' + path);

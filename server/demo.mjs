@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { accountCookie, viewer } from './access.mjs';
 import { sessToken } from './api.js';
-import { BRAND_NAME, BRAND_TOKENS } from './brand.mjs';
+import { BRAND_NAME } from './brand.mjs';
 import { migrate, SCHEMA_VERSION } from './schema.mjs';
 import { clientIp } from './setup.mjs';
 import { createSandboxes } from './demo-sandbox.mjs';
@@ -111,8 +111,6 @@ const BANNER_STYLE = '/css/demo.css';
 // install has no such page at all.
 export const MAKE_PATH = '/demo/make';
 const MAKE_PAGE = new URL('./demo-make.html', import.meta.url);
-const ASSET_REFERENCE = /(\b(?:src|href)=)(["'])(\/[^"'?#\s]+\.(?:js|css))\2/g;
-const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const MINUTE = 60000;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -440,22 +438,11 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
 
   // Wraps the static sender so every page carries the banner. Only the demo serves these two files'
   // tags; a normal install's pages are exactly as they are on disk.
-  function pages(sendFile, publicDir) {
-    // The same ?v= stamp static.mjs gives (re-read when the file changes), so both are cached like any asset.
-    const stamps = new Map();
-    const stamp = path => {
-      try {
-        const file = join(publicDir, '.' + path), key = String(statSync(file).mtimeMs);
-        if (stamps.get(path)?.key !== key) stamps.set(path, { key, value: `${path}?v=${sha256(readFileSync(file)).slice(0, 12)}` });
-        return stamps.get(path).value;
-      } catch { return path; }
-    };
-    // The make page, branded and stamped the way static.mjs does a page in public/.
-    const makePage = () => readFileSync(MAKE_PAGE, 'utf8')
-      .replace(/\{\{brand\.(\w+)\}\}/g, (token, name) => Object.hasOwn(BRAND_TOKENS, name) ? escapeHtml(BRAND_TOKENS[name]) : token)
-      .replace(ASSET_REFERENCE, (reference, attribute, quote, path) => `${attribute}${quote}${stamp(path)}${quote}`);
+  function pages(sendFile) {
+    // The make page and the banner tags are branded and stamped the way static.mjs does a page in public/.
+    const makePage = () => sendFile.stampHtml(readFileSync(MAKE_PAGE, 'utf8'));
     const served = (req, res, pathname) => {
-      const tags = `<link rel="stylesheet" href="${stamp(BANNER_STYLE)}">\n  <script type="module" src="${stamp(BANNER_SCRIPT)}"></script>\n`;
+      const tags = sendFile.stampHtml(`<link rel="stylesheet" href="${BANNER_STYLE}">\n  <script type="module" src="${BANNER_SCRIPT}"></script>\n`);
       const make = pathname === MAKE_PATH;
       const target = pathname === '/' ? '/index.html' : PRETTY.has(pathname) ? `${pathname}/index.html` : pathname;
       if (!['GET', 'HEAD'].includes(req.method) || (!make && !target.endsWith('.html'))) return sendFile(req, res, pathname);
@@ -471,7 +458,6 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
       res.writeHead(200, { ...headers, 'Content-Length': String(body.length) });
       res.end(req.method === 'HEAD' ? undefined : body);
     };
-    served.pageHtml = sendFile.pageHtml;
     return served;
   }
 
