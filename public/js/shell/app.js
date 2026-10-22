@@ -186,6 +186,9 @@ function unlock(viewer) {
   document.body.removeAttribute('data-locked');
   appParts.forEach(node => { node.inert = false; });
   $('#account-button').textContent = viewer.role === 'guest' ? 'Guest' : 'Account';
+  // Only parents have a dashboard; kids, viewers and guests would be sent straight back.
+  const parentsLink = document.querySelector('.kid-nav a[href="/parents"]');
+  if (parentsLink) parentsLink.hidden = !STAFF.has(viewer.role);
   document.dispatchEvent(new Event('kid:unlocked'));
 }
 

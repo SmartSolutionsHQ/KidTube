@@ -89,6 +89,11 @@
   white-space: nowrap;
   cursor: pointer;
 }
+/* Narrow hosts (a phone wizard card): a smaller preview, and the button may wrap. */
+@container (max-width: 350px) {
+  .kb-stage { grid-template-columns: minmax(0, 112px) minmax(0, 1fr); gap: 8px 12px; padding: 12px; }
+  .kb-shuffle { padding: 0 8px; letter-spacing: 0.1em; white-space: normal; }
+}
 .kb-shuffle:hover { background: color-mix(in srgb, var(--kb-accent) 28%, transparent); }
 .kb-shuffle:active { transform: translateY(1px); }
 .kb-note {
