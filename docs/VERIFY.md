@@ -4,6 +4,15 @@ Run this before tagging a release. Use a scratch install in a folder outside the
 families and generated clips: never a family's real data. Record the results at the bottom, with what could not
 be checked and why.
 
+## How a release is built
+
+`package.json`'s `files` list decides what the npm package ships; `.dockerignore` does the same for the image.
+Neither carries `.env`, data, backups or the maintainer folders (`docs/plan`, `docs/superpowers`,
+`scripts/dev`, `.github`): `test/package.test.mjs` and CI check both. Pushing a tag that matches `package.json`
+(such as `v0.2.0`) runs `.github/workflows/release.yml`: the tests, then an amd64 and arm64 image pushed to
+`ghcr.io/smartsolutionshq/kidtube` with the workflow's own token. Nothing is published to npm, and no registry
+token is kept in the repository.
+
 ## Automated
 
 - [ ] `npm test` passes on Node 24 with FFmpeg installed.
