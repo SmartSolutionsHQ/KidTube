@@ -13,6 +13,8 @@ export const BUDGET_CHOICES = [0, 15, 30, 45, 60, 90, 120, 180];
 export const BONUS_MIN = 15;
 export const BONUS_MAX = 120;
 export const BEAT_SLACK_S = 2;
+// A view starts after a few seconds of play; those seconds count too, up to this many.
+export const START_CREDIT_S = 5;
 export const PRUNE_MS = 24 * 60 * 60 * 1000;
 const START_LIMIT = 240;
 const VIEW_OPEN_MS = 12 * 60 * 60 * 1000;
@@ -117,9 +119,10 @@ export function createWatch({ sqlite, settings, env, now = Date.now }) {
     recent.push(at);
     starts.set(key, recent);
     if (recent.length > START_LIMIT) throw new HttpError(429, 'Slow down a little.');
-    const viewId = Number(sqlite.prepare('INSERT INTO views (clip_id,channel_id,viewer,started,updated) VALUES (?,?,?,?,?)')
-      .run(clipId, clip.channel_id, key, at, at).lastInsertRowid);
-    return { ok: true, viewId, budget };
+    const credit = Math.floor(Math.min(START_CREDIT_S, Math.max(0, Number(body.seconds) || 0)));
+    const viewId = Number(sqlite.prepare('INSERT INTO views (clip_id,channel_id,viewer,started,updated,seconds) VALUES (?,?,?,?,?,?)')
+      .run(clipId, clip.channel_id, key, at, at, credit).lastInsertRowid);
+    return { ok: true, viewId, budget: credit ? budgetFor(who.email, at) : budget };
   }
 
   // seconds is what the viewer watched since its last report; the server adds at most the wall time
@@ -243,8 +246,15 @@ export function createWatch({ sqlite, settings, env, now = Date.now }) {
     if (pathname === '/api/view' && post) { answer(res, async () => sendJson(res, 200, await startView(req, who))); return true; }
     if (pathname === '/api/view/beat' && post) { answer(res, async () => sendJson(res, 200, await beat(req, who))); return true; }
     if (pathname === '/api/admin/views' && get) return staffRoute(res, req, who, (body, staff, url) => views(url), { post: false });
+    // ?target=<email> for one account, or ?channel=<slug> for the kid logins on one kid's channel.
     if (pathname === '/api/admin/budget' && get) {
-      return staffRoute(res, req, who, (body, staff, url) => budgetState(String(url.searchParams.get('target') || '').trim().toLowerCase()), { post: false });
+      return staffRoute(res, req, who, (body, staff, url) => {
+        const channel = url.searchParams.get('channel');
+        if (!channel) return budgetState(String(url.searchParams.get('target') || '').trim().toLowerCase());
+        const kids = sqlite.prepare(`SELECT a.email FROM accounts a JOIN channels ch ON ch.id=a.channel_id
+          WHERE ch.slug=? AND a.role='kid' AND a.status='approved' ORDER BY a.created`).all(channel);
+        return { ok: true, channel, accounts: kids.map(row => budgetState(row.email)) };
+      }, { post: false });
     }
     if (pathname === '/api/admin/budget' && post) return staffRoute(res, req, who, setBudget);
     if (pathname === '/api/admin/budget/bonus' && post) return staffRoute(res, req, who, addBonus);

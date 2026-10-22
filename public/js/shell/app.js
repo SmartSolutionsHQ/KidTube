@@ -146,7 +146,8 @@ function canUpload(viewer, channel) {
 async function enterChannel(channel, { viewer, channels, clipId, splashPlayed }) {
   const number = channels.indexOf(channel) + 1;
   const creator = canUpload(viewer, channel);
-  window.__ktChannel = { slug: channel.slug, name: channel.name, accent: channel.accent, logoUrl: channel.logoUrl, canUpload: creator, number };
+  window.__ktChannel = { slug: channel.slug, name: channel.name, accent: channel.accent, logoUrl: channel.logoUrl, canUpload: creator, number,
+    themeId: channel.themeId, splashSound: site.splashSound === true, timezone: site.timezone };
   window.__ktShell = { emptyMarkup: () => emptyMarkup(channel, creator), sentToParent: (clip, title) => sentToParent(channel, clip, title) };
   history.replaceState(null, '', channelHash(channel.slug, clipId));
   route = parseRoute(location.hash);

@@ -1,6 +1,13 @@
 // src/scripts/kidtube-feed.js
 import { publishVideo } from '/js/server-upload-v1.js';
 import { playClip, retryClip } from '/js/player-media-v1.js';
+// Launch story: time capsules (locked tapes, unlocks), reactions and the daily tape (js/shell/*).
+import { lockedSlideMarkup, lockedThumbMarkup, runUnlock, wantsUnlock, watchSealed, wobble } from '/js/shell/capsules.js';
+import { attachReactions, chipsMarkup, railButtonMarkup } from '/js/shell/reactions.js';
+import { attachWatch } from '/js/shell/watch.js';
+var familyZone = () => window.__ktChannel?.timezone || undefined;
+var serverBudget = null;
+var reactionsUi = null;
 var CATALOG = [];
 // The shell (js/shell/app.js) names the kid's channel in window.__ktChannel before it unlocks the feed.
 var channelSlug = () => window.__ktChannel?.slug || "";
@@ -9,6 +16,7 @@ var serverClipsReady = new Promise(resolve => { if(window.kidUnlocked) resolve()
   if (j && j.ok && Array.isArray(j.clips) ) {
     CATALOG.length = 0;
     for (const row of j.clips) CATALOG.push(row);
+    serverBudget = j.budget || null;
   }
 }).catch(() => {
 });
@@ -78,6 +86,7 @@ function fmtAgo(ts) {
 var esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 var reel = $("#tz-reel");
 function slideMarkup(c, i) {
+  if (c.sealed) return lockedSlideMarkup(c, i, clips.length, familyZone());
   const media = `<video playsinline preload="none" muted
               ${c.duration && c.duration < LOOP_UNDER ? "loop" : ""}
               ${c.src ? `src="${esc(c.src)}"` : ""}></video>`;
@@ -101,6 +110,7 @@ function slideMarkup(c, i) {
       </p>
       <h2 class="tz-cap-title">${esc(c.title)}</h2>
       <p class="tz-cap-blurb">${esc(c.blurb)}</p>
+      ${chipsMarkup()}
     </div>
 
     <div class="tz-rail">
@@ -109,6 +119,7 @@ function slideMarkup(c, i) {
       <button type="button" data-act="like" aria-pressed="false" aria-label="Like. 0 likes.">
         <span class="tz-ico" data-ico="heart" aria-hidden="true"></span>
         <span class="tz-likes" data-bind="likes" aria-hidden="true">0</span></button>
+      ${railButtonMarkup()}
       <button type="button" data-act="comments" aria-label="Comments">
         <span class="tz-ico" data-ico="chat" aria-hidden="true"></span></button>
       <button type="button" data-act="index" aria-label="Open the channel index">
@@ -163,7 +174,7 @@ function logMarkup() {
   return clips.map((c, i) => `
     <li><button class="tz-log-row" type="button" data-goto="${i}">
       <span class="tz-log-thumb">
-        ${c.poster ? `<img src="${esc(c.poster)}" alt="" loading="lazy">` : ""}
+        ${c.sealed ? lockedThumbMarkup() : c.poster ? `<img src="${esc(c.poster)}" alt="" loading="lazy">` : ""}
         <span class="tz-log-n">${String(i + 1).padStart(2, "0")}</span>
       </span>
       <span>
@@ -243,6 +254,14 @@ function playActive() {
   }
   const v = $("video", slide);
   pauseAllExcept(v);
+  if (!v || slide.dataset.unlocking) return;
+  // A capsule opened this week plays its theme's unlock first, once, after the splash has lifted.
+  const c = clips[state.index];
+  if (wantsUnlock(c)) {
+    if (window.__tzsplash) document.addEventListener("tz:enter", () => playActive(), { once: true });
+    else runUnlock(slide, c, window.__ktChannel || {}, () => { if (slides[state.index] === slide) playActive(); });
+    return;
+  }
   playClip(slide, { muted: !state.soundOn });
 }
 var io = new IntersectionObserver((entries) => {
@@ -284,6 +303,7 @@ function setActive(i, { scroll = true } = {}) {
   const glow = $(".tz-glow");
   const poster = clips[state.index]?.poster;
   if (glow) glow.style.backgroundImage = poster ? `url("${poster}")` : "none";
+  reactionsUi?.close();
   if (c) {
     hydrateReactions(state.index);
     $('[data-bind="live"]').textContent = `${state.shuffle ? "Shuffled. " : ""}Clip ${rank(state.index) + 1} of ${clips.length}. ${c.title}.`;
@@ -399,13 +419,14 @@ function paintLike(like, liked, count) {
 }
 function hydrateReactions(i) {
   const slide = slides[i], c = clips[i];
-  if (!slide || !c) return;
+  if (!slide || !c || c.sealed) return;
+  reactionsUi?.paint(slide);
   const st = likeState.get(c.id) || { count: 0, liked: false };
   paintLike($('[data-act="like"]', slide), st.liked, st.count);
 }
 async function toggleLike(i, forceOn) {
   const slide = slides[i], c = clips[i];
-  if (!slide || !c) return;
+  if (!slide || !c || c.sealed) return;
   if (guestSession()) { guestPrompt(); return; }
   const like = $('[data-act="like"]', slide);
   if (like.disabled) return;
@@ -657,7 +678,11 @@ document.addEventListener("click", (e) => {
     case "like":
       toggleLike(i);
       break;
+    case "wobble":
+      wobble(slide);
+      break;
     case "comments":
+      if (clips[i]?.sealed) break;
       if (guestSession()) guestPrompt();
       else openSheet("comments");
       break;
@@ -877,7 +902,7 @@ document.addEventListener("keydown", (e) => {
       setShuffle(!state.shuffle);
       break;
     case "c":
-      openSheet("comments");
+      if (!clips[state.index]?.sealed) openSheet("comments");
       break;
     case "i":
       openSheet("index");
@@ -1115,6 +1140,42 @@ function heartBurst(slide, x, y) {
   slide.appendChild(burst);
   setTimeout(() => burst.remove(), 750);
 }
+// Reactions, the daily tape, and capsules whose date arrives while the feed is open (js/shell/*).
+function bootLaunchStory() {
+  const clipOf = (slide) => clips[Number(slide.dataset.i)];
+  reactionsUi = attachReactions({ session: () => { const s = sessRead(); return s && !s.guest ? s : null; }, isGuest: guestSession, guestPrompt, failNote, clipOf });
+  attachWatch({ budget: serverBudget, channel: window.__ktChannel || {}, clipOf });
+  watchSealed(() => clips, familyZone(), openSealed);
+}
+// Swaps a locked tape for the real clip once the server has opened it; its unlock plays when it is on screen.
+async function openSealed(id, tries = 0) {
+  let row = null;
+  try {
+    const j = await fetch("/api/clips" + (channelSlug() ? "?channel=" + encodeURIComponent(channelSlug()) : "")).then((r) => r.json());
+    row = (j.clips || []).find((c) => c.id === id && !c.sealed && c.src) || null;
+  } catch {
+  }
+  // The server opens capsules on a one-minute tick, so the first look can be early.
+  if (!row) {
+    if (tries < 18) setTimeout(() => openSealed(id, tries + 1), 1e4);
+    return;
+  }
+  const i = clips.findIndex((c) => c.id === id);
+  if (i < 0) return;
+  clips[i] = row;
+  const holder = document.createElement("template");
+  holder.innerHTML = slideMarkup(row, i).trim();
+  const fresh = holder.content.firstElementChild;
+  io.unobserve(slides[i]);
+  slides[i].replaceWith(fresh);
+  slides[i] = fresh;
+  io.observe(fresh);
+  wireSlide(fresh);
+  $('[data-bind="log"]').innerHTML = logMarkup();
+  $('[data-bind="log2"]').innerHTML = logMarkup();
+  if (i === state.index) setActive(i, { scroll: false });
+  else applyPreloads();
+}
 function bootFeed() {
   const deep = location.hash.match(/^#\/(?:c\/[^/]+\/)?v\/(.+)$/);
   const start = deep ? clips.findIndex((c) => c.id === deep[1]) : 0;
@@ -1182,6 +1243,14 @@ function bootFeed() {
         <label class="tz-namecard-lbl" for="tz-clipname">Name this clip</label>
         <input class="tz-namecard-input" id="tz-clipname" type="text" maxlength="80" autocomplete="off" spellcheck="false">
         <p class="tz-namecard-meta"></p>
+        <label class="tz-namecard-seal"><input type="checkbox" data-seal> Seal as a time capsule</label>
+        <div class="tz-namecard-capsule" hidden>
+          <label class="tz-namecard-lbl" for="tz-opens">Opens on</label>
+          <input class="tz-namecard-input" id="tz-opens" type="datetime-local">
+          <label class="tz-namecard-lbl" for="tz-capnote">A note for when it opens (optional)</label>
+          <input class="tz-namecard-input" id="tz-capnote" type="text" maxlength="140" autocomplete="off" placeholder="Open on your 10th birthday">
+          <p class="tz-namecard-err" role="alert"></p>
+        </div>
         <div class="tz-namecard-acts">
           <button class="tz-namecard-btn" type="button" data-name="cancel">Cancel</button>
           <button class="tz-namecard-btn tz-namecard-go" type="button" data-name="go">Publish</button>
@@ -1196,17 +1265,36 @@ function bootFeed() {
         "converted to 480p on the server"
       ].filter(Boolean).join(" \xB7 ");
       document.body.appendChild(card);
+      // A capsule opens at least an hour from now; the date is read in this device's time zone.
+      const sealBox = $("[data-seal]", card), capsule = $(".tz-namecard-capsule", card), opens = $("#tz-opens", card);
+      const localInput = (ms) => new Date(ms - new Date(ms).getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
+      opens.min = localInput(Date.now() + 36e5 + 6e4);
+      sealBox.addEventListener("change", () => {
+        capsule.hidden = !sealBox.checked;
+        $(".tz-namecard-go", card).textContent = sealBox.checked ? "Seal and publish" : "Publish";
+        if (sealBox.checked) opens.focus();
+      });
       const done = (val) => {
         card.remove();
         document.removeEventListener("keydown", onKey, true);
         resolve(val);
       };
-      const go = () => done(input.value.trim() || fallback);
+      const go = () => {
+        const title = input.value.trim() || fallback;
+        if (!sealBox.checked) return done({ title });
+        const opensAt = Math.round(new Date(opens.value).getTime() / 6e4) * 6e4;
+        if (!opens.value || !Number.isFinite(opensAt) || opensAt < Date.now() + 36e5) {
+          $(".tz-namecard-err", card).textContent = "Pick a date at least an hour away.";
+          opens.focus();
+          return;
+        }
+        done({ title, seal: { opensAt, capsuleNote: $("#tz-capnote", card).value.trim().slice(0, 140) } });
+      };
       const onKey = (e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
           done(null);
-        } else if (e.key === "Enter") {
+        } else if (e.key === "Enter" && e.target.type !== "checkbox") {
           e.preventDefault();
           go();
         }
@@ -1246,12 +1334,12 @@ function bootFeed() {
         fabSay("Over 512 MB. Trim it first.", 7e3);
         return;
       }
-      const name = forcedName === void 0 ? await askName(file, secs) : forcedName;
-      if (name == null) {
+      const picked = forcedName === void 0 ? await askName(file, secs) : { title: forcedName };
+      if (picked == null) {
         fabSay("Nothing was uploaded.", 2600);
         return;
       }
-      await uploadClip(file, name);
+      await uploadClip(file, picked.title, picked.seal);
     } catch (err) {
       fabSay(err && err.message ? err.message : "Couldn't upload.", 8e3);
     }
@@ -1518,22 +1606,22 @@ function bootFeed() {
       });
     });
   }
-  async function uploadClip(file, name) {
+  async function uploadClip(file, name, seal) {
     const s = await sessToken();
     if (!s || !s.t) {
       fabSay("Log in to upload.", 7e3);
       return;
     }
     const title = (String(name || "").trim() || "New clip").slice(0, 80);
-    const clip = await publishVideo(file, title, s, message => fabSay(message), channelSlug());
+    const clip = await publishVideo(file, title, s, message => fabSay(message), channelSlug(), seal || {});
     if (clip && clip.review === "pending") {
       fabSay("", 1);
       window.__ktShell?.sentToParent?.(clip, title);
       return;
     }
-    fabSay("Published! Taking you to it...", 2600);
+    fabSay(seal ? "Sealed! It waits on the shelf until its day." : "Published! Taking you to it...", 3200);
     try {
-      insertClipTop(clip);
+      insertClipTop(seal ? { ...clip, sealed: true, opensAt: seal.opensAt, capsuleNote: seal.capsuleNote, sealedBy: s.first || "" } : clip);
     } catch (err) {
       location.reload();
     }
@@ -1548,10 +1636,11 @@ function bootFeed() {
       title: clip.title || "New clip",
       blurb: clip.blurb || "",
       kind: clip.kind || "video",
-      poster: clip.poster || "",
+      poster: clip.sealed ? "" : clip.poster || "",
       src: clip.src,
       publishedAt: clip.publishedAt || (/* @__PURE__ */ new Date()).toISOString(),
-      duration: Number(clip.duration) || 0
+      duration: Number(clip.duration) || 0,
+      ...clip.sealed ? { sealed: true, opensAt: clip.opensAt, capsuleNote: clip.capsuleNote || "", sealedBy: clip.sealedBy || "" } : {}
     };
     clips.unshift(row);
     order = clips.map((c, i) => i);
@@ -1566,6 +1655,7 @@ function bootFeed() {
     for (const s of slides) io.observe(s);
     for (const slide of slides) wireSlide(slide);
     paintAllLikes();
+    reactionsUi?.paintAll();
     setActive(0, { scroll: false });
     if (reel) reel.scrollTop = 0;
     requestAnimationFrame(() => {
@@ -1576,6 +1666,7 @@ function bootFeed() {
   setActive(start > -1 ? start : 0, { scroll: false });
   if (start > 0 && body.dataset.mode === "immersive") requestAnimationFrame(() => slides[start]?.scrollIntoView({ behavior: "auto", block: "start" }));
   seedLikes();
+  bootLaunchStory();
   seedRole().then((s) => {
     if (window.__ktChannel ? window.__ktChannel.canUpload : s && (s.role === "admin" || s.role === "super")) mountUploadFab();
   });

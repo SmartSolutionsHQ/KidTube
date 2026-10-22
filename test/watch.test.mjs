@@ -52,7 +52,7 @@ async function ledger(t, start) {
 }
 
 test('a heartbeat never credits more than the wall time since the last one, plus slack', async t => {
-  const { clock, start, beat, sqlite } = await ledger(t, Date.parse('2026-10-22T19:00:00Z'));
+  const { clock, start, beat, sqlite, watch } = await ledger(t, Date.parse('2026-10-22T19:00:00Z'));
   const view = await start('nana@example.com');
   assert.equal(view.status, 200);
   assert.equal(view.body.budget, null, 'unbudgeted accounts get budget: null');
@@ -65,6 +65,8 @@ test('a heartbeat never credits more than the wall time since the last one, plus
   clock.now += 1000;
   assert.equal((await beat('nana@example.com', { viewId: view.body.viewId, seconds: -50 })).body.added, 0, 'negative claims add nothing');
   assert.equal((await beat('kid@kids.invalid', { viewId: view.body.viewId, seconds: 5 })).status, 404, 'only the viewer who started it may report on it');
+  const late = await drive(watch.handle, { url: '/api/view', body: { clipId: 'c1', seconds: 30 }, who: { email: 'nana@example.com', role: '' } });
+  assert.equal(sqlite.prepare('SELECT seconds FROM views WHERE id=?').get(late.body.viewId).seconds, 5, 'the seconds before a view starts count, up to 5');
 });
 
 test('budgets: staff and guests never; a spent tape ends today, bonus extends today only, midnight resets', async t => {
@@ -143,6 +145,9 @@ test('end of tape on the real routes', { timeout: 60000 }, async t => {
     assert.equal(set.body.minutes, 30);
     assert.deepEqual(set.body.budget, { limit: 1800, used: 0, remaining: 1800, resetsAt: set.body.resetsAt });
     assert.equal(db.prepare("SELECT COUNT(*) n FROM activity WHERE kind='budget.set' AND subject=?").get(KID_EMAIL).n, 1);
+    const kids = await json('/api/admin/budget?channel=tobi', { cookie: parent.cookie });
+    assert.deepEqual(kids.body.accounts.map(account => [account.target, account.minutes]), [[KID_EMAIL, 30]], 'the kid logins on one channel');
+    assert.deepEqual((await json('/api/admin/budget?channel=ada', { cookie: parent.cookie })).body.accounts, []);
     const state = await json(`/api/admin/budget?target=${encodeURIComponent(KID_EMAIL)}&${family.staffQuery(parent)}`);
     assert.equal(state.body.minutes, 30);
     assert.equal(state.body.timezone, 'UTC');
