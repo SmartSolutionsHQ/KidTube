@@ -23,14 +23,16 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 ## Fix status (second pass, same branch)
 
 All findings were fixed on this branch except where marked open. Each fix has a regression test in
-`test/security-review.test.mjs` that fails on `ae2247a` and passes now; the suite went from 259 to 278 tests.
+`test/security-review.test.mjs` that fails on the code before it and passes now. The suite went from 259 to 278
+tests in the second pass, and from 292 (after merging the install-test and demo-mode work) to 298 in the third
+pass, which fixed L10, L11, L12 and the M2 residual.
 The scratch-install reproductions were re-run against a fresh install outside the repo.
 
 | Finding | Status |
 |---|---|
 | H1 rate limits bypassed via X-Forwarded-For | fixed `293641d` |
 | M1 co-parents reach owner data | fixed `d3e45ec` |
-| M2 per-address-only limits | fixed `293641d` (per-account and global caps; 8-character kid minimum unchanged) |
+| M2 per-address-only limits | fixed `293641d`, residual `51f76c4` (daily cap; 8-character kid minimum unchanged) |
 | M3 abandoned uploads kept | fixed `ad184b8` |
 | M4 kids public by default, cached a year | caching fixed `8bb2632`; default **open** (product decision) |
 | L1 guest pass sees other kids' files | fixed `8bb2632` |
@@ -42,9 +44,9 @@ The scratch-install reproductions were re-run against a fresh install outside th
 | L7 stored IPs | fixed `4eb5898` |
 | L8 unrecorded direct clip edits | fixed `7a338df` |
 | L9 email links use the boot-time URL | fixed `4de18bd` |
-| L10 Host check, token path | **open** (would break health checks and LAN access) |
-| L11 ffmpeg demuxers | **open**, unconfirmed (no Docker daemon to test the image's ffmpeg) |
-| L12 deployment and CI pinning | **open** (files owned by the install-test branch; SHA pinning is a separate task) |
+| L10 Host check, token path | fixed `a8f2594` (`ALLOWED_HOSTS` for extra names) |
+| L11 ffmpeg demuxers | confirmed, fixed `21c6295` (checked in the image) |
+| L12 deployment and CI pinning | fixed `37fdf4a` (checked in Colima) |
 
 SECURITY.md describes the new behaviour (limits, six-character codes, co-parent scope, upload sweep, kids'
 file caching, address retention, removal).
@@ -120,7 +122,7 @@ file caching, address retention, removal).
 
 ### M2. Without a proxy, login and guest codes are protected only per address
 
-**Status:** Fixed in `293641d`, together with H1: per-account, global guest-code and IPv6 /64 limits. Still open: distributed guessing at one account just under 10 tries per 15 minutes (about 960 a day). Kid passwords still need only 8 characters; raising that is a product call.
+**Status:** Fixed in `293641d`, together with H1: per-account, global guest-code and IPv6 /64 limits. The residual (many machines pacing just under 10 tries per 15 minutes, about 960 a day) is fixed in `51f76c4`: 50 wrong passwords in a day pause the account until the day passes or a parent sets a new password. The trade-off is that a stranger can keep a kid's login paused, and a parent's reset lifts it. Kid passwords still need only 8 characters; raising that is a product call.
 
 - **Where:** `server/index.mjs:122-128` (20 tries per address per 10 minutes, shared by login, signup and guest
   redeem); `server/api.js:255-260` (5 guest-code tries per address); no per-account, per-handle or global
@@ -289,7 +291,7 @@ file caching, address retention, removal).
 
 ### L10. No Host check; before setup, the state route reveals the data folder path
 
-**Status:** **Open.** A Host check would also refuse the Docker health check (`127.0.0.1:3000`), LAN-by-IP visits and Tailscale names unless each is listed, and rebinding reaches only signed-out data. The token path helps only someone who already has the server. Not worth the breakage before launch; revisit with an allowed-hosts setting.
+**Status:** Fixed in `a8f2594`. Once a web address is saved, a request must name it, an IP address, `localhost` or `*.localhost`, or a name in the new `ALLOWED_HOSTS`; anything else gets 421. A rebinding page always arrives under its own hostname, so allowing IP literals keeps LAN-by-number safe. `/api/health` answers whatever the Host. Before setup, any name works. The state route no longer returns `tokenFile`. Re-run in Docker: Host `evil.example` → 421, `127.0.0.1:3000` → 200, health check healthy with the web address set.
 
 - **Where:** `server/setup.mjs:198` (`tokenFile`, `docker` in the anonymous `GET /api/setup/state`),
   `setup.mjs:382-387` (before the site URL is saved, the allowed origin is built from the request's own Host).
@@ -301,7 +303,7 @@ file caching, address retention, removal).
 
 ### L11. FFmpeg and ffprobe parse untrusted uploads with every demuxer enabled (unconfirmed)
 
-**Status:** **Open, unconfirmed.** I couldn't test the image's Alpine ffmpeg: there was no Docker daemon on this machine. FFmpeg 8.1 refuses the known trick. Adding `-format_whitelist` without that test risks rejecting real phone formats. Next step: run the playlist test inside the built image, then add the whitelist.
+**Status:** Confirmed and fixed in `21c6295`. A plain ffprobe accepts an ffconcat list saved as `source` (the concat demuxer detects it from its first line), and reads MPEG-TS and AVI. With `safe` on, the list can only name files beside it, so the damage was limited, but the surface was real. Probe, transcode and poster grab now pass `-protocol_whitelist file -format_whitelist mov,mp4,m4a,3gp,3g2,mj2,matroska,webm`. Confirmed inside the built image (Alpine 3.24.1, FFmpeg 8.1.2): MP4, MOV, 3GP, WebM and MKV accepted; MPEG-TS, AVI, concat and HLS refused; through the API a real clip converted and a concat list failed.
 
 - **Where:** `server/uploads.mjs:82-104` (`ffprobe … file`, `ffmpeg -i input` with no format whitelist).
 - **What I tested:** a "video" that is really an HLS playlist naming local files. FFmpeg 8.1 refused it ("Not
@@ -313,7 +315,7 @@ file caching, address retention, removal).
 
 ### L12. Deployment and supply-chain hardening
 
-**Status:** **Open.** The compose files and Dockerfile belong to the install-test branch being merged in parallel. Pinning workflow actions to commit SHAs needs a lookup of each action's current release; better done with Dependabot when the repo is public.
+**Status:** Fixed in `37fdf4a`. Actions are pinned to release commits with version comments; the base image to its multi-arch index digest; `.github/dependabot.yml` proposes updates. The app container has `cap_drop: [ALL]` and `no-new-privileges`, and the printed ownership fix adds back only `CHOWN` and `DAC_OVERRIDE` (the old command fails under the hardening, shown in Colima). The HTTPS overlay stops publishing the app port, and Caddy keeps only `NET_BIND_SERVICE`. Verified from a fresh starter in Colima: `docker compose up -d --wait` healthy, uid 1000, read-only root, the ownership fix on a root-owned volume, and the HTTPS overlay serving `https://localhost` through Caddy. Not pinned: `apk add ffmpeg` (Alpine keeps only the latest package in a branch, so a version pin would break rebuilds; the digest fixes the branch) and `caddy:2-alpine` (left on its tag so families get TLS fixes on `docker compose pull`).
 
 - `compose.https.yaml` sets `TRUST_PROXY=1` while `compose.yaml:19` still publishes the app port on the host's
   loopback. Any local process that bypasses Caddy can then spoof `X-Forwarded-For`/`-Proto`. Drop the `ports:`

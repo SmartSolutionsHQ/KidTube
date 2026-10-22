@@ -7,9 +7,16 @@ services:
       TRUST_PROXY: "1"
       # Passed on so the app and Caddy agree even when SITE_URL comes from the shell instead of .env.
       SITE_URL: ${SITE_URL}
+    # With TRUST_PROXY on, only Caddy may reach the app, so its port is not published on this computer.
+    ports: !reset []
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
+    # Caddy needs only to bind ports 80 and 443.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
     environment:
       SITE_URL: ${SITE_URL:?Set SITE_URL in .env to your https:// address first}
     ports:

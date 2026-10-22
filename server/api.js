@@ -143,10 +143,19 @@ const BAD_LOGIN = () => J({ ok: false, error: 'Wrong email or password.' }, 401)
 /* Wrong passwords per account, from any address: a kid's short password can't be worked through by many
    machines at once. Unknown emails count the same, so the pause says nothing about who has an account. */
 const LOGIN_FAILS = 10, LOGIN_WINDOW = 15 * 60 * 1000;
+/* and 50 in a day, so slow guessing spread just under the 15-minute limit still stops; a parent's new
+   password for the account lifts it */
+const DAILY_FAILS = 50, DAY_MS = 24 * 60 * 60 * 1000;
 const loginFails = new Map();
+/* why an account's sign-in is paused, given its wrong-password times; null when it isn't */
+export function loginPause(fails, now) {
+  if (fails.filter((at) => at > now - DAY_MS).length >= DAILY_FAILS) return 'Too many wrong passwords for this account today. A parent can set a new one.';
+  if (fails.filter((at) => at > now - LOGIN_WINDOW).length >= LOGIN_FAILS) return 'Too many wrong passwords for this account. Try again in 15 minutes.';
+  return null;
+}
 function failsFor(email, now) {
-  if (loginFails.size > 10000) for (const [key, list] of loginFails) if (list.at(-1) <= now - LOGIN_WINDOW) loginFails.delete(key);
-  return (loginFails.get(email) || []).filter((at) => at > now - LOGIN_WINDOW);
+  if (loginFails.size > 10000) for (const [key, list] of loginFails) if (list.at(-1) <= now - DAY_MS) loginFails.delete(key);
+  return (loginFails.get(email) || []).filter((at) => at > now - DAY_MS);
 }
 async function login(req, env) {
   const b = await req.json().catch(() => null);
@@ -158,7 +167,8 @@ async function login(req, env) {
   if (!EMAIL_OK(email) || !pass) return J({ ok: false, error: 'creds' }, 400);
   const now = Date.now();
   const fails = failsFor(email, now);
-  if (fails.length >= LOGIN_FAILS) return J({ ok: false, error: 'Too many wrong passwords for this account. Try again in 15 minutes.' }, 429);
+  const paused = loginPause(fails, now);
+  if (paused) return J({ ok: false, error: paused }, 429);
   const r = await db(env, 'SELECT salt, hash, status, role FROM accounts WHERE email = ?', [email]);
   const row = r.results && r.results[0];
   /* hash against a decoy so a missing account takes as long as a wrong password */
@@ -623,6 +633,7 @@ async function adminPassword(req, env) {
   if (!EMAIL_OK(email) || pass.length < min || pass.length > 128) return J({ ok: false, error: 'password must be at least ' + min + ' characters' }, 400);
   const record=await passwordRecord(pass, { min });
   const r = await db(env, 'UPDATE accounts SET salt = ?, hash = ? WHERE email = ?', [record.salt, record.hash, email]);
+  loginFails.delete(email);
   return J({ ok: true, changes: (r.meta && r.meta.changes) || 0 });
 }
 

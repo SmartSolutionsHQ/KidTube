@@ -1,4 +1,6 @@
-FROM node:24.16.0-alpine
+# Pinned by digest (the multi-arch index for amd64 and arm64), so a rebuild gets exactly this Node and Alpine 3.24.
+# Dependabot proposes updates; bump the tag and digest together.
+FROM node:24.16.0-alpine@sha256:21f403ab171f2dc89bad4dd69d7721bfd15f084ccb46cdd225f31f2bc59b5c9a
 RUN apk add --no-cache ffmpeg
 WORKDIR /app
 COPY package.json ./

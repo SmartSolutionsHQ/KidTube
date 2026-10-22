@@ -128,7 +128,7 @@ function codeStep(message = '') {
   const where = el('ul', { class: 'su-where kp-list' },
     el('li', {}, 'In the terminal where you started it, on the line that starts with "Setup code".'),
     el('li', {}, 'With Docker, run ', el('code', {}, 'docker logs kidtube'), ' and look for the newest "Setup code" line.'),
-    el('li', {}, 'In the file ', el('code', {}, state.tokenFile || 'data/setup-token'), ' on the server.'));
+    el('li', {}, 'In the file ', el('code', {}, 'setup-token'), ' in the app\'s data folder on the server.'));
   const terminal = el('pre', { class: 'su-terminal', 'aria-hidden': 'true' },
     'Ready for setup.\nOpen ', `${location.origin}/setup`, '\nSetup code: ', el('mark', {}, 'KT-XXXXX-XXXXX-XXXXX-XXXXX'),
     '\nThe code works once and changes every restart until setup is done.');

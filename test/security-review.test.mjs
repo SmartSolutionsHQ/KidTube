@@ -1,5 +1,7 @@
 // Regressions for docs/plan/security-review.md: each test names the finding it pins down.
 import test from 'node:test';
+import { spawn, spawnSync } from 'node:child_process';
+import { request } from 'node:http';
 import assert from 'node:assert/strict';
 import { addressKey, clientIp, createSetup } from '../server/setup.mjs';
 import { createMonitor } from '../server/monitor.mjs';
@@ -10,8 +12,8 @@ import { publishClip } from '../server/publish.mjs';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createUploadManager, STALE_UPLOAD_MS } from '../server/uploads.mjs';
-import { sessOk, sessToken } from '../server/api.js';
+import { createUploadManager, probe, STALE_UPLOAD_MS } from '../server/uploads.mjs';
+import { loginPause, sessOk, sessToken } from '../server/api.js';
 import { openDatabase } from '../server/db.mjs';
 import { migrate } from '../server/schema.mjs';
 import { ROOT, startInstall, PARENT } from './helpers.mjs';
@@ -335,4 +337,109 @@ test('L9: new-video emails link to the web address the wizard saved after boot',
   assert.match(sent[0].htmlContent, /https:\/\/videos\.example\.test\/#\/c\/main\/v\/clip-1/);
   assert.match(sent[0].textContent, /https:\/\/videos\.example\.test\/api\/notifications\/unsubscribe\?/);
   assert.doesNotMatch(sent[0].htmlContent, /localhost/);
+});
+
+// node's fetch picks the Host header itself, so these requests go through node:http.
+const withHost = (origin, path, host) => new Promise((resolve, reject) => {
+  const url = new URL(path, origin);
+  request({ host: url.hostname, port: url.port, path: url.pathname + url.search, headers: { host } }, response => {
+    let text = '';
+    response.on('data', chunk => { text += chunk; });
+    response.on('end', () => resolve({ status: response.statusCode, text }));
+  }).on('error', reject).end();
+});
+
+test('L10: once the family has a web address, other host names are refused (DNS rebinding)', { timeout: 60000 }, async t => {
+  const install = await startInstall(t, { ALLOWED_HOSTS: 'kidbox.local, Videos.Example.Test' });
+  // The install's web address is http://localhost:3000.
+  for (const host of ['evil.example', 'evil.example:3000', 'localhost.evil.example', 'kidbox.lan']) {
+    const answer = await withHost(install.origin, '/api/site', host);
+    assert.equal(answer.status, 421, host);
+    assert.doesNotMatch(answer.text, /"ok"/, host);
+  }
+  for (const host of ['localhost:3000', 'LOCALHOST', '127.0.0.1:3000', '192.168.1.20:3000', '[::1]:3000', 'kids.localhost', 'kidbox.local', 'videos.example.test:8443']) {
+    assert.equal((await withHost(install.origin, '/api/site', host)).status, 200, host);
+  }
+  assert.equal((await withHost(install.origin, '/api/health', 'anything.example')).status, 200, 'the health check never depends on the name');
+  assert.equal((await withHost(install.origin, '/', 'evil.example')).status, 421, 'pages too');
+});
+
+test('L10: before setup, anyone may ask for the state, but it no longer names the data folder', { timeout: 60000 }, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'kidtube-fresh-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const env = { ...process.env, PORT: '0', HOST: '127.0.0.1', DATABASE_PATH: join(dir, 'data/kidtube.sqlite'), PUBLIC_DIR: join(ROOT, 'public'), MAIL_MODE: 'disabled' };
+  for (const key of ['SIGN_SECRET', 'SITE_URL', 'DATA_DIR', 'TRUST_PROXY']) delete env[key];
+  const child = spawn(process.execPath, [join(ROOT, 'server/index.mjs')], { cwd: dir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => child.kill());
+  const port = await new Promise((resolve, reject) => {
+    child.stdout.on('data', chunk => { const match = /listening on (\d+)/.exec(String(chunk)); if (match) resolve(match[1]); });
+    child.once('exit', () => reject(new Error('the server stopped')));
+  });
+  const state = await (await fetch(`http://127.0.0.1:${port}/api/setup/state`)).json();
+  assert.equal(state.stage, 'code');
+  assert.equal('tokenFile' in state, false);
+  assert.ok(!JSON.stringify(state).includes(dir), 'the data folder path is not in the answer');
+  assert.equal((await withHost(`http://127.0.0.1:${port}`, '/api/setup/state', 'any-name.example')).status, 200, 'no web address yet, so any name works');
+});
+
+test('L11: FFmpeg opens uploads only as local files in the containers phones make', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'kidtube-ffmpeg-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const make = (name, ...args) => {
+    const made = spawnSync('ffmpeg', ['-nostdin', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=s=160x120:d=1', ...args, join(dir, name)]);
+    assert.equal(made.status, 0, `${name}: ${made.stderr}`);
+  };
+  const h264 = ['-c:v', 'libx264', '-pix_fmt', 'yuv420p'];
+  make('phone.mp4', ...h264, '-f', 'mp4');
+  make('phone.mov', ...h264, '-f', 'mov');
+  make('phone.3gp', ...h264, '-f', '3gp');
+  make('phone.webm', '-c:v', 'libvpx', '-f', 'webm');
+  make('phone.mkv', ...h264, '-f', 'matroska');
+  make('other.ts', ...h264, '-f', 'mpegts');
+  make('other.avi', ...h264, '-f', 'avi');
+  // Every upload is saved as "source", with no extension, whatever it really is.
+  const asUpload = name => { const file = join(dir, `${name}.source`); writeFileSync(file, readFileSync(join(dir, name))); return file; };
+  for (const name of ['phone.mp4', 'phone.mov', 'phone.3gp', 'phone.webm', 'phone.mkv']) assert.ok(await probe(asUpload(name)) > 0, name);
+  // A concat list is probed from its first line and would make FFmpeg open other files beside it.
+  writeFileSync(join(dir, 'list.source'), 'ffconcat version 1.0\nfile phone.mp4\n');
+  writeFileSync(join(dir, 'playlist.m3u8'), '#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\nother.ts\n#EXT-X-ENDLIST\n');
+  for (const file of [asUpload('other.ts'), asUpload('other.avi'), join(dir, 'list.source'), join(dir, 'playlist.m3u8')]) {
+    await assert.rejects(probe(file), file);
+  }
+});
+
+test('M2: guessing spread just under the 15-minute limit still stops within a day', () => {
+  const now = Date.parse('2026-10-22T12:00:00Z');
+  const every = (count, gap) => Array.from({ length: count }, (_, i) => now - (count - i) * gap);
+  assert.equal(loginPause(every(9, 60000), now), null);
+  assert.match(loginPause(every(10, 60000), now), /15 minutes/);
+  // Nine tries every 15 minutes never trips the short limit, but the day's 50th does.
+  assert.equal(loginPause(every(49, 100000), now + 15 * 60000 + 1), null);
+  assert.match(loginPause(every(50, 100000), now), /today/);
+  assert.equal(loginPause(every(50, 100000), now + 24 * 3600000), null, 'a day later it lifts');
+});
+
+test('M2: a parent setting a new password lifts the pause on that account', { timeout: 60000 }, async t => {
+  const family = await startFamily(t);
+  const { json, parent } = family;
+  for (let i = 0; i < 10; i++) await family.call('/api/login', { body: { email: KID.email, pass: 'wrong-' + i }, headers: { 'x-forwarded-for': `192.0.2.${i}` } });
+  assert.equal((await family.call('/api/login', { body: KID })).status, 429);
+  const reset = await json('/api/admin/people/password', { headers: { 'x-kid-email': parent.email, 'x-kid-token': parent.t }, body: { target: KID_EMAIL, pass: 'a-new-kid-pass' } });
+  assert.equal(reset.status, 200);
+  assert.equal((await family.call('/api/login', { body: { email: KID.email, pass: 'a-new-kid-pass' } })).status, 200);
+});
+
+test('L12: actions are pinned to commits, the base image to a digest, and the containers keep no capabilities', () => {
+  for (const name of readdirSync(join(ROOT, '.github/workflows'))) {
+    const workflow = readFileSync(join(ROOT, '.github/workflows', name), 'utf8');
+    for (const [line] of workflow.matchAll(/uses:.*$/gm)) assert.match(line, /uses: [\w.-]+\/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/, `${name}: ${line}`);
+  }
+  assert.match(readFileSync(join(ROOT, 'Dockerfile'), 'utf8'), /^FROM node:[\d.]+-alpine@sha256:[0-9a-f]{64}$/m);
+  const compose = readFileSync(join(ROOT, 'compose.yaml'), 'utf8');
+  assert.match(compose, /cap_drop: \[ALL\]/);
+  assert.match(compose, /no-new-privileges:true/);
+  const https = readFileSync(join(ROOT, 'compose.https.yaml'), 'utf8');
+  assert.match(https, /kidtube:[\s\S]*ports: !reset \[\][\s\S]*caddy:/, 'behind Caddy the app port is not published');
+  assert.match(https, /caddy:[\s\S]*cap_drop: \[ALL\][\s\S]*cap_add: \[NET_BIND_SERVICE\]/);
+  assert.ok(existsSync(join(ROOT, '.github/dependabot.yml')), 'something proposes updates for the pins');
 });
