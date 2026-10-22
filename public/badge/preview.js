@@ -36,7 +36,6 @@ const builder = createBadgeBuilder($('builder'), {
   onChange: spec => { specOut.textContent = JSON.stringify(spec, null, 2); result.textContent = ''; },
 });
 specOut.textContent = JSON.stringify(builder.getSpec(), null, 2);
-window.badgeBuilder = builder;
 
 // Examples are drawn by the same renderer, once their fonts arrive.
 const data = createBadgeData('/badge/');

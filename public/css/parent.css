@@ -70,7 +70,6 @@
   font-size: 14px;
 }
 
-.kp-mono,
 .kp code {
   font-family: var(--tz-mono);
   font-size: .92em;
@@ -358,22 +357,6 @@
 
 .kp-ok { color: var(--kp-good); }
 
-/* badges and pictures in lists */
-.kp-avatar {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: var(--kp-swatch, var(--kp-accent));
-  color: var(--tz-ink);
-  font: 400 24px/1 var(--tz-display);
-}
-
-img.kp-avatar,
-svg.kp-avatar { border-radius: 0; background: none; }
-
 .kp-steps-list {
   counter-reset: kp-step;
   list-style: none;
@@ -637,7 +620,7 @@ a.kd-card:hover { background: var(--kp-raised); }
   font-size: 15px;
 }
 
-.kd-feed time, .kd-when {
+.kd-feed time {
   flex: none;
   color: var(--kp-dim);
   font: 400 12px/1.8 var(--tz-mono);

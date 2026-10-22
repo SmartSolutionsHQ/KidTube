@@ -25,7 +25,6 @@ const EXP = new Uint8Array(512), LOG = new Uint8Array(256);
 for (let i = 0, x = 1; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 0x100) x ^= 0x11d; }
 for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255];
 export const gfMul = (a, b) => (a && b ? EXP[LOG[a] + LOG[b]] : 0);
-export const gfExp = i => EXP[i % 255];
 
 function generator(degree) {
   let poly = [1];

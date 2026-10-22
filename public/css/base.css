@@ -94,13 +94,6 @@ button:disabled {
   border: 0;
 }
 
-/* small mono caps, the "tape label" voice */
-.tz-tape {
-  font: 500 12px/1.3 var(--tz-mono);
-  letter-spacing: .14em;
-  text-transform: uppercase;
-}
-
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

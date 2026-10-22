@@ -714,28 +714,6 @@ body[data-mode="immersive"][data-sheet-open="1"] .tz-reel {
   color: var(--tz-dim);
 }
 
-.tz-endslide {
-  display: grid;
-  align-content: center;
-  justify-items: start;
-  gap: 14px;
-  padding: 0 24px;
-  background: var(--tz-ink);
-}
-
-.tz-endslide h2 {
-  margin: 0;
-  max-width: 14ch;
-  font: 400 clamp(34px, 8.5vw, 64px)/.92 var(--tz-display);
-  text-transform: uppercase;
-}
-
-.tz-endslide .tz-rule {
-  width: 56px;
-  height: 2px;
-  background: var(--tz-flare);
-}
-
 .tz-endplate {
   display: grid;
   justify-items: start;
