@@ -5,7 +5,7 @@ import { open, readFile, rename, rm, stat, statfs, writeFile } from 'node:fs/pro
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { asCreator } from './api.js';
-import { DEFAULT_CHANNEL_ID, channelById, channelBySlug } from './channels.mjs';
+import { CLIP_ACCESS_SQL, DEFAULT_CHANNEL_ID, canPlayClip, channelById, channelBySlug } from './channels.mjs';
 import { publishClip } from './publish.mjs';
 
 const execFileAsync = promisify(execFile);
@@ -139,6 +139,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
   sqlite.prepare("UPDATE upload_jobs SET status='failed', error='Processing was interrupted. Upload again.', updated=? WHERE status='processing'").run(Date.now());
   const getJob = sqlite.prepare('SELECT * FROM upload_jobs WHERE id=?');
   const updateProgress = sqlite.prepare('UPDATE upload_jobs SET progress=?, updated=? WHERE id=?');
+  const clipForMedia = sqlite.prepare(`${CLIP_ACCESS_SQL} WHERE c.src=?`);
   let active = false;
 
   async function creator(req, payload = {}) {
@@ -229,10 +230,13 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
   }
 
   // Videos and their posters share the cookie-gated /api/video/ routes and never enter a shared cache.
-  async function video(req, res, pathname) {
+  // A file plays only through its clip: on a channel the viewer may watch, and, while it waits for
+  // review or is hidden, only for parents and the kid who posted it. Refusals look like a missing file.
+  async function video(req, res, pathname, viewer) {
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed.');
     const media = MEDIA.exec(pathname.slice('/api/video/'.length));
     if (!media) throw new HttpError(404, 'Video not found.');
+    if (!canPlayClip(viewer, clipForMedia.get(`/api/video/${media[1]}`))) throw new HttpError(404, 'Video not found.');
     const file = join(videos, media[1] + (media[2] ? '.jpg' : '.mp4'));
     if (!existsSync(file)) throw new HttpError(404, 'Video not found.');
     const size = statSync(file).size;
@@ -256,9 +260,9 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
     if (req.method === 'HEAD') res.end(); else createReadStream(file, { start, end }).pipe(res);
   }
 
-  async function handle(req, res, pathname) {
+  async function handle(req, res, pathname, viewer = null) {
     try {
-      if (pathname.startsWith('/api/video/')) return await video(req, res, pathname);
+      if (pathname.startsWith('/api/video/')) return await video(req, res, pathname, viewer);
       if (pathname === '/api/upload/raw/start' && req.method === 'POST') {
         const payload = await jsonBody(req);
         const user = await creator(req, payload);

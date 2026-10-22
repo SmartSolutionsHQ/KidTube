@@ -6,14 +6,15 @@ import { BRAND_TOKENS } from './brand.mjs';
 
 const types = {
   '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.mjs': 'text/javascript; charset=utf-8',
   '.html': 'text/html; charset=utf-8', '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
   '.png': 'image/png', '.webp': 'image/webp', '.gif': 'image/gif',
   '.woff2': 'font/woff2', '.mp4': 'video/mp4', '.webm': 'video/webm',
   '.mov': 'video/quicktime', '.mp3': 'audio/mpeg', '.wav': 'audio/wav',
 };
-const textTypes = new Set(['.css', '.js', '.html', '.json', '.svg']);
-const HASHED = new Set(['.js', '.css']);
+const textTypes = new Set(['.css', '.js', '.mjs', '.html', '.json', '.svg']);
+const HASHED = new Set(['.js', '.mjs', '.css']);
 const HASH_LENGTH = 12;
 // Root-relative script and stylesheet references in a page's src and href attributes.
 const ASSET_REFERENCE = /(\b(?:src|href)=)(["'])(\/[^"'?#\s]+\.(?:js|css))\2/g;

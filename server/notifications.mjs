@@ -7,8 +7,15 @@ const SUBJECT = `New video on ${BRAND_NAME}`;
 const MAX_ATTEMPTS = 8;
 const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
+// Links open the clip on its kid's channel; a clip announced before channels existed keeps the old form,
+// which the viewer resolves through /api/clips/locate.
+export function watchLink(clip, siteUrl) {
+  const slug = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/.test(clip.channel || '') ? `c/${clip.channel}/` : '';
+  return new URL(`/#/${slug}v/${encodeURIComponent(clip.id)}`, siteUrl).href;
+}
+
 export function videoEmail(clip, { siteUrl, unsubscribeUrl }) {
-  const watchUrl = new URL(`/#/v/${encodeURIComponent(clip.id)}`, siteUrl).href;
+  const watchUrl = watchLink(clip, siteUrl);
   const seconds = Math.max(0, Math.round(Number(clip.duration) || 0));
   const duration = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   const posted = new Intl.DateTimeFormat('en-US', {
@@ -94,8 +101,8 @@ ${action ? `<form method="post" action="${esc(action)}"><button style="backgroun
 
   async function drain() {
     while (!stopped) {
-      const row = sqlite.prepare(`SELECT d.*, a.title, a.blurb, a.duration, a.published FROM video_notification_deliveries d
-        JOIN video_announcements a ON a.clip_id=d.clip_id
+      const row = sqlite.prepare(`SELECT d.*, a.title, a.blurb, a.duration, a.published, ch.slug AS channel FROM video_notification_deliveries d
+        JOIN video_announcements a ON a.clip_id=d.clip_id LEFT JOIN channels ch ON ch.id=a.channel_id
         WHERE d.status='pending' AND d.next_attempt<=? ORDER BY d.next_attempt, d.rowid LIMIT 1`).get(now());
       if (!row) return;
       const account = sqlite.prepare('SELECT status FROM accounts WHERE email=?').get(row.email);

@@ -46,6 +46,9 @@ const env = {
 };
 const notifications = createVideoNotifications({ sqlite, env });
 env.handleVideoUnsubscribe = request => notifications.handleUnsubscribe(request);
+// The review endpoint publishes through publish.mjs, which works on the raw database and the outbox.
+env.sqlite = sqlite;
+env.notifications = notifications;
 const uploads = createUploadManager({ sqlite, env, databasePath: dbFile, notifications });
 env.deleteLocalVideo = uploads.deleteVideo;
 const brandFiles = createBrandFiles({ sqlite, env, dataDir });
@@ -53,7 +56,7 @@ const family = createFamily({ sqlite, themeIds: () => themes.list().map(theme =>
 const setup = createSetup({ sqlite, settings, env, paths: install, family, sendFile });
 notifications.kick();
 
-async function sendApi(req, res) {
+async function sendApi(req, res, who) {
   const chunks = [];
   let bytes = 0;
   for await (const chunk of req) {
@@ -67,7 +70,7 @@ async function sendApi(req, res) {
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
   const request = new Request(url, { method: req.method, headers, body });
   if(url.pathname==='/api/logout'&&req.method==='POST'){res.writeHead(200,{'Set-Cookie':clearCookie(env),'Content-Type':'application/json'}).end('{"ok":true}');return;}
-  const response = await api.fetch(request, env, {});
+  const response = await api.fetch(request, env, { viewer: who });
   const out = Object.fromEntries(response.headers);
   out['Cache-Control'] = 'no-store';
   if(response.ok&&['/api/login','/api/check','/api/guest/redeem','/api/guest/validate'].includes(url.pathname)) {
@@ -103,16 +106,18 @@ const server = http.createServer((req, res) => {
     const limit=attempts.get(ip)||{n:0,until:now+600000};limit.n++;attempts.set(ip,limit);
     if(limit.n>20){res.writeHead(429,{'Content-Type':'application/json'}).end('{"ok":false,"error":"Too many attempts. Try again in ten minutes."}');return;}
   }
-  if(['/api/clips','/api/likes','/api/comments','/api/channels'].includes(pathname)||pathname.startsWith('/api/video/')||pathname.startsWith('/api/media/')){
-    if(!viewer(req,sqlite,env)){res.writeHead(401,{'Content-Type':'application/json','Cache-Control':'no-store'}).end('{"ok":false,"error":"Log in to view this channel."}');return;}
+  // Who is asking, from the signed cookie: the API and the video routes check channels and review with it.
+  const who=pathname.startsWith('/api/')?viewer(req,sqlite,env):null;
+  if(['/api/clips','/api/clips/locate','/api/likes','/api/comments','/api/channels'].includes(pathname)||pathname.startsWith('/api/video/')||pathname.startsWith('/api/media/')){
+    if(!who){res.writeHead(401,{'Content-Type':'application/json','Cache-Control':'no-store'}).end('{"ok":false,"error":"Log in to view this channel."}');return;}
     res.setHeader('Cache-Control','private, no-store');
   }
   if(pathname.startsWith('/brand/')||/^\/api\/admin\/(?:brand(?:\/|$)|channels\/[^/]+\/(?:badge|image)$)/.test(pathname)){brandFiles.handle(req,res,pathname);return;}
   if(pathname.startsWith('/uploads/')){res.writeHead(404).end();return;}
   if (pathname.startsWith('/api/upload/raw/') || pathname.startsWith('/api/video/')) {
-    uploads.handle(req, res, pathname);
+    uploads.handle(req, res, pathname, who);
   } else if (pathname.startsWith('/api/')) {
-    sendApi(req, res).catch(error => {
+    sendApi(req, res, who).catch(error => {
       console.error('API request failed', error);
       if (!res.headersSent) res.writeHead(500).end(); else res.destroy(error);
     });

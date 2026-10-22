@@ -1,4 +1,4 @@
-import { listChannels, publicChannel } from './channels.mjs';
+import { canViewChannel, listChannels, publicChannel } from './channels.mjs';
 import { BRAND_NAME, ENDORSEMENT } from './brand.mjs';
 
 export function createSite({ sqlite, settings }) {
@@ -14,12 +14,14 @@ export function createSite({ sqlite, settings }) {
     };
   }
 
-  // Signed in: every channel, whatever the front-door setting.
-  function channels() {
+  // Signed in: every channel the viewer may watch (a guest pass can be limited to one), whatever the
+  // front-door setting.
+  function channels(viewer) {
     const site = settings.all();
     return {
       ok: true,
-      channels: listChannels(sqlite).map(row => ({ ...publicChannel(row, site), tagline: row.tagline || site.site_tagline })),
+      channels: listChannels(sqlite).filter(row => canViewChannel(viewer, row))
+        .map(row => ({ ...publicChannel(row, site), tagline: row.tagline || site.site_tagline })),
     };
   }
 

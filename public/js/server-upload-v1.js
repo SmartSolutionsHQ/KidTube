@@ -10,11 +10,12 @@ async function post(path, payload) {
   return result;
 }
 
-export async function publishVideo(file, title, session, onProgress = () => {}) {
+// channel is the kid's slug; the server refuses a kid's upload to any channel but their own.
+export async function publishVideo(file, title, session, onProgress = () => {}, channel = '') {
   if (!file || file.size < 1000 || file.size > 512 * 1024 * 1024) throw new Error('Choose a video under 512 MB.');
   if (!session?.email || !session?.t) throw new Error('Log in to upload.');
   const upload = await post('/api/upload/raw/start', {
-    email: session.email, t: session.t, title, size: file.size,
+    email: session.email, t: session.t, title, size: file.size, ...(channel ? { channel } : {}),
   });
   const total = Math.ceil(file.size / upload.chunkSize);
   const headers = {

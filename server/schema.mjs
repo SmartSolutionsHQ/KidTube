@@ -92,6 +92,11 @@ const MIGRATIONS = [
       keep.run('comments_default', '"open"', Date.now());
     }
   },
+
+  // v3: a guest pass may be limited to one kid's channel (NULL = the whole family).
+  sqlite => {
+    ensureColumn(sqlite, 'guest_codes', 'channel_id', 'INTEGER');
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
