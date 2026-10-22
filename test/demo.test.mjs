@@ -357,9 +357,16 @@ test('demo mode: one-tap roles, every write refused for every role, likes and re
   const me = await (await server.call('/api/me', { headers: { cookie: sessions.grandma.cookie } })).json();
   assert.equal(me.viewer.email, DEMO_ROLES.grandma.email);
 
+  // The demo's parent edits kids in a private sandbox instead (test/demo-sandbox.test.mjs); the dump below
+  // shows those answers changed nothing either.
+  const SANDBOXED = new Set(['POST /api/admin/kids', 'POST /api/admin/kids/delete', 'PUT /api/admin/channels/1/badge']);
   const before = dump(db);
   for (const who of [null, ...Object.values(sessions)]) {
     for (const write of WRITES) {
+      if (who?.email === DEMO_ROLES.parent.email && SANDBOXED.has(`${write[0]} ${write[1]}`)) {
+        await (await writeCall(server, write, who)).arrayBuffer();
+        continue;
+      }
       const response = await writeCall(server, write, who);
       const body = await response.json().catch(() => null);
       assert.equal(response.status, 403, `${write[0]} ${write[1]} as ${who?.email || 'a visitor'}`);
