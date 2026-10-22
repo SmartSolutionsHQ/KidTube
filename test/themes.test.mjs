@@ -169,7 +169,10 @@ for (const id of ids) {
       assert.equal(typeof mod.mount, 'function');
       assert.equal(mod.mount.length, 2);
       assert.equal(typeof mod.pause === 'function', data.accents.pause, 'pause() export must match accents.pause');
-      for (const name of Object.keys(mod)) assert.ok(['mount', 'pause'].includes(name), `unexpected export ${name}`);
+      assert.equal(typeof mod.unlock === 'function', data.accents.unlock === true, 'unlock() export must match accents.unlock');
+      assert.equal(typeof mod.ending === 'function', data.accents.ending === true, 'ending() export must match accents.ending');
+      for (const name of ['unlock', 'ending']) if (mod[name]) assert.equal(mod[name].length, 2, `${name}(host, ctx)`);
+      for (const name of Object.keys(mod)) assert.ok(['mount', 'pause', 'unlock', 'ending'].includes(name), `unexpected export ${name}`);
     });
 
     await t.test('honours Esc, reduced motion, the Enter marker and the sound rules', () => {
@@ -258,6 +261,12 @@ test('validateManifest names each problem', () => {
     [{ ...good, modes: ['gate', 'gate'] }, /modes/],
     [{ ...good, defaultAccent: 'red' }, /defaultAccent/],
     [{ ...good, accents: { pause: 'yes' } }, /accents/],
+    [{ ...good, accents: { unlock: true } }, /accents/],
+    [{ ...good, accents: { pause: true, ending: 'yes' } }, /accents/],
+    [{ ...good, accents: { pause: true, confetti: true } }, /accents/],
+    [{ ...good, endingCopy: { warn5: 'x'.repeat(41) } }, /endingCopy/],
+    [{ ...good, endingCopy: { warn5: '' } }, /endingCopy/],
+    [{ ...good, endingCopy: { warn2: 'Two left' } }, /endingCopy/],
     [{ ...good, feed: { '--evil': '#000000' } }, /not allowed/],
     [{ ...good, feed: { '--tz-flare': 'red;background:url(x)' } }, /must be/],
     [{ ...good, version: 'one' }, /version/],
@@ -266,6 +275,7 @@ test('validateManifest names each problem', () => {
   ];
   for (const [data, pattern] of cases) assert.match(validateManifest(data, 'ember-tape').join('; '), pattern);
   assert.match(validateManifest(good, 'glass-gate').join('; '), /does not match folder/);
+  assert.deepEqual(validateManifest({ ...good, accents: { pause: true, unlock: true, ending: false }, endingCopy: { warn5: 'Five left', warn1: 'One left' } }, 'ember-tape'), []);
   assert.deepEqual(validateManifest(null), ['manifest must be a JSON object']);
 });
 

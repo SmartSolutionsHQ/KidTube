@@ -328,3 +328,270 @@
 @keyframes kt-ember-tape-out {
   to { opacity: 0; transform: translateY(-7%) skewX(-8deg); filter: blur(3px); }
 }
+
+/* Time capsule unlock, over a video slot. Resting styles are the finished frame (seal gone, title
+   on the OSD); everything animates once from its start state, then the overlay fades for the clip. */
+[data-kt-theme="ember-tape"] .et-unlock {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  font-family: 'DM Mono', ui-monospace, Menlo, monospace;
+  color: #F7F4EC;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.3) 0, rgba(0, 0, 0, 0.3) 2px, transparent 2px, transparent 4px),
+    rgba(5, 6, 10, 0.62);
+  animation: kt-ember-tape-unlock-out 0.3s 2.1s ease-in forwards;
+}
+[data-kt-theme="ember-tape"] .et-unlock-osd,
+[data-kt-theme="ember-tape"] .et-unlock-date {
+  position: absolute;
+  top: clamp(12px, 4cqmin, 30px);
+  margin: 0;
+  white-space: nowrap;
+  font-size: clamp(11px, 3.4cqmin, 20px);
+  letter-spacing: 0.12em;
+  text-shadow: 2px 0 0 #FF3D55, -2px 0 0 #4DF6FF;
+  animation: kt-ember-tape-unlock-pop 0.01s 1s both;
+}
+[data-kt-theme="ember-tape"] .et-unlock-osd {
+  left: clamp(12px, 4cqmin, 30px);
+}
+[data-kt-theme="ember-tape"] .et-unlock-date {
+  right: clamp(12px, 4cqmin, 30px);
+}
+[data-kt-theme="ember-tape"] .et-unlock-seal {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  top: 50%;
+  height: clamp(36px, 16cqmin, 96px);
+  margin-top: calc(clamp(36px, 16cqmin, 96px) / -2);
+  transform: rotate(-5deg);
+}
+[data-kt-theme="ember-tape"] .et-unlock-half {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--et-accent);
+  color: var(--et-ink);
+  font-weight: 500;
+  font-size: clamp(11px, 4cqmin, 24px);
+  letter-spacing: 0.2em;
+  white-space: nowrap;
+  box-shadow: inset 0 3px 0 rgba(255, 255, 255, 0.25), inset 0 -3px 0 rgba(0, 0, 0, 0.25);
+  opacity: 0;
+}
+[data-kt-theme="ember-tape"] .et-unlock-l {
+  clip-path: polygon(0 0, 52% 0, 48% 22%, 53% 45%, 47% 68%, 52% 86%, 49% 100%, 0 100%);
+  animation: kt-ember-tape-unlock-tear-l 1.2s 0.15s cubic-bezier(0.5, 0, 0.7, 0.4) both;
+}
+[data-kt-theme="ember-tape"] .et-unlock-r {
+  clip-path: polygon(52% 0, 100% 0, 100% 100%, 49% 100%, 52% 86%, 47% 68%, 53% 45%, 48% 22%);
+  animation: kt-ember-tape-unlock-tear-r 1.2s 0.15s cubic-bezier(0.5, 0, 0.7, 0.4) both;
+}
+[data-kt-theme="ember-tape"] .et-unlock-stage {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 2.4cqmin, 18px);
+  padding: 12% clamp(16px, 7cqw, 60px);
+  text-align: center;
+}
+[data-kt-theme="ember-tape"] .et-unlock-kicker {
+  margin: 0;
+  font-size: clamp(10px, 3cqmin, 16px);
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--et-accent);
+  animation: kt-ember-tape-up 0.5s 0.9s ease-out both;
+}
+[data-kt-theme="ember-tape"] .et-unlock-title {
+  margin: 0;
+  max-width: 100%;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+  font-weight: 500;
+  font-size: clamp(16px, 7cqmin, 46px);
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  overflow-wrap: anywhere;
+  text-shadow: 3px 0 0 #FF3D55, -3px 0 0 #4DF6FF, 0 0 24px var(--et-glow);
+  animation: kt-ember-tape-unlock-type 0.6s 1.05s steps(12) both;
+}
+[data-kt-theme="ember-tape"] .et-unlock-note {
+  margin: 0;
+  max-width: 40ch;
+  font-size: clamp(10px, 3cqmin, 15px);
+  line-height: 1.5;
+  color: #D9D3DF;
+  animation: kt-ember-tape-up 0.5s 1.5s ease-out both;
+}
+
+/* End of tape, full screen. The headline stays in the upper 55%: the shell's panel sits below it. */
+[data-kt-theme="ember-tape"] .et-end {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  font-family: 'DM Mono', ui-monospace, Menlo, monospace;
+  color: #F7F4EC;
+  background:
+    radial-gradient(ellipse 80% 45% at 50% 30%, color-mix(in srgb, var(--et-accent) 26%, transparent), transparent 70%),
+    #05060A;
+}
+[data-kt-theme="ember-tape"] .et-end-snow {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  animation: kt-ember-tape-end-snow 1.3s 0.4s linear both;
+}
+[data-kt-theme="ember-tape"] .et-end-tear i {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 25.5%;
+  opacity: 0;
+  background: radial-gradient(ellipse 70% 40% at 50% 40%, color-mix(in srgb, var(--et-accent) 70%, #FFF1DE), color-mix(in srgb, var(--et-accent) 50%, #05060A) 45%, #05060A 85%) 0 0 / 100% 400% no-repeat;
+}
+[data-kt-theme="ember-tape"] .et-end-tear i:nth-child(1) {
+  top: 0;
+  background-position: 0 0;
+  animation: kt-ember-tape-end-tear-l 0.75s 0.05s ease-in both;
+}
+[data-kt-theme="ember-tape"] .et-end-tear i:nth-child(2) {
+  top: 25%;
+  background-position: 0 33.33%;
+  animation: kt-ember-tape-end-tear-r 0.75s 0.12s ease-in both;
+}
+[data-kt-theme="ember-tape"] .et-end-tear i:nth-child(3) {
+  top: 50%;
+  background-position: 0 66.67%;
+  animation: kt-ember-tape-end-tear-l 0.75s 0.2s ease-in both;
+}
+[data-kt-theme="ember-tape"] .et-end-tear i:nth-child(4) {
+  top: 75%;
+  background-position: 0 100%;
+  animation: kt-ember-tape-end-tear-r 0.75s 0.08s ease-in both;
+}
+[data-kt-theme="ember-tape"] .et-end-roll {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 14%;
+  opacity: 0;
+  background: linear-gradient(transparent, rgba(247, 244, 236, 0.12) 45%, rgba(77, 246, 255, 0.07) 55%, transparent);
+  animation: kt-ember-tape-end-roll 1.1s 0.5s linear both;
+}
+[data-kt-theme="ember-tape"] .et-end-scan {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.35) 0, rgba(0, 0, 0, 0.35) 2px, transparent 2px, transparent 4px),
+    radial-gradient(ellipse 85% 75% at 50% 50%, transparent 55%, rgba(0, 0, 0, 0.55));
+}
+[data-kt-theme="ember-tape"] .et-end-osd,
+[data-kt-theme="ember-tape"] .et-end-side {
+  position: absolute;
+  top: clamp(14px, 3.5cqmin, 28px);
+  margin: 0;
+  white-space: nowrap;
+  font-size: clamp(11px, 2.8cqmin, 18px);
+  letter-spacing: 0.16em;
+  text-shadow: 2px 0 0 #FF3D55, -2px 0 0 #4DF6FF;
+  animation: kt-ember-tape-unlock-pop 0.01s 1.3s both;
+}
+[data-kt-theme="ember-tape"] .et-end-osd {
+  left: clamp(16px, 4cqmin, 32px);
+}
+[data-kt-theme="ember-tape"] .et-end-side {
+  right: clamp(16px, 4cqmin, 32px);
+}
+[data-kt-theme="ember-tape"] .et-end-mark {
+  color: var(--et-accent);
+}
+[data-kt-theme="ember-tape"] .et-end-stage {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 55%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 2.2cqmin, 18px);
+  padding: 56px clamp(16px, 6cqw, 60px) 12px;
+  text-align: center;
+}
+[data-kt-theme="ember-tape"] .et-end-title {
+  margin: 0;
+  max-width: 100%;
+  font-weight: 500;
+  font-size: clamp(30px, min(12cqw, 10cqh), 104px);
+  line-height: 1.05;
+  letter-spacing: 0.04em;
+  text-shadow: 4px 0 0 #FF3D55, -4px 0 0 #4DF6FF, 0 0 30px var(--et-glow);
+  animation: kt-ember-tape-unlock-type 0.55s 1.3s steps(11) both;
+}
+[data-kt-theme="ember-tape"] .et-end-label,
+[data-kt-theme="ember-tape"] .et-end-count {
+  margin: 0;
+  font-size: clamp(11px, 3cqmin, 18px);
+  letter-spacing: 0.18em;
+  white-space: nowrap;
+  animation: kt-ember-tape-up 0.5s 1.6s ease-out both;
+}
+[data-kt-theme="ember-tape"] .et-end-label {
+  color: var(--et-accent);
+}
+
+@keyframes kt-ember-tape-unlock-out {
+  to { opacity: 0; }
+}
+@keyframes kt-ember-tape-unlock-pop {
+  from { opacity: 0; }
+}
+@keyframes kt-ember-tape-unlock-tear-l {
+  0%, 35% { opacity: 1; transform: none; filter: none; }
+  45% { opacity: 1; transform: translateX(-2%); filter: drop-shadow(4px 0 0 #FF3D55) drop-shadow(-4px 0 0 #4DF6FF); }
+  100% { opacity: 0; transform: translate(-55%, 6%) rotate(-9deg); filter: drop-shadow(4px 0 0 #FF3D55) drop-shadow(-4px 0 0 #4DF6FF); }
+}
+@keyframes kt-ember-tape-unlock-tear-r {
+  0%, 35% { opacity: 1; transform: none; filter: none; }
+  45% { opacity: 1; transform: translateX(2%); filter: drop-shadow(4px 0 0 #FF3D55) drop-shadow(-4px 0 0 #4DF6FF); }
+  100% { opacity: 0; transform: translate(55%, -6%) rotate(8deg); filter: drop-shadow(4px 0 0 #FF3D55) drop-shadow(-4px 0 0 #4DF6FF); }
+}
+@keyframes kt-ember-tape-unlock-type {
+  from { clip-path: inset(-30% 100% -30% -12%); }
+  to { clip-path: inset(-30% -12% -30% -12%); }
+}
+@keyframes kt-ember-tape-end-tear-l {
+  0% { opacity: 1; transform: none; filter: none; }
+  40% { opacity: 1; transform: translateX(-6%) skewX(-6deg); filter: drop-shadow(5px 0 0 #FF3D55) drop-shadow(-5px 0 0 #4DF6FF); }
+  100% { opacity: 0; transform: translateX(-40%) skewX(-12deg); filter: drop-shadow(5px 0 0 #FF3D55) drop-shadow(-5px 0 0 #4DF6FF); }
+}
+@keyframes kt-ember-tape-end-tear-r {
+  0% { opacity: 1; transform: none; filter: none; }
+  40% { opacity: 1; transform: translateX(6%) skewX(6deg); filter: drop-shadow(5px 0 0 #FF3D55) drop-shadow(-5px 0 0 #4DF6FF); }
+  100% { opacity: 0; transform: translateX(40%) skewX(12deg); filter: drop-shadow(5px 0 0 #FF3D55) drop-shadow(-5px 0 0 #4DF6FF); }
+}
+@keyframes kt-ember-tape-end-snow {
+  0% { opacity: 0; }
+  15%, 70% { opacity: 0.3; }
+  100% { opacity: 0; }
+}
+@keyframes kt-ember-tape-end-roll {
+  from { opacity: 1; transform: translateY(-120%); }
+  to { opacity: 1; transform: translateY(720%); }
+}

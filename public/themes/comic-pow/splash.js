@@ -88,3 +88,108 @@ export function pause(host, ctx) {
     destroy() { host.replaceChildren(); },
   };
 }
+
+// ---------- time capsule unlock and THE END ----------
+
+const UNLOCK_MS = 2400;
+const isReduced = (host, ctx) => ctx.reducedMotion || host.hasAttribute('data-kt-reduced');
+
+// A soft mechanical KA-CHUNK: a low thud, then a short latch click.
+function playChunk(audio) {
+  const now = audio.currentTime + 0.02;
+  const thud = audio.createOscillator();
+  thud.type = 'sine';
+  thud.frequency.setValueAtTime(150, now);
+  thud.frequency.exponentialRampToValueAtTime(48, now + 0.18);
+  const thudGain = audio.createGain();
+  thudGain.gain.setValueAtTime(0.0001, now);
+  thudGain.gain.exponentialRampToValueAtTime(0.12, now + 0.008);
+  thudGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.24);
+  thud.connect(thudGain).connect(audio.destination);
+  thud.start(now);
+  thud.stop(now + 0.26);
+  const at = now + 0.14;
+  const length = Math.floor(audio.sampleRate * 0.06);
+  const buffer = audio.createBuffer(1, length, audio.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / length) ** 3;
+  const click = audio.createBufferSource();
+  click.buffer = buffer;
+  const band = audio.createBiquadFilter();
+  band.type = 'bandpass';
+  band.frequency.value = 1800;
+  const clickGain = audio.createGain();
+  clickGain.gain.value = 0.1;
+  click.connect(band).connect(clickGain).connect(audio.destination);
+  click.start(at);
+}
+
+// A time capsule opens: a KA-CHUNK! burst slams in with a caption and the clip title in a speech
+// bubble. Built here, shown by play().
+export function unlock(host, ctx) {
+  const { h } = ctx;
+  host.style.setProperty('--cp-accent', ctx.accent);
+  host.style.setProperty('--cp-ink', ctx.accentInk);
+  const burst = h('svg:svg', { class: 'cp-unlock-burst', viewBox: '0 0 220 190' },
+    h('svg:polygon', { points: BURST, class: 'cp-unlock-shape' }),
+    h('svg:text', { x: 110, y: 110, 'text-anchor': 'middle', textLength: 176, lengthAdjust: 'spacingAndGlyphs', class: 'cp-unlock-text' }, 'KA-CHUNK!'));
+  const root = h('div', { class: 'cp-unlock' },
+    h('div', { class: 'cp-unlock-dots' }),
+    h('p', { class: 'cp-unlock-caption' }, 'Meanwhile… a sealed tape opens!'),
+    h('div', { class: 'cp-unlock-stage' },
+      burst,
+      h('p', { class: 'cp-unlock-bubble', text: String(ctx.title || '') }),
+      ctx.note ? h('p', { class: 'cp-unlock-note', text: ctx.note }) : null));
+  let running = null, timer = 0, finish = () => {};
+  const stop = () => { clearTimeout(timer); timer = 0; finish(); };
+  ctx.signal.addEventListener('abort', stop, { once: true });
+  return {
+    play() {
+      if (running) return running;
+      host.replaceChildren(root);
+      const reduced = isReduced(host, ctx);
+      if (!reduced) {
+        const audio = ctx.sound.context();
+        if (audio) try { playChunk(audio); } catch {}
+      }
+      running = new Promise(resolve => {
+        finish = resolve;
+        if (ctx.signal.aborted) resolve();
+        else timer = setTimeout(resolve, reduced ? 30 : UNLOCK_MS);
+      });
+      return running;
+    },
+    destroy() {
+      stop();
+      host.replaceChildren();
+    },
+  };
+}
+
+// Out of tape for today: a halftone wipe sweeps across the cover and a THE END panel lands on it.
+// Everything plays once and holds; the shell draws its words and button below the panel.
+export function ending(host, ctx) {
+  const { h } = ctx;
+  host.style.setProperty('--cp-accent', ctx.accent);
+  host.style.setProperty('--cp-ink', ctx.accentInk);
+  const tag = h('p', { class: 'cp-end-tag' });
+  const root = h('div', { class: 'cp-end', 'aria-hidden': 'true' },
+    h('div', { class: 'cp-end-rays' }),
+    h('div', { class: 'cp-end-wipe' }),
+    h('div', { class: 'cp-end-frame' }),
+    h('p', { class: 'cp-end-caption' }, h('b', { text: `Issue #${ctx.number}` }), 'And so our hero rests…'),
+    h('div', { class: 'cp-end-stage' },
+      h('p', { class: 'cp-end-panel' }, 'THE END'),
+      tag));
+  let shown = false;
+  return {
+    show({ used = 0 } = {}) {
+      const minutes = Math.max(0, Math.round((Number(used) || 0) / 60));
+      tag.textContent = minutes > 0 ? `${minutes} minute${minutes === 1 ? '' : 's'} of action!` : `${ctx.title} saves the day!`;
+      if (shown) return;
+      shown = true;
+      host.replaceChildren(root);
+    },
+    destroy() { host.replaceChildren(); },
+  };
+}

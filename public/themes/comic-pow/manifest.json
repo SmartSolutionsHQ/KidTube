@@ -10,6 +10,7 @@
   "modes": ["gate", "channel"],
   "sound": true,
   "defaultAccent": "#FF3D55",
-  "accents": { "pause": true },
+  "accents": { "pause": true, "unlock": true, "ending": true },
+  "endingCopy": { "warn5": "5 MINUTES LEFT, HERO!", "warn1": "1 MINUTE! FINAL PANEL!" },
   "feed": { "--tz-flare": "#FFD23F", "--tz-rad-frame": "0px", "--tz-rad-sheet": "0px" }
 }
