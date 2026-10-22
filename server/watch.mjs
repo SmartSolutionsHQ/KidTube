@@ -231,11 +231,13 @@ export function createWatch({ sqlite, settings, env, now = Date.now }) {
   }
   const stop = () => clearInterval(timer);
 
-  function staffRoute(res, req, who, run, { post = true } = {}) {
+  // Watch history and kids' tapes stay with the owner (SECURITY.md); co-parents only reach owner: false routes.
+  function staffRoute(res, req, who, run, { post = true, owner = true } = {}) {
     answer(res, async () => {
       const body = post ? await readJson(req) : null;
       const staff = await staffFor(env, req, who, body);
       if (!staff) throw new HttpError(403, 'Sign in as a parent.');
+      if (owner && staff.role !== 'super') throw new HttpError(403, 'Only the parent who set this up can see or change this.');
       sendJson(res, 200, await run(body, staff, new URL(req.url, 'http://localhost')));
     });
     return true;
@@ -258,7 +260,7 @@ export function createWatch({ sqlite, settings, env, now = Date.now }) {
     }
     if (pathname === '/api/admin/budget' && post) return staffRoute(res, req, who, setBudget);
     if (pathname === '/api/admin/budget/bonus' && post) return staffRoute(res, req, who, addBonus);
-    if (pathname === '/api/admin/timezone' && get) return staffRoute(res, req, who, () => clock(), { post: false });
+    if (pathname === '/api/admin/timezone' && get) return staffRoute(res, req, who, () => clock(), { post: false, owner: false });
     if (pathname === '/api/admin/timezone' && post) return staffRoute(res, req, who, setTimezone);
     return false;
   }

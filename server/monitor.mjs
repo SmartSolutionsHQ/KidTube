@@ -6,7 +6,7 @@ import { viewer as cookieViewer } from './access.mjs';
 import { BRAND_NAME } from './brand.mjs';
 import { DEFAULT_CHANNEL_ID, channelById, channelBySlug, isStaff, listChannels } from './channels.mjs';
 import { InstallError, checkSiteUrl } from './config.mjs';
-import { FamilyError } from './family.mjs';
+import { FamilyError, erasePerson } from './family.mjs';
 import { sendMail } from './mail.mjs';
 import { approveClip, rejectClip } from './publish.mjs';
 import { SettingError } from './settings.mjs';
@@ -146,7 +146,8 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...body, email: user.email, t: user.t }),
     });
-    const response = await api.fetch(request, env, { viewer: null });
+    // internal: these routes write their own activity rows, so api.js doesn't add a second.
+    const response = await api.fetch(request, env, { viewer: null, internal: true });
     const result = await response.json().catch(() => ({}));
     if (!response.ok || !result.ok) throw new HttpError(response.status >= 400 ? response.status : 400, result.error || 'That did not work. Try again.');
     return result;
@@ -193,8 +194,16 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
   const lastSeen = () => new Map(sqlite.prepare("SELECT subject, ts FROM activity WHERE kind='seen'").all().map(row => [row.subject, row.ts]));
 
   /* ---------- retention ---------- */
+  // Rate limits keep addresses for an hour at most (signups); afterwards nothing needs them. api.js only
+  // clears each table when that route is used again, which in a small family can be months.
+  function pruneAddresses() {
+    const before = now() - 60 * 60 * 1000;
+    for (const table of ['hits', 'chits', 'guest_code_attempts']) sqlite.prepare(`DELETE FROM ${table} WHERE ts < ?`).run(before);
+  }
+
   // Activity and watch history older than the family's settings go, at boot and once a day.
   function prune() {
+    pruneAddresses();
     const at = now();
     sqlite.prepare('DELETE FROM activity WHERE ts < ?').run(at - settings.get('activity_retention_days') * DAY);
     const columns = sqlite.prepare('PRAGMA table_info(views)').all().map(column => column.name);
@@ -514,7 +523,8 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
       const person = needPerson(body.target);
       if (person.email === user.email) throw new HttpError(400, 'You can\'t remove your own account.');
       removePerson(person.email);
-      log(user.email, 'person', person.email, { action: 'delete', target: person.email, name: fullName(person) });
+      // The record of the removal names nobody, like the rows erasePerson rewrote.
+      log(user.email, 'person', 'someone', { action: 'delete', name: 'someone' });
       return {};
     },
 
@@ -682,11 +692,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
   function removePerson(email) {
     sqlite.exec('BEGIN IMMEDIATE');
     try {
-      for (const sql of ['DELETE FROM likes WHERE email=?', 'DELETE FROM comments WHERE email=?', 'DELETE FROM views WHERE viewer=?',
-        'DELETE FROM reactions WHERE email=?', 'DELETE FROM watch_bonus WHERE email=?',
-        "DELETE FROM video_notification_deliveries WHERE email=? AND status<>'sent'", 'DELETE FROM video_email_preferences WHERE email=?',
-        'DELETE FROM guest_codes WHERE creator=? AND redeemed IS NULL', "DELETE FROM activity WHERE kind='seen' AND subject=?",
-        'DELETE FROM accounts WHERE email=?']) sqlite.prepare(sql).run(email);
+      erasePerson(sqlite, email);
       sqlite.exec('COMMIT');
     } catch (error) { sqlite.exec('ROLLBACK'); throw error; }
     seen.delete(email);
@@ -726,6 +732,8 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
   prune();
   const daily = setInterval(() => { try { prune(); } catch (error) { console.error('Retention prune failed', error); } }, DAY);
   daily.unref?.();
+  const hourly = setInterval(() => { try { pruneAddresses(); } catch (error) { console.error('Address prune failed', error); } }, 60 * 60 * 1000);
+  hourly.unref?.();
 
-  return { handle, prune, feed, touch, storage, close: () => clearInterval(daily) };
+  return { handle, prune, pruneAddresses, feed, touch, storage, close: () => { clearInterval(daily); clearInterval(hourly); } };
 }

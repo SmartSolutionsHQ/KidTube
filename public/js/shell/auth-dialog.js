@@ -41,8 +41,6 @@ export function clearSession() {
   try { localStorage.removeItem(KEY); } catch {}
 }
 
-const b64 = text => btoa(String.fromCharCode(...new TextEncoder().encode(text))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
 async function post(path, body) {
   const response = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   return response.json().catch(() => ({ ok: false, error: `Something went wrong (${response.status}).` }));
@@ -52,7 +50,8 @@ async function post(path, body) {
 export async function revalidate(session) {
   try {
     if (session.guest) return !!(await post('/api/guest/validate', { token: session.guestToken })).ok;
-    const check = await fetch(`/api/check?e=${b64(session.email)}&t=${encodeURIComponent(session.t || '')}`).then(r => r.json());
+    // The token rides in headers, never the URL, so proxy and server logs don't keep it.
+    const check = await fetch('/api/check', { headers: { 'x-kid-email': session.email, 'x-kid-token': session.t || '' } }).then(r => r.json());
     return check.ok && check.status === 'approved' && !!check.t;
   } catch { return false; }
 }
@@ -119,7 +118,7 @@ function accessForm(box, mode, message) {
     if (index === 0) input.autofocus = true;
     if (name === 'email' && mode === 'login') { input.autocapitalize = 'none'; input.spellcheck = false; }
     if (name === 'pass') { input.minLength = mode === 'signup' ? 12 : 1; input.maxLength = 128; }
-    if (name === 'code') { input.maxLength = 4; input.pattern = '[a-zA-Z0-9]{4}'; input.autocapitalize = 'characters'; }
+    if (name === 'code') { input.maxLength = 6; input.pattern = '[a-zA-Z0-9]{4}([a-zA-Z0-9]{2})?'; input.autocapitalize = 'characters'; }
     form.append(el('label', { textContent: label }, input));
   });
   const status = el('p', { className: 'form-status', textContent: message });
@@ -136,8 +135,8 @@ function accessForm(box, mode, message) {
       const body = Object.fromEntries(new FormData(form));
       if (body.email) body.email = body.email.toLowerCase().trim();
       const reply = await post(mode === 'guest' ? '/api/guest/redeem' : mode === 'signup' ? '/api/signup' : '/api/login', body);
-      if (!reply.ok) throw Error(reply.error === 'exists' ? 'That account already exists. Try logging in.' : reply.error || 'Could not connect. Try again.');
-      if (mode === 'signup') { render('login', 'Request sent. Once a parent approves your account, log in here.'); return; }
+      if (!reply.ok) throw Error(reply.error === 'email' ? 'Use your email address.' : reply.error || 'Could not connect. Try again.');
+      if (mode === 'signup') { render('login', 'Request sent. Once a parent approves your account, log in here. If you already have one, just log in.'); return; }
       if (mode === 'guest') { finish({ guest: true, guestToken: reply.token, role: 'guest', exp: reply.expires, scope: reply.scope || null }); return; }
       if (reply.status !== 'approved') {
         status.textContent = reply.status === 'pending' ? 'Your account is waiting for a parent to approve it.' : 'This account has not been approved.';

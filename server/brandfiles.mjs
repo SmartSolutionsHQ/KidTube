@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { viewer } from './access.mjs';
 import { asStaff } from './api.js';
 import { BadgeSpecError, renderSpec } from './badge.mjs';
-import { channelById, channelBySlug } from './channels.mjs';
+import { canViewChannel, channelById, channelBySlug } from './channels.mjs';
 import { ImageError, MAX_IMAGE_BYTES, cleanIcon, cleanImage, imageExtension } from './images.mjs';
 
 // Badges, parent pictures and home-screen icons live under DATA_DIR/brand: family/* for the family's
@@ -16,6 +16,9 @@ const FILE = /^(badge|image|icon-(?:192|512|maskable-512|apple-180))-([a-f0-9]{1
 const CHANNEL_ID = /^[1-9]\d{0,8}$/;
 const TYPES = { svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', webp: 'image/webp' };
 const FOREVER = 'max-age=31536000, immutable';
+// A kid's badge and picture: never in a shared cache, and gone from browsers within the hour once a parent
+// hides the kids or changes the picture. The family's badge and icons may be kept forever.
+const KID_FILE = 'private, max-age=3600';
 const MAX_JSON = 16 * 1024;
 const MAX_ICON = 1024 * 1024;
 const ADMIN_CHANNEL = /^\/api\/admin\/channels\/([^/]+)\/(badge|image)$/;
@@ -130,10 +133,12 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
     return readFile(join(dir, name)).catch(() => null);
   }
 
-  // Kids' badges and pictures are as private as their names: public only while the front door shows kids.
+  // Kids' badges and pictures are as private as their names: public only while the front door shows kids,
+  // and otherwise only to someone who may watch that kid (a guest pass can be limited to one).
   function kidsVisible(req) {
     return env.settings.get('kids_public') || Boolean(viewer(req, sqlite, env));
   }
+  const mayView = (req, channel) => env.settings.get('kids_public') || canViewChannel(viewer(req, sqlite, env), channel);
 
   async function serve(req, res, pathname) {
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed.');
@@ -154,22 +159,21 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
     const slug = parts.length === 1 && /^(.+)\.svg$/.exec(parts[0])?.[1];
     if (!isChannelFile && !slug) throw new HttpError(404, 'Not found.');
     if (!kidsVisible(req)) throw new HttpError(401, 'Log in to see this.');
-    const scope = env.settings.get('kids_public') ? 'public' : 'private';
     if (isChannelFile) {
-      if (!CHANNEL_ID.test(parts[1])) throw new HttpError(404, 'Not found.');
+      if (!CHANNEL_ID.test(parts[1]) || !mayView(req, { id: Number(parts[1]) })) throw new HttpError(404, 'Not found.');
       const bytes = await readStored(channelDir(parts[1]), parts[2]);
       if (!bytes) throw new HttpError(404, 'Not found.');
-      return sendFile(req, res, bytes, parts[2], `${scope}, ${FOREVER}`);
+      return sendFile(req, res, bytes, parts[2], KID_FILE);
     }
     // /brand/<slug>.svg is the channel's current badge; ?v=<logo_rev> makes the URL safe to keep.
     const channel = channelBySlug(sqlite, slug);
-    if (!channel) throw new HttpError(404, 'Not found.');
+    if (!channel || !mayView(req, channel)) throw new HttpError(404, 'Not found.');
     const dir = channelDir(channel.id);
     const name = (await readIndex(dir)).badge;
     const bytes = await readStored(dir, name);
     if (!bytes) throw new HttpError(404, 'Not found.');
     const current = url.searchParams.get('v') === String(channel.logo_rev);
-    return sendFile(req, res, bytes, name, current ? `${scope}, ${FOREVER}` : `${scope}, no-cache`);
+    return sendFile(req, res, bytes, name, current ? KID_FILE : 'private, no-cache');
   }
 
   /* ---------- parent changes ---------- */
@@ -178,6 +182,12 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
     const token = String(req.headers['x-kid-token'] || payload.t || '');
     const user = await asStaff(env, email, token);
     if (!user) throw new HttpError(403, 'Only parents can change badges.');
+    return user;
+  }
+  // Kids' badges and pictures and the family's own belong to the owner, like the Kids and Settings screens.
+  async function owner(req, payload) {
+    const user = await staff(req, payload);
+    if (user.role !== 'super') throw new HttpError(403, 'Only the parent who set this up can change this.');
     return user;
   }
 
@@ -203,7 +213,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
       }
       if (what === 'badge' && req.method === 'PUT') {
         const payload = await jsonBody(req);
-        const user = await staff(req, payload);
+        const user = await owner(req, payload);
         channelFrom(id);
         const { spec, svg } = renderSpec(payload.spec);
         const name = await replace(dir, 'badge', 'svg', svg);
@@ -213,7 +223,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
         return json(res, 200, { ok: true, spec, svg, url: channelUrl(id, name), logoUrl: `/brand/${slug}.svg?v=${rev}` });
       }
       if (what === 'image' && req.method === 'PUT') {
-        const user = await staff(req);
+        const user = await owner(req);
         channelFrom(id);
         const image = cleanImage(await body(req, MAX_IMAGE_BYTES));
         const name = await replace(dir, 'image', imageExtension(image.kind), image.bytes);
@@ -221,7 +231,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
         return json(res, 200, { ok: true, url: channelUrl(id, name), width: image.width, height: image.height });
       }
       if (what === 'image' && req.method === 'DELETE') {
-        const user = await staff(req);
+        const user = await owner(req);
         channelFrom(id);
         if (await remove(dir, 'image')) log.run(Date.now(), user.email, 'image', `channel:${id}`, '{"removed":true}');
         return json(res, 200, { ok: true });
@@ -234,7 +244,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
     }
     if (pathname === '/api/admin/brand/badge' && req.method === 'PUT') {
       const payload = await jsonBody(req);
-      const user = await staff(req, payload);
+      const user = await owner(req, payload);
       const { spec, svg } = renderSpec(payload.spec);
       const name = await replace(familyDir, 'badge', 'svg', svg);
       env.settings.set('family_badge', spec, user.email);
@@ -244,7 +254,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
     if (iconRoute && req.method === 'PUT') {
       const variant = iconRoute[1];
       if (!Object.hasOwn(ICON_SIDES, variant)) throw new HttpError(404, 'Unknown icon.');
-      const user = await staff(req);
+      const user = await owner(req);
       const png = cleanIcon(await body(req, MAX_ICON), ICON_SIDES[variant]);
       const name = await replace(familyDir, `icon-${variant}`, 'png', png);
       log.run(Date.now(), user.email, 'icon', 'family', JSON.stringify({ file: name }));

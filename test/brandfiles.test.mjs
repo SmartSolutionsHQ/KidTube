@@ -206,12 +206,12 @@ test('badge, picture and icon routes: staff-only writes, content-hash files, gat
     assert.equal(file.headers.get('content-type'), 'image/svg+xml');
     assert.equal(file.headers.get('content-security-policy'), "default-src 'none'");
     assert.equal(file.headers.get('x-content-type-options'), 'nosniff');
-    assert.equal(file.headers.get('cache-control'), 'public, max-age=31536000, immutable');
+    assert.equal(file.headers.get('cache-control'), 'private, max-age=3600');
     assert.equal((await fetch(install.origin + saved.url, { headers: { 'if-none-match': file.headers.get('etag') } })).status, 304);
     const alias = await fetch(install.origin + saved.logoUrl);
     assert.equal(await alias.text(), expected.svg);
-    assert.equal(alias.headers.get('cache-control'), 'public, max-age=31536000, immutable');
-    assert.equal((await fetch(install.origin + '/brand/main.svg')).headers.get('cache-control'), 'public, no-cache');
+    assert.equal(alias.headers.get('cache-control'), 'private, max-age=3600');
+    assert.equal((await fetch(install.origin + '/brand/main.svg')).headers.get('cache-control'), 'private, no-cache');
     const info = await (await fetch(install.origin + '/api/admin/channels/1/badge', { headers: auth })).json();
     assert.deepEqual([info.spec, info.url, info.imageUrl], [expected.spec, saved.url, null]);
     const logged = install.db.prepare("SELECT actor, kind, subject FROM activity WHERE kind='badge'").get();
@@ -238,7 +238,7 @@ test('badge, picture and icon routes: staff-only writes, content-hash files, gat
     assert.deepEqual(readdirSync(join(brandDir, 'channels/1')).sort(), ['index.json', saved.url.split('/').pop()].sort());
     assert.equal((await fetch(install.origin + badgeUrl)).status, 404);
     // The old logo URL still answers, but only the current revision may be cached forever.
-    assert.equal((await fetch(install.origin + '/brand/main.svg?v=1')).headers.get('cache-control'), 'public, no-cache');
+    assert.equal((await fetch(install.origin + '/brand/main.svg?v=1')).headers.get('cache-control'), 'private, no-cache');
     badgeUrl = saved.url;
   });
 
@@ -298,7 +298,7 @@ test('badge, picture and icon routes: staff-only writes, content-hash files, gat
     }
     const signedIn = await fetch(install.origin + badgeUrl, { headers: { cookie: parent.cookie } });
     assert.equal(signedIn.status, 200);
-    assert.equal(signedIn.headers.get('cache-control'), 'private, max-age=31536000, immutable');
+    assert.equal(signedIn.headers.get('cache-control'), 'private, max-age=3600');
     assert.equal((await fetch(install.origin + '/brand/main.svg', { headers: { cookie: parent.cookie } })).status, 200);
     const family = await (await fetch(install.origin + '/api/admin/brand', { headers: auth })).json();
     assert.equal((await fetch(install.origin + family.badge)).status, 200);

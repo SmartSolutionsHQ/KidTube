@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
-import { open, readFile, rename, rm, stat, statfs, writeFile } from 'node:fs/promises';
+import { open, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 import { asCreator } from './api.js';
@@ -22,6 +22,9 @@ const TRANSCODE_STALL = 2 * 60000;
 const transcodeTimeout = duration => Math.max(10 * 60000, duration * 20 * 1000);
 const SPARE_BYTES = 1024 ** 3;
 const STAFF = new Set(['admin', 'super']);
+// An upload nobody finished still holds the phone's raw file, GPS and all, so it goes after a day.
+export const STALE_UPLOAD_MS = 24 * 60 * 60 * 1000;
+const SWEEP_EVERY = 60 * 60 * 1000;
 
 function json(res, status, value) {
   res.writeHead(status, {
@@ -355,11 +358,26 @@ export function createUploadManager({ sqlite, env, databasePath, notifications, 
     }
   }
 
+  async function sweep(at = Date.now()) {
+    const stale = sqlite.prepare("SELECT id FROM upload_jobs WHERE status='receiving' AND created<?").all(at - STALE_UPLOAD_MS);
+    for (const { id } of stale) {
+      sqlite.prepare("UPDATE upload_jobs SET status='failed', error='The upload was not finished.', updated=? WHERE id=? AND status='receiving'").run(at, id);
+    }
+    // Any folder without an upload still on its way, including ones left by a crash.
+    for (const name of await readdir(incoming).catch(() => [])) {
+      const job = ID.test(name) ? getJob.get(name) : null;
+      if (!job || !['receiving', 'queued', 'processing'].includes(job.status)) await rm(join(incoming, name), { recursive: true, force: true });
+    }
+  }
+
   async function deleteVideo(id) {
     if (!ID.test(id)) return;
     for (const file of [`${id}.mp4`, `${id}.jpg`]) await rm(join(videos, file), { force: true });
   }
 
   pump().catch(error => console.error('Upload queue failed', error));
-  return { handle, deleteVideo };
+  const swept = () => sweep().catch(error => console.error('Upload sweep failed', error));
+  swept();
+  setInterval(swept, SWEEP_EVERY).unref();
+  return { handle, deleteVideo, sweep };
 }

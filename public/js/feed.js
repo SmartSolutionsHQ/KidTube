@@ -85,6 +85,8 @@ function fmtAgo(ts) {
   if (mins < 1440) return `${Math.floor(mins / 60)}h`;
   return `${Math.floor(mins / 1440)}d`;
 }
+// A session rides in headers, never the URL, so proxy and server logs don't keep the token.
+var sessHeaders = (s) => s && s.t ? { "x-kid-email": s.email, "x-kid-token": s.t } : {};
 var esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 var reel = $("#tz-reel");
 function slideMarkup(c, i) {
@@ -475,7 +477,7 @@ async function renderComments() {
   const s = sessRead();
   let j;
   try {
-    j = await fetch("/api/comments?c=" + encodeURIComponent(c.id) + (s && s.t ? "&e=" + b64uParam(s.email) + "&t=" + encodeURIComponent(s.t) : "")).then((r) => r.json());
+    j = await fetch("/api/comments?c=" + encodeURIComponent(c.id), { headers: sessHeaders(s) }).then((r) => r.json());
   } catch {
     cBody.textContent = "Couldn't load comments.";
     return;
@@ -1025,7 +1027,6 @@ function sessWrite(s) {
   } catch (err) {
   }
 }
-var b64uParam = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 // The signed-in session, or null for guests and visitors. /api/check never hands out a token without one,
 // so there is nothing to fetch here; callers already treat a session without `t` as signed out.
 async function sessToken() {
@@ -1051,8 +1052,7 @@ function paintAllLikes() {
 async function seedLikes() {
   const s = await sessToken();
   try {
-    const q = s && s.t ? "?e=" + b64uParam(s.email) + "&t=" + encodeURIComponent(s.t) : "";
-    const j = await fetch("/api/likes" + q).then((r) => r.json());
+    const j = await fetch("/api/likes", { headers: sessHeaders(s) }).then((r) => r.json());
     if (!j || !j.ok) return;
     likeState.clear();
     for (const k in j.counts) likeState.set(k, { count: j.counts[k] || 0, liked: !!(j.liked && j.liked[k]) });
@@ -1174,7 +1174,7 @@ function bootFeed() {
     // account, so only a confirmed check may change the stored role.
     if (!s.t) return s;
     try {
-      const j = await fetch("/api/check?e=" + b64uParam(s.email) + "&t=" + encodeURIComponent(s.t)).then((r) => r.json());
+      const j = await fetch("/api/check", { headers: sessHeaders(s) }).then((r) => r.json());
       if (j && j.ok && j.status === "approved") {
         s.role = j.role || "";
         sessWrite(s);

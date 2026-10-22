@@ -15,7 +15,7 @@ import { createSite } from './site.mjs';
 import { createBrandFiles } from './brandfiles.mjs';
 import { InstallError, checkSiteUrl, prepareInstall } from './config.mjs';
 import { createFamily } from './family.mjs';
-import { createSetup } from './setup.mjs';
+import { clientIp, createSetup } from './setup.mjs';
 import { createCapsules } from './capsules.mjs';
 import { createReactions } from './reactions.mjs';
 import { createWatch } from './watch.mjs';
@@ -84,7 +84,7 @@ async function sendApi(req, res, who) {
   }
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const headers = new Headers(req.headers);
-  headers.set('CF-Connecting-IP', process.env.TRUST_PROXY === '1' ? (req.headers['x-forwarded-for'] || req.socket.remoteAddress) : (req.socket.remoteAddress || 'unknown'));
+  headers.set('CF-Connecting-IP', clientIp(req));
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
   const request = new Request(url, { method: req.method, headers, body });
   if(url.pathname==='/api/logout'&&req.method==='POST'){res.writeHead(200,{'Set-Cookie':clearCookie(env),'Content-Type':'application/json'}).end('{"ok":true}');return;}
@@ -121,7 +121,7 @@ const server = http.createServer((req, res) => {
   if(setup.handle(req,res,pathname))return;
   if(monitor.handle(req,res,pathname))return;
   if(['/api/login','/api/signup','/api/guest/redeem'].includes(pathname)){
-    const ip=process.env.TRUST_PROXY==='1'?(req.headers['x-forwarded-for']||req.socket.remoteAddress):req.socket.remoteAddress;
+    const ip=clientIp(req);
     const now=Date.now(); for(const [k,v] of attempts)if(v.until<now)attempts.delete(k);
     const limit=attempts.get(ip)||{n:0,until:now+600000};limit.n++;attempts.set(ip,limit);
     if(limit.n>20){res.writeHead(429,{'Content-Type':'application/json'}).end('{"ok":false,"error":"Too many attempts. Try again in ten minutes."}');return;}

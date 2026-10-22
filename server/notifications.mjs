@@ -48,8 +48,13 @@ export function videoEmail(clip, { siteUrl, unsubscribeUrl }) {
 }
 
 export function createVideoNotifications({ sqlite, env, fetchImpl = fetch, now = Date.now, logger = console }) {
-  const siteUrl = new URL(env.SITE_URL || 'http://localhost:3000');
-  if (!['https:', 'http:'].includes(siteUrl.protocol) || siteUrl.username || siteUrl.password) throw new Error('SITE_URL must be an HTTP(S) URL');
+  // Read on every use: on a first install the setup wizard saves the web address after the app started.
+  const site = () => {
+    const url = new URL(env.SITE_URL || 'http://localhost:3000');
+    if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new Error('SITE_URL must be an HTTP(S) URL');
+    return url;
+  };
+  site();
   let timer = null, running = null, stopped = false;
 
   // Called inside the upload's publication transaction. Never scan old clips on startup.
@@ -72,7 +77,7 @@ export function createVideoNotifications({ sqlite, env, fetchImpl = fetch, now =
   }
 
   function unsubscribeLink(email) {
-    const url = new URL('/api/notifications/unsubscribe', siteUrl);
+    const url = new URL('/api/notifications/unsubscribe', site());
     url.searchParams.set('e', Buffer.from(email).toString('base64url'));
     url.searchParams.set('s', signature(email));
     return url.href;
@@ -83,7 +88,7 @@ export function createVideoNotifications({ sqlite, env, fetchImpl = fetch, now =
 <body style="background:#0B0C10;color:#F7F4EC;font:16px/1.6 Arial,sans-serif;margin:0"><main style="max-width:480px;margin:50px auto;padding:24px">
 <p style="color:#3265FF;letter-spacing:3px">${WORDMARK}</p><h1>New-video emails</h1><p>${esc(message)}</p>
 ${action ? `<form method="post" action="${esc(action)}"><button style="background:#3265FF;color:#0B0C10;border:0;border-radius:6px;padding:12px 18px;font:inherit;font-weight:bold;cursor:pointer" type="submit">Stop new-video emails</button></form>` : ''}
-<p><a href="${esc(new URL('/', siteUrl).href)}" style="color:#3265FF">Back to ${BRAND_NAME}</a></p></main></body></html>`, {
+<p><a href="${esc(new URL('/', site()).href)}" style="color:#3265FF">Back to ${BRAND_NAME}</a></p></main></body></html>`, {
       status, headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store',
         'referrer-policy': 'no-referrer', 'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; frame-ancestors 'none'" },
     });
@@ -122,7 +127,7 @@ ${action ? `<form method="post" action="${esc(action)}"><button style="backgroun
       const attempts = row.attempts + 1;
       sqlite.prepare('UPDATE video_notification_deliveries SET attempts=? WHERE clip_id=? AND email=?').run(attempts, row.clip_id, row.email);
       try {
-        const message = videoEmail({ ...row, id: row.clip_id }, { siteUrl, unsubscribeUrl: unsubscribeLink(row.email) });
+        const message = videoEmail({ ...row, id: row.clip_id }, { siteUrl: site(), unsubscribeUrl: unsubscribeLink(row.email) });
         const result = await sendMail(env, { email: row.email }, message.subject, message.html, message.text, { idempotencyKey: row.delivery_key, fetchImpl });
         sqlite.prepare("UPDATE video_notification_deliveries SET status='sent', sent=?, message_id=?, last_error=NULL WHERE clip_id=? AND email=?")
           .run(now(), result.messageId || null, row.clip_id, row.email);
