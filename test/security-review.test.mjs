@@ -1,6 +1,6 @@
 // Regressions for docs/plan/security-review.md: each test names the finding it pins down.
 import test from 'node:test';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { request } from 'node:http';
 import assert from 'node:assert/strict';
 import { addressKey, clientIp, createSetup } from '../server/setup.mjs';
@@ -12,7 +12,7 @@ import { publishClip } from '../server/publish.mjs';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createUploadManager, STALE_UPLOAD_MS } from '../server/uploads.mjs';
+import { createUploadManager, probe, STALE_UPLOAD_MS } from '../server/uploads.mjs';
 import { sessOk, sessToken } from '../server/api.js';
 import { openDatabase } from '../server/db.mjs';
 import { migrate } from '../server/schema.mjs';
@@ -380,4 +380,30 @@ test('L10: before setup, anyone may ask for the state, but it no longer names th
   assert.equal('tokenFile' in state, false);
   assert.ok(!JSON.stringify(state).includes(dir), 'the data folder path is not in the answer');
   assert.equal((await withHost(`http://127.0.0.1:${port}`, '/api/setup/state', 'any-name.example')).status, 200, 'no web address yet, so any name works');
+});
+
+test('L11: FFmpeg opens uploads only as local files in the containers phones make', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'kidtube-ffmpeg-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const make = (name, ...args) => {
+    const made = spawnSync('ffmpeg', ['-nostdin', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=s=160x120:d=1', ...args, join(dir, name)]);
+    assert.equal(made.status, 0, `${name}: ${made.stderr}`);
+  };
+  const h264 = ['-c:v', 'libx264', '-pix_fmt', 'yuv420p'];
+  make('phone.mp4', ...h264, '-f', 'mp4');
+  make('phone.mov', ...h264, '-f', 'mov');
+  make('phone.3gp', ...h264, '-f', '3gp');
+  make('phone.webm', '-c:v', 'libvpx', '-f', 'webm');
+  make('phone.mkv', ...h264, '-f', 'matroska');
+  make('other.ts', ...h264, '-f', 'mpegts');
+  make('other.avi', ...h264, '-f', 'avi');
+  // Every upload is saved as "source", with no extension, whatever it really is.
+  const asUpload = name => { const file = join(dir, `${name}.source`); writeFileSync(file, readFileSync(join(dir, name))); return file; };
+  for (const name of ['phone.mp4', 'phone.mov', 'phone.3gp', 'phone.webm', 'phone.mkv']) assert.ok(await probe(asUpload(name)) > 0, name);
+  // A concat list is probed from its first line and would make FFmpeg open other files beside it.
+  writeFileSync(join(dir, 'list.source'), 'ffconcat version 1.0\nfile phone.mp4\n');
+  writeFileSync(join(dir, 'playlist.m3u8'), '#EXTM3U\n#EXT-X-TARGETDURATION:1\n#EXTINF:1,\nother.ts\n#EXT-X-ENDLIST\n');
+  for (const file of [asUpload('other.ts'), asUpload('other.avi'), join(dir, 'list.source'), join(dir, 'playlist.m3u8')]) {
+    await assert.rejects(probe(file), file);
+  }
 });

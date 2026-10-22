@@ -82,9 +82,14 @@ export function runProcess(command, args, { timeoutMs, stallMs, onStdout = () =>
   });
 }
 
-async function probe(file) {
+// Input options for every file FFmpeg opens. An upload is only ever a local file in a container phones make
+// (MP4/MOV/M4V/3GP or WebM/MKV), so playlists, concat lists, other protocols and every other demuxer are
+// refused before FFmpeg follows anything inside them.
+export const INPUT_GUARD = ['-protocol_whitelist', 'file', '-format_whitelist', 'mov,mp4,m4a,3gp,3g2,mj2,matroska,webm'];
+
+export async function probe(file) {
   const { stdout } = await execFileAsync('ffprobe', [
-    '-v', 'error', '-show_entries', 'format=duration:stream=codec_type,width,height',
+    '-v', 'error', ...INPUT_GUARD, '-show_entries', 'format=duration:stream=codec_type,width,height',
     '-of', 'json', file,
   ], { timeout: PROBE_TIMEOUT, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
   const info = JSON.parse(stdout);
@@ -97,7 +102,7 @@ async function probe(file) {
 
 function transcode(input, output, duration, onProgress) {
   const args = [
-    '-nostdin', '-y', '-hide_banner', '-loglevel', 'error', '-i', input,
+    '-nostdin', '-y', '-hide_banner', '-loglevel', 'error', ...INPUT_GUARD, '-i', input,
     // Phone videos carry GPS and device details; none of it should reach viewers.
     '-map', '0:v:0', '-map', '0:a:0?', '-map_metadata', '-1', '-map_chapters', '-1',
     '-vf', "scale=w='min(854,iw)':h='min(480,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
@@ -129,7 +134,7 @@ export const hasRoom = (freeBytes, size) => freeBytes >= 2 * size + SPARE_BYTES;
 function grabPoster(video, output, duration) {
   return runProcess('ffmpeg', [
     '-nostdin', '-y', '-hide_banner', '-loglevel', 'error',
-    '-ss', Math.min(1, duration / 2).toFixed(2), '-i', video, '-map_metadata', '-1',
+    '-ss', Math.min(1, duration / 2).toFixed(2), ...INPUT_GUARD, '-i', video, '-map_metadata', '-1',
     '-frames:v', '1', '-vf', "scale=w='min(480,iw)':h=-2", '-q:v', '5', '-f', 'image2', '-c:v', 'mjpeg', output,
   ], { timeoutMs: POSTER_TIMEOUT });
 }
