@@ -781,56 +781,6 @@ document.addEventListener("pointerdown", (e) => {
   bar.addEventListener("pointercancel", end);
   flush();
 });
-(() => {
-  const st = document.createElement("style");
-  st.id = "tz-scrub-style";
-  st.textContent = `
-.tz-bar{touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none}
-.tz-bar-fill::after{content:'';position:absolute;right:-6px;top:50%;width:11px;height:11px;
-  border-radius:50%;background:var(--tz-paper,#F7F4EC);
-  box-shadow:0 0 0 1px rgba(5,6,10,.55),0 1px 5px rgba(5,6,10,.45);
-  transform:translateY(-50%);opacity:.85;pointer-events:none;
-  transition:transform 140ms cubic-bezier(.2,0,0,1),opacity 140ms linear}
-.tz-slide[data-scrub='1'] .tz-bar-fill::after{transform:translateY(-50%) scale(1.6);opacity:1}
-.tz-slide[data-state='loading'] .tz-bar-fill::after,
-.tz-slide[data-state='error'] .tz-bar-fill::after{opacity:0}
-.tz-bar-tip{position:absolute;bottom:14px;left:16px;transform:translateX(-50%);
-  padding:5px 8px;border-radius:2px;background:rgba(5,6,10,.82);color:var(--tz-paper,#F7F4EC);
-  font:500 11px/1 var(--tz-mono,'DM Mono',monospace);letter-spacing:.1em;
-  opacity:0;pointer-events:none;white-space:nowrap;transition:opacity 120ms linear}
-.tz-slide[data-scrub='1'] .tz-bar-tip{opacity:1}`;
-  document.head.appendChild(st);
-})();
-(() => {
-  const st = document.createElement("style");
-  st.id = "tz-upload-style";
-  st.textContent = `
-.tz-upload-fab{position:absolute;right:12px;z-index:20;bottom:calc(var(--tz-safe-b,0px) + var(--tz-kb,0px) + 52px);
-  display:flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid rgba(247,244,236,.35);
-  background:rgba(5,6,10,.72);color:var(--tz-paper,#F7F4EC);font:500 11px/1 var(--tz-mono,'DM Mono',monospace);
-  letter-spacing:.12em;text-transform:uppercase;border-radius:999px;cursor:pointer}
-.tz-upload-fab:hover{border-color:var(--tz-flare,#FF5C2B);color:var(--tz-flare,#FF5C2B)}
-.tz-upload-pill{position:absolute;left:50%;transform:translateX(-50%);top:14px;z-index:40;
-  padding:8px 12px;border-radius:2px;background:rgba(5,6,10,.85);color:var(--tz-paper,#F7F4EC);
-  font:500 11px/1.3 var(--tz-mono,'DM Mono',monospace);letter-spacing:.08em;max-width:80%;text-align:center}`;
-  document.head.appendChild(st);
-})();
-(() => {
-  const st = document.createElement("style");
-  st.id = "tz-social-style";
-  st.textContent = `
-.tz-heartburst{position:absolute;z-index:12;width:0;height:0;pointer-events:none}
-.tz-heartburst .tz-ico{position:absolute;left:-26px;top:-26px;width:52px;height:52px;color:var(--tz-flare,#FF5C2B);
-  filter:drop-shadow(0 2px 10px rgba(5,6,10,.6));
-  animation:tz-heartpop 700ms cubic-bezier(.2,0,0,1) forwards}
-@keyframes tz-heartpop{
-  0%{transform:scale(.2) rotate(-8deg);opacity:0}
-  18%{transform:scale(1.18) rotate(3deg);opacity:1}
-  38%{transform:scale(1) rotate(0)}
-  70%{transform:scale(1.02) translateY(-8px);opacity:1}
-  100%{transform:scale(.9) translateY(-46px);opacity:0}}`;
-  document.head.appendChild(st);
-})();
 function retry(slide) {
   retryClip(slide, {
     play: slide?.dataset.active === "1" && !document.hidden && !state.sheet,
@@ -984,12 +934,11 @@ function guestPrompt() {
   wrap.setAttribute("role", "dialog");
   wrap.setAttribute("aria-modal", "true");
   wrap.setAttribute("aria-label", "Register to participate");
-  wrap.style.cssText = "position:fixed;inset:0;z-index:500;display:grid;place-items:center;padding:20px;background:rgba(5,6,10,.82);backdrop-filter:blur(7px)";
-  wrap.innerHTML = `<div style="width:min(100%,380px);padding:24px;border:1px solid var(--tz-line);border-radius:16px;background:var(--tz-surface);color:var(--tz-paper);font:15px/1.5 var(--tz-ui);box-shadow:0 18px 60px rgba(5,6,10,.6)">
-    <h2 style="margin:0 0 10px;color:var(--tz-flare);font:400 26px/1 var(--tz-display);text-transform:uppercase">Guest access is view-only</h2>
+  wrap.innerHTML = `<div class="tz-guest-card">
+    <h2>Guest access is view-only</h2>
     <p>To like or comment, you need to register for an account.</p>
-    <p><a href="/?register=1" style="color:var(--tz-paper);text-decoration:underline;text-underline-offset:4px">Ask for an account</a></p>
-    <button type="button" data-guest-close style="min-height:44px;padding:0 16px;border:1px solid var(--tz-line);background:transparent;color:var(--tz-paper);font:500 12px/1 var(--tz-mono);letter-spacing:.14em;text-transform:uppercase;cursor:pointer">Keep watching</button>
+    <p><a href="/?register=1">Ask for an account</a></p>
+    <button type="button" data-guest-close>Keep watching</button>
   </div>`;
   const close = () => { wrap.remove(); document.removeEventListener("keydown", escape); };
   const escape = (event) => { if (event.key === "Escape") close(); };
