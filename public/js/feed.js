@@ -7,6 +7,8 @@ import { attachReactions, chipsMarkup, railButtonMarkup } from '/js/shell/reacti
 import { attachWatch } from '/js/shell/watch.js';
 var familyZone = () => window.__ktChannel?.timezone || undefined;
 var serverBudget = null;
+// A spent daily tape: the slides carry no video at all, so nothing asks for a file the server will refuse.
+var tapeSpent = () => !!serverBudget && serverBudget.remaining <= 0;
 var reactionsUi = null;
 var CATALOG = [];
 // The shell (js/shell/app.js) names the kid's channel in window.__ktChannel before it unlocks the feed.
@@ -89,7 +91,7 @@ function slideMarkup(c, i) {
   if (c.sealed) return lockedSlideMarkup(c, i, clips.length, familyZone());
   const media = `<video playsinline preload="none" muted
               ${c.duration && c.duration < LOOP_UNDER ? "loop" : ""}
-              ${c.src ? `src="${esc(c.src)}"` : ""}></video>`;
+              ${c.src && !tapeSpent() ? `src="${esc(c.src)}"` : ""}></video>`;
   return `
   <section class="tz-slide" data-i="${i}" data-id="${esc(c.id)}" data-state="loading"
            tabindex="-1" aria-label="Clip ${i + 1} of ${clips.length}">
@@ -1639,7 +1641,7 @@ function bootFeed() {
       poster: clip.sealed ? "" : clip.poster || "",
       src: clip.src,
       publishedAt: clip.publishedAt || (/* @__PURE__ */ new Date()).toISOString(),
-      duration: Number(clip.duration) || 0,
+      duration: clip.sealed ? 0 : Number(clip.duration) || 0,
       ...clip.sealed ? { sealed: true, opensAt: clip.opensAt, capsuleNote: clip.capsuleNote || "", sealedBy: clip.sealedBy || "" } : {}
     };
     clips.unshift(row);

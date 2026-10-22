@@ -28,18 +28,21 @@ async function warningWords(themeId) {
 
 export function attachWatch({ budget = null, channel = window.__ktChannel || {}, clipOf, onEnd } = {}) {
   const views = new WeakMap();
-  let tape = budget ? { ...budget, at: performance.now() } : null;
-  let ended = false, words = {};
+  let tape = null, ended = false, words = {};
   const warned = new Set();
   warningWords(channel.themeId).then(found => { words = found; });
 
   // Seconds of tape left now: the last answer minus what has played since.
   const remaining = () => (tape ? tape.remaining - (tape.spent || 0) : Infinity);
+  // A pill only for a threshold the tape crosses while playing; ones already behind it stay quiet.
+  const arm = left => { warned.clear(); for (const warning of WARNINGS) if (left <= warning.at) warned.add(warning.key); };
   const syncBudget = next => {
     if (!next) return;
+    // More tape than before (a parent's bonus) re-arms the warnings still ahead of it.
+    if (!tape || next.remaining > remaining() + 30) arm(next.remaining);
     tape = { ...next, at: performance.now(), spent: 0 };
-    if (next.remaining > WARNINGS[0].at) warned.clear();
   };
+  if (budget) { arm(budget.remaining); tape = { ...budget, at: performance.now(), spent: 0 }; }
 
   function state(video) {
     let entry = views.get(video);
@@ -71,7 +74,7 @@ export function attachWatch({ budget = null, channel = window.__ktChannel || {},
     const left = remaining();
     for (const warning of WARNINGS) {
       if (left <= warning.at && left > 0 && !warned.has(warning.key)) {
-        WARNINGS.filter(other => other.at >= warning.at).forEach(other => warned.add(other.key));
+        warned.add(warning.key);
         pill(words[warning.key] || warning.text);
       }
     }
@@ -119,7 +122,8 @@ export function attachWatch({ budget = null, channel = window.__ktChannel || {},
   function end() {
     if (ended) return;
     ended = true;
-    for (const video of document.querySelectorAll('.tz-slide video')) video.pause();
+    // Stop and let go of every file, so no neighbour keeps asking for video the server now refuses.
+    for (const video of document.querySelectorAll('.tz-slide video')) { video.pause(); video.removeAttribute('src'); video.removeAttribute('poster'); video.load(); }
     for (const selector of ['.tz-app', '.tz-head']) { const node = document.querySelector(selector); if (node) node.inert = true; }
     document.querySelector('.tz-tape-pill')?.remove();
     const show = () => {
