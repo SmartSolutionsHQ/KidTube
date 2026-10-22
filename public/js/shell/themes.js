@@ -61,7 +61,7 @@ export function pickTheme(registry, wanted, { lowPower = false, force = false, m
   return { theme, reason: 'chosen' };
 }
 
-// The feed variables a theme asks for, with "accent" filled in. M6 applies them to the feed.
+// The feed variables a theme asks for, with "accent" filled in. app.js applies them to the feed.
 export function feedVars(theme, accent) {
   const out = {};
   for (const [name, value] of Object.entries(theme?.feed || {})) {

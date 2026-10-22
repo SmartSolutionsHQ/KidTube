@@ -1,5 +1,5 @@
-// Step 4: add your kids. Each kid is a channel with a name, a channel line, an accent, a badge (the M4
-// builder), a splash screen (the M3 gallery), upload review and an optional login. Saving creates the
+// Step 4: add your kids. Each kid is a channel with a name, a channel line, an accent, a badge (the badge
+// builder), a splash screen (the theme gallery), upload review and an optional login. Saving creates the
 // channel first, then saves the badge against it; the first kid takes over the install's channel 1.
 // The public demo reuses this step with `basic` (no upload review or login, which a visitor can't keep)
 // and `maxKids` (the visitor's limit); the wizard passes neither.

@@ -1,6 +1,6 @@
-// The family's time zone, shown with the current local time as a check. Days for the daily tape,
-// capsule countdowns and the midnight reset all follow it. No dashboard slot exists for family-wide
-// settings yet; mount it on the settings screen (ctx { staff }).
+// Slot "family-settings" (once, on the Settings tab), ctx { staff }. The family's time zone, shown with
+// the current local time as a check. Days for the daily tape, capsule countdowns and the midnight reset
+// all follow it.
 //   GET /api/admin/timezone     POST /api/admin/timezone { timezone }
 import { announce, api, h, root, staffSession } from './common.js';
 

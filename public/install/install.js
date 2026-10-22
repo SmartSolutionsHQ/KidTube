@@ -1,3 +1,4 @@
+// The install page (/install): the home-screen steps from pwa.js, titled with the family's name.
 import { mountInstall } from '/js/shell/pwa.js';
 
 mountInstall(document.body);

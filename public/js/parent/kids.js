@@ -1,6 +1,6 @@
 // Kids (owner only): each kid's channel. Name, channel line, accent (checked against the dark screens),
-// badge (the M4 builder), splash screen (the M3 gallery), upload review and an optional login. Reorder
-// the kids, add one, or remove one with their videos. The first kid keeps channel 1 and can't be removed.
+// badge (the badge builder), splash screen (the theme gallery), upload review and an optional login.
+// Reorder the kids, add one, or remove one with their videos. The first kid keeps channel 1 and can't be removed.
 // #/kids/<slug> opens that kid's editor and #/kids/new a blank one.
 //
 // In the public demo the server answers these routes from the visitor's private sandbox and says so in

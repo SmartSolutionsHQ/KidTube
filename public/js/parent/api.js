@@ -34,7 +34,7 @@ async function send(method, path, body) {
 export const api = {
   get: path => send('GET', path),
   post: (path, body = {}) => send('POST', path, body),
-  // A GET that may not exist yet (another milestone's route): resolves to null on 404.
+  // A GET the server may not offer (it answers 404): resolves to null instead of failing.
   async maybe(path) {
     try { return await send('GET', path); } catch (error) { if (error.status === 404) return null; throw error; }
   },

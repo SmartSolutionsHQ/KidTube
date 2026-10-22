@@ -1,6 +1,7 @@
 /* The parent side: calm on purpose. Inter Tight in sentence case, square panels, plain words,
    one ember button per screen, no glitch and no motion beyond a focus ring. The setup wizard uses it
-   first; the parent dashboard (M7) reuses the same classes. Load after reset.css, fonts.css, base.css.
+   first; the parent dashboard, the install page and the offline page reuse the same classes. Load after
+   reset.css, fonts.css, base.css.
 
    Classes are prefixed kp- ("kid parent"). Colours come from base.css tokens, so a family accent set
    on --tz-flare flows through; the primary button stays ink-on-accent. */
@@ -384,7 +385,7 @@
 }
 
 /* ======================================================================
-   The parent dashboard (M7): /parents. Classes are prefixed kd- and sit on
+   The parent dashboard: /parents. Classes are prefixed kd- and sit on
    top of the kp- kit above. Phone first: a top bar with a Menu button; from
    900px the nav is a column on the left, as on the design board.
    ====================================================================== */

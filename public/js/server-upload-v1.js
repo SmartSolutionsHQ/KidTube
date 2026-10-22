@@ -1,3 +1,6 @@
+// Sending a video to the server, for the feed's upload button and the dashboard's Videos tab: start the
+// upload, send its chunks (three at a time, each retried), finish, then poll until the server has converted it.
+
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function post(path, payload) {
