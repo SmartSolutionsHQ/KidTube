@@ -89,16 +89,17 @@ test('an existing install skips the setup wizard and keeps comments open', async
     [{ key: 'comments_default', value: '"open"' }, { key: 'setup_complete', value: 'true' }]);
 });
 
-test('channel 1 is permanent and deleting a clip deletes its likes, comments and views', async t => {
+test('channel 1 is permanent and deleting a clip deletes its likes, comments, views and reactions', async t => {
   const sqlite = v0Database(t);
   await migrate(sqlite);
   sqlite.exec("INSERT INTO channels (id,slug,name,created) VALUES (2,'ben','Ben',0)");
   assert.throws(() => sqlite.exec('DELETE FROM channels WHERE id=1'), /first channel cannot be deleted/);
   sqlite.exec('DELETE FROM channels WHERE id=2');
-  sqlite.exec("INSERT INTO views VALUES ('clip-a','parent@example.com',1), ('clip-b','parent@example.com',1)");
+  sqlite.exec(`INSERT INTO views (clip_id,channel_id,viewer,started,updated) VALUES ('clip-a',1,'parent@example.com',1,1), ('clip-b',1,'parent@example.com',1,1);
+    INSERT INTO reactions VALUES ('clip-a','parent@example.com','wow',1), ('clip-b','parent@example.com','star',1);`);
   sqlite.exec("DELETE FROM clips WHERE id='clip-a'");
   const left = table => sqlite.prepare(`SELECT COUNT(*) n FROM ${table}`).get().n;
-  assert.deepEqual([left('likes'), left('comments'), left('views')], [0, 0, 1]);
+  assert.deepEqual([left('likes'), left('comments'), left('views'), left('reactions')], [0, 0, 1, 1]);
 });
 
 test('rerunning the ladder, even from a reset version, changes nothing', async t => {
@@ -162,4 +163,36 @@ test('a fresh database gets channel 1 and every table, and a newer one is refuse
   sqlite.exec(`PRAGMA user_version=${SCHEMA_VERSION + 1}`);
   await assert.rejects(migrate(sqlite), new RegExp(`^Error: Database is newer than this app. Upgrade ${BRAND_NAME}.$`));
   assert.equal(sqlite.prepare('PRAGMA user_version').get().user_version, SCHEMA_VERSION + 1);
+});
+
+// v4 replaces the never-written v2 views table and adds what time capsules, reactions and budgets need.
+test('v3 to v4: capsule, reaction, budget and watch-log tables, with a backup first', async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'kidtube-migrate-v4-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const sqlite = v0Database(t, V0_SCHEMA, join(dir, 'kidtube.sqlite'));
+  // Stop at v3 the way an M6 install would be, with a v2-shaped views row.
+  const full = SCHEMA_VERSION;
+  assert.ok(full >= 4);
+  sqlite.exec('PRAGMA user_version=0');
+  await migrate(sqlite);
+  sqlite.exec(`DROP TABLE views; CREATE TABLE views (clip_id TEXT NOT NULL, viewer TEXT NOT NULL, ts INTEGER NOT NULL);
+    INSERT INTO views VALUES ('clip-a','parent@example.com',1); PRAGMA user_version=3;`);
+  await migrate(sqlite, { dataDir: dir });
+  assert.equal(sqlite.prepare('PRAGMA user_version').get().user_version, full);
+  assert.match(readdirSync(join(dir, 'backups'))[0], /^pre-migrate-v3-/);
+  const columns = table => sqlite.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
+  for (const column of ['opens_at', 'opened_at', 'sealed_by', 'capsule_note']) assert.ok(columns('clips').includes(column), column);
+  assert.ok(columns('accounts').includes('watch_budget_minutes'));
+  assert.ok(columns('upload_jobs').includes('opens_at'));
+  assert.deepEqual(columns('views'), ['id', 'clip_id', 'channel_id', 'viewer', 'started', 'updated', 'seconds', 'completed']);
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM views').get().n, 0, 'the old shape held nothing worth keeping');
+  for (const table of ['reactions', 'watch_bonus']) assert.ok(tables(sqlite).includes(table), table);
+  assert.deepEqual(rows(sqlite, "SELECT id, opens_at, opened_at, sealed_by, capsule_note FROM clips WHERE id='clip-a'"),
+    [{ id: 'clip-a', opens_at: 0, opened_at: 0, sealed_by: '', capsule_note: '' }], 'nothing is sealed until a parent acts');
+  assert.equal(sqlite.prepare("SELECT watch_budget_minutes m FROM accounts").get().m, 0, 'nobody is budgeted until a parent acts');
+  sqlite.exec("INSERT INTO reactions VALUES ('clip-a','parent@example.com','wow',1); DELETE FROM clips WHERE id='clip-a'");
+  assert.equal(sqlite.prepare('SELECT COUNT(*) n FROM reactions').get().n, 0, 'the delete cascade covers reactions');
+  sqlite.exec('PRAGMA user_version=0');
+  await migrate(sqlite);
+  assert.deepEqual(columns('views'), ['id', 'clip_id', 'channel_id', 'viewer', 'started', 'updated', 'seconds', 'completed'], 'a rerun keeps the new views table');
 });

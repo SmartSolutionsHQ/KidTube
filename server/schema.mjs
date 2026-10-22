@@ -97,6 +97,40 @@ const MIGRATIONS = [
   sqlite => {
     ensureColumn(sqlite, 'guest_codes', 'channel_id', 'INTEGER');
   },
+
+  // v4: time capsules, reactions, and the watch log behind daily tape budgets and "who watched".
+  sqlite => {
+    // A clip is sealed while opens_at is in the future; nothing stores "sealed" as a flag.
+    ensureColumn(sqlite, 'clips', 'opens_at', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'clips', 'opened_at', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'clips', 'sealed_by', "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(sqlite, 'clips', 'capsule_note', "TEXT NOT NULL DEFAULT ''");
+    // A seal chosen at upload rides on the job until the clip is published.
+    ensureColumn(sqlite, 'upload_jobs', 'opens_at', 'INTEGER NOT NULL DEFAULT 0');
+    ensureColumn(sqlite, 'upload_jobs', 'capsule_note', "TEXT NOT NULL DEFAULT ''");
+    ensureColumn(sqlite, 'video_announcements', 'capsule_note', 'TEXT');
+    ensureColumn(sqlite, 'accounts', 'watch_budget_minutes', 'INTEGER NOT NULL DEFAULT 0');
+    // The v2 views table was never written; its shape could not hold watch time.
+    if (!sqlite.prepare('PRAGMA table_info(views)').all().some(({ name }) => name === 'started')) sqlite.exec('DROP TABLE IF EXISTS views');
+    sqlite.exec(`CREATE TABLE IF NOT EXISTS reactions (clip_id TEXT NOT NULL, email TEXT NOT NULL, kind TEXT NOT NULL,
+      created INTEGER NOT NULL, PRIMARY KEY (clip_id, email, kind));
+    CREATE TABLE IF NOT EXISTS views (id INTEGER PRIMARY KEY, clip_id TEXT NOT NULL, channel_id INTEGER NOT NULL,
+      viewer TEXT NOT NULL, started INTEGER NOT NULL, updated INTEGER NOT NULL,
+      seconds INTEGER NOT NULL DEFAULT 0, completed INTEGER NOT NULL DEFAULT 0);
+    CREATE INDEX IF NOT EXISTS views_by_viewer_day ON views(viewer, started);
+    CREATE INDEX IF NOT EXISTS views_by_clip ON views(clip_id, started);
+    CREATE INDEX IF NOT EXISTS views_by_time ON views(started);
+    CREATE TABLE IF NOT EXISTS watch_bonus (email TEXT NOT NULL, day TEXT NOT NULL, minutes INTEGER NOT NULL,
+      actor TEXT NOT NULL, created INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS watch_bonus_by_day ON watch_bonus(email, day);
+    DROP TRIGGER IF EXISTS clips_delete_cascade;
+    CREATE TRIGGER clips_delete_cascade AFTER DELETE ON clips BEGIN
+      DELETE FROM likes WHERE clip_id=OLD.id;
+      DELETE FROM comments WHERE clip_id=OLD.id;
+      DELETE FROM views WHERE clip_id=OLD.id;
+      DELETE FROM reactions WHERE clip_id=OLD.id;
+    END;`);
+  },
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
