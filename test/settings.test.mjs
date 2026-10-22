@@ -1,19 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DatabaseSync } from 'node:sqlite';
-import { migrate } from '../server/schema.mjs';
 import { DEFAULT_ACCENT, TAGLINE } from '../server/brand.mjs';
 import { createSettings, SettingError, SERVER_TIMEZONE, SETTING_KEYS } from '../server/settings.mjs';
-
-async function database(t) {
-  const sqlite = new DatabaseSync(':memory:');
-  t.after(() => sqlite.close());
-  await migrate(sqlite);
-  return sqlite;
-}
+import { memoryDatabase } from './helpers.mjs';
 
 test('settings fall back to defaults, then the database, then the environment', async t => {
-  const sqlite = await database(t);
+  const sqlite = await memoryDatabase(t);
   const settings = createSettings(sqlite, {});
   assert.deepEqual(settings.all(), {
     site_name: '', site_tagline: TAGLINE, site_url: '', family_accent: DEFAULT_ACCENT, gate_theme: 'ember-tape',
@@ -42,13 +34,13 @@ test('settings fall back to defaults, then the database, then the environment', 
 });
 
 test('secrets stay masked and every change is recorded as activity', async t => {
-  const sqlite = await database(t);
+  const sqlite = await memoryDatabase(t);
   const settings = createSettings(sqlite, {});
   settings.set('brevo_api_key', 'xkeysib-secret-value', 'parent@example.com');
   settings.set('guest_passes', false, 'parent@example.com');
   assert.equal(settings.get('brevo_api_key'), 'xkeysib-secret-value');
   assert.equal(settings.describe().find(row => row.key === 'brevo_api_key').value, '********');
-  assert.equal(createSettings(await database(t), {}).describe().find(row => row.key === 'brevo_api_key').value, '', 'an unset secret shows as empty');
+  assert.equal(createSettings(await memoryDatabase(t), {}).describe().find(row => row.key === 'brevo_api_key').value, '', 'an unset secret shows as empty');
   const activity = sqlite.prepare('SELECT actor, kind, subject, detail FROM activity ORDER BY id').all().map(row => ({ ...row }));
   assert.deepEqual(activity, [
     { actor: 'parent@example.com', kind: 'setting', subject: 'brevo_api_key', detail: '{"value":"(hidden)"}' },
@@ -58,7 +50,7 @@ test('secrets stay masked and every change is recorded as activity', async t => 
 });
 
 test('settings reject bad values and survive a corrupt row', async t => {
-  const sqlite = await database(t);
+  const sqlite = await memoryDatabase(t);
   const settings = createSettings(sqlite, {});
   for (const [key, value] of [['family_accent', 'red'], ['kids_public', 'sometimes'], ['site_name', 'x'.repeat(61)],
     ['signup_mode', 'open'], ['site_url', 'https://tube.example.com/watch'], ['notify_email', 'not-an-email'],

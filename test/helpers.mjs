@@ -1,11 +1,12 @@
-// Fixtures shared by the server tests: scratch folders, a running server, a ready install, and the demo's
-// seeded snapshot. family-fixture.mjs builds a whole family on top of startInstall.
+// Fixtures shared by the server tests: scratch folders, a running server, a ready install, an in-memory
+// database, a route driver, and the demo's seeded snapshot. family-fixture.mjs builds a family on startInstall.
 import { spawn, spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { migrate } from '../server/schema.mjs';
 
 export const ROOT = resolve(import.meta.dirname, '..');
 export const PARENT = { email: 'parent@example.com', pass: 'A-test-only-parent-password!' };
@@ -102,4 +103,29 @@ export function dump(sqlite) {
   }
   out.triggers = sqlite.prepare("SELECT name, sql FROM sqlite_schema WHERE type='trigger' ORDER BY name").all().map(row => row.sql);
   return out;
+}
+
+// An in-memory database at the current schema, for module-level tests with an injected clock.
+export async function memoryDatabase(t) {
+  const sqlite = new DatabaseSync(':memory:');
+  t.after(() => sqlite.close());
+  await migrate(sqlite);
+  return sqlite;
+}
+
+// Drives a node:http-style handler without a server: returns { status, body } once the route answers.
+export function drive(handler, { method = 'POST', url, body, who = null }) {
+  return new Promise((resolve, reject) => {
+    const payload = body === undefined ? [] : [Buffer.from(JSON.stringify(body))];
+    const req = { method, url, headers: { host: 'localhost' }, async *[Symbol.asyncIterator]() { yield* payload; } };
+    let status = 0;
+    const res = {
+      headersSent: false,
+      writeHead(code) { status = code; this.headersSent = true; return this; },
+      end(text) { resolve({ status, body: text ? JSON.parse(text) : null }); },
+      destroy(error) { reject(error || new Error('destroyed')); },
+    };
+    const pathname = new URL(url, 'http://localhost').pathname;
+    if (!handler(req, res, pathname, who)) reject(new Error(`${method} ${url} was not handled`));
+  });
 }

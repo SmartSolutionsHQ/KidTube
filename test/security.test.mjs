@@ -16,8 +16,8 @@ import { createUploadManager, probe, STALE_UPLOAD_MS } from '../server/uploads.m
 import { loginPause, sessOk, sessToken } from '../server/api.js';
 import { openDatabase } from '../server/db.mjs';
 import { migrate } from '../server/schema.mjs';
-import { ROOT, cleanEnv, scratch, startInstall, startServer, PARENT } from './helpers.mjs';
-import { startFamily, memoryDatabase, KID, KID_EMAIL, VIEWER } from './family-fixture.mjs';
+import { ROOT, cleanEnv, memoryDatabase, scratch, startInstall, startServer, PARENT } from './helpers.mjs';
+import { startFamily, KID, KID_EMAIL, VIEWER } from './family-fixture.mjs';
 
 const fakeReq = (forwarded, remote = '10.0.0.9') => ({ headers: forwarded ? { 'x-forwarded-for': forwarded } : {}, socket: { remoteAddress: remote } });
 
