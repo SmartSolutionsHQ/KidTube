@@ -1,6 +1,11 @@
 // Kids (owner only): each kid's channel. Name, channel line, accent (checked against the dark screens),
 // badge (the M4 builder), splash screen (the M3 gallery), upload review and an optional login. Reorder
 // the kids, add one, or remove one with their videos. The first kid keeps channel 1 and can't be removed.
+// #/kids/<slug> opens that kid's editor and #/kids/new a blank one.
+//
+// In the public demo the server answers these routes from the visitor's private sandbox and says so in
+// `sandbox`: then the tab hides what a visitor can't keep (order, logins, upload review), offers "Undo my
+// changes" and "Remove" for the visitor's own kids, and says the changes stay on this device.
 import { ACCENTS, accentCheck, accentName, badgeText, handleFrom, kidPassword } from '/setup/helpers.js';
 import { createBadgeBuilder } from '/js/badge/builder.js';
 import { saveChannelBadge } from '/js/badge/save.js';
@@ -31,7 +36,10 @@ function art(kid, size = 52) {
 export async function render(main, ctx, { open = null, focus = null } = {}) {
   editor?.dispose();
   editor = null;
-  const [{ kids, reviewDefault }, registry] = await Promise.all([ctx.api.get('/api/admin/kids'), loadRegistry().catch(() => ({ themes: [] }))]);
+  const [{ kids, reviewDefault, sandbox = null }, registry] = await Promise.all([ctx.api.get('/api/admin/kids'), loadRegistry().catch(() => ({ themes: [] }))]);
+  const wanted = /^#\/kids\/([a-z0-9-]+)$/.exec(location.hash)?.[1];
+  if (wanted) history.replaceState(null, '', '#/kids');
+  if (wanted && !open) open = wanted === 'new' ? 'new' : kids.find(kid => kid.slug === wanted)?.id ?? null;
   const themeNames = new Map(registry.themes.map(theme => [theme.id, theme.name]));
   const listHost = el('ol', { class: 'kd-rows' });
   const editorHost = el('div', {});
@@ -42,10 +50,12 @@ export async function render(main, ctx, { open = null, focus = null } = {}) {
     await render(main, ctx, { open: openId, focus: focusId });
   };
 
+  const SANDBOX_LABELS = { created: 'made by you, borrows demo clips', changed: 'your changes' };
   const summary = kid => [
     themeNames.get(kid.themeId) || kid.themeId || 'Family splash', accentName(kid.accent || ctx.family.accent),
-    kid.login ? `logs in as ${kid.login}` : 'no login', kid.reviewUploads ? 'uploads reviewed' : 'uploads go live',
-    plural(kid.videos, 'video'),
+    ...(sandbox ? [SANDBOX_LABELS[kid.sandbox] || 'as the demo family made it']
+      : [kid.login ? `logs in as ${kid.login}` : 'no login', kid.reviewUploads ? 'uploads reviewed' : 'uploads go live']),
+    ...(kid.sandbox === 'created' ? [] : [plural(kid.videos, 'video')]),
   ].join(' · ');
 
   async function move(index, step) {
@@ -65,9 +75,10 @@ export async function render(main, ctx, { open = null, focus = null } = {}) {
       down.disabled = i === kids.length - 1;
       const edit = button('Edit', () => openEditor(kid), described);
       if (editor?.kid?.id === kid.id) edit.disabled = true;
+      const buttons = sandbox ? [edit, el('a', { class: 'kp-btn kp-btn-small', href: `/#/c/${encodeURIComponent(kid.slug)}`, ...described }, 'Open page')] : [edit, up, down];
       return el('li', { class: 'kd-item', 'aria-labelledby': nameId, 'data-kid': String(kid.id) }, art(kid),
         el('div', { class: 'kd-item-main' }, el('div', { class: 'kd-item-text' }, el('strong', { id: nameId }, kid.name), el('span', {}, summary(kid))),
-          el('div', { class: 'kd-buttons' }, edit, up, down)));
+          el('div', { class: 'kd-buttons' }, ...buttons)));
     }));
   }
 
@@ -160,7 +171,17 @@ export async function render(main, ctx, { open = null, focus = null } = {}) {
     const error = errorLine(`kd-kid-error-${kid?.id || 'new'}`);
     const save = primary(kid ? 'Save changes' : `Add this kid`, () => submit());
     const cancel = quiet('Cancel', () => { editor?.dispose(); editor = null; editorHost.replaceChildren(); paintList(); listHost.querySelector('button')?.focus(); });
-    const remove = kid && kid.id !== 1 ? button(`Remove ${kid.name}`, async () => {
+    const undo = sandbox && kid?.sandbox === 'changed' ? button('Undo my changes', async () => {
+      try { await ctx.api.post('/api/admin/kids/delete', { id: kid.id }); await redraw(`${kid.name} is back to how the demo family made it.`, null, kid.id); }
+      catch (problem) { error.textContent = problem.message; }
+    }) : null;
+    const removeMine = sandbox && kid?.sandbox === 'created' ? button(`Remove ${kid.name}`, async () => {
+      const sure = await ask({ title: `Remove ${kid.name}?`, danger: true, confirm: 'Remove', body: `${kid.name}'s page goes from this device. You can make another.` });
+      if (!sure) return;
+      try { await ctx.api.post('/api/admin/kids/delete', { id: kid.id }); await redraw(`Removed ${kid.name}.`); }
+      catch (problem) { error.textContent = problem.message; }
+    }, { class: 'kp-btn kp-btn-small kd-btn-danger' }) : null;
+    const remove = sandbox ? undo || removeMine : kid && kid.id !== 1 ? button(`Remove ${kid.name}`, async () => {
       const sure = await ask({ title: `Remove ${kid.name}?`, danger: true, confirm: 'Remove',
         body: `${kid.name}'s channel${kid.videos ? `, ${plural(kid.videos, 'video')} with their hearts and comments` : ''}${kid.login ? ', their login' : ''} and guest codes made just for them are deleted. This can't be undone.` });
       if (!sure) return;
@@ -174,7 +195,7 @@ export async function render(main, ctx, { open = null, focus = null } = {}) {
       const kidName = name.value.trim();
       if (!kidName) { name.setAttribute('aria-invalid', 'true'); name.focus(); error.textContent = 'Add the kid\'s name.'; return; }
       if (!accentCheck(draft.accent).ok) { error.textContent = 'That accent is hard to read on the dark screens. Pick a lighter color.'; return; }
-      const loginOn = loginBox.querySelector('input').checked;
+      const loginOn = !sandbox && loginBox.querySelector('input').checked;
       if (loginOn) {
         if (!HANDLE.test(handle.value)) { handle.setAttribute('aria-invalid', 'true'); handle.focus(); error.textContent = 'Login names use 2 to 24 lowercase letters, numbers or dashes, starting with a letter.'; return; }
         const needsPass = !kid?.login || kid.login !== handle.value;
@@ -192,7 +213,8 @@ export async function render(main, ctx, { open = null, focus = null } = {}) {
           catch (problem) { done(); error.textContent = `Saved ${kidName}, but not the badge: ${problem.message}`; return; }
         }
         done();
-        await redraw(kid ? `Saved ${kidName}.` : `Added ${kidName}.`, null, saved.id);
+        const where = sandbox ? ' on this device' : '';
+        await redraw(kid ? `Saved ${kidName}${where}.` : `Added ${kidName}${where}.`, null, saved.id);
       } catch (problem) { done(); error.textContent = problem.message; }
     }
 
@@ -205,11 +227,11 @@ export async function render(main, ctx, { open = null, focus = null } = {}) {
         el('div', { class: 'kd-badge' }, big, el('div', { class: 'kp-stack-tight' },
           el('p', { class: 'kp-small' }, 'Shown on the front door and on this kid\'s splash.'), el('div', {}, toggleBuilder))), builderHost),
       el('div', { class: 'kd-field-group' }, el('span', { class: 'kd-field-label' }, 'Splash screen'), chosen, galleryHost),
-      el('div', { class: 'kd-field-group' }, review, loginBox, loginFields),
+      sandbox ? null : el('div', { class: 'kd-field-group' }, review, loginBox, loginFields),
       slot, error,
       el('div', { class: 'kp-actions' }, remove || el('span'), save));
     editorHost.replaceChildren(root);
-    if (kid) disposeSlot.push(mountSlot(slot, 'kid-settings', { kid, api: ctx.api, say: ctx.say, refresh: () => redraw('', kid.id), role: ctx.role }));
+    if (kid && kid.sandbox !== 'created') disposeSlot.push(mountSlot(slot, 'kid-settings', { kid, api: ctx.api, say: ctx.say, refresh: () => redraw('', kid.id), role: ctx.role }));
     paintAccent();
     follow();
     syncLogin();
@@ -222,15 +244,32 @@ export async function render(main, ctx, { open = null, focus = null } = {}) {
     root.querySelector('h2').focus();
   }
 
+  const full = sandbox && sandbox.created >= sandbox.createdMax;
+  const add = button(sandbox ? 'Make your own kid' : 'Add a kid', () => openEditor(null));
+  add.disabled = !!full;
+  let resetting = null;
+  const sandboxNote = sandbox ? el('div', { class: 'kp-note kd-sandbox' },
+    el('p', {}, `Try it: change a kid's name, line, color, badge or splash, or make up to ${sandbox.createdMax} kids of your own. ${sandbox.note}`),
+    sandbox.active ? el('div', {}, resetting = button('Reset my changes', async () => {
+      const done = setBusy(resetting, 'Resetting');
+      try { await ctx.api.post('/api/demo/sandbox/reset', {}); done(); await redraw('Your changes are gone. The demo family is back as it was.'); }
+      catch (problem) { done(); ctx.say(problem.message, 'bad'); }
+    })) : null) : null;
   main.replaceChildren(
     el('div', { class: 'kd-head' }, el('h1', { class: 'kp-title', tabindex: '-1' }, 'Kids'),
-      el('p', { class: 'kp-lead' }, 'Each kid has a channel with its own badge, splash screen and color. The front door lists them in this order.')),
+      el('p', { class: 'kp-lead' }, sandbox ? 'Each kid has a channel with its own badge, splash screen and color.' : 'Each kid has a channel with its own badge, splash screen and color. The front door lists them in this order.')),
+    sandboxNote,
     listHost,
-    el('div', {}, button('Add a kid', () => openEditor(null))),
+    el('div', { class: 'kp-stack-tight' }, el('div', {}, add),
+      full ? el('p', { class: 'kp-small' }, `You made ${sandbox.createdMax} kids, the most the demo keeps. Remove one to make another.`) : null),
     editorHost);
   paintList();
-  const opening = open && kids.find(entry => entry.id === open);
-  if (opening) openEditor(opening);
+  const opening = open === 'new' ? null : open && kids.find(entry => entry.id === open);
+  if (open === 'new' && !full) openEditor(null);
+  else if (opening) openEditor(opening);
+  // A link straight to an editor: the dashboard focuses the page heading once the tab is drawn, so the
+  // editor takes focus (and scrolls into view) just after.
+  if (wanted && editor) setTimeout(() => editorHost.querySelector('h2')?.focus(), 0);
   else if (focus != null) (listHost.querySelector(`[data-kid="${focus}"] button:not(:disabled)`) || main.querySelector('h1')).focus();
   else if (editor === null && main.contains(document.activeElement) === false && document.activeElement === document.body) main.querySelector('h1').focus();
   return () => { editor?.dispose(); editor = null; };

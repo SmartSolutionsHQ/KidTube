@@ -1,6 +1,8 @@
 // Step 4: add your kids. Each kid is a channel with a name, a channel line, an accent, a badge (the M4
 // builder), a splash screen (the M3 gallery), upload review and an optional login. Saving creates the
 // channel first, then saves the badge against it; the first kid takes over the install's channel 1.
+// The public demo reuses this step with `basic` (no upload review or login, which a visitor can't keep)
+// and `maxKids` (the visitor's limit); the wizard passes neither.
 import { ACCENTS, accentCheck, accentName, badgeText, handleFrom, kidPassword } from './helpers.js';
 import { badgeImage, check, el, errorLine, field, setBusy } from './ui.js';
 import { createBadgeBuilder } from '/js/badge/builder.js';
@@ -19,7 +21,7 @@ const defaultBadge = (name, accent) => ({
   stickers: [], effects: { rgbSplit: false, outline: true, tilt: false, shadow: false },
 });
 
-export function renderKids({ state, api, auth, refresh, go, primary, secondary, form }) {
+export function renderKids({ state, api, auth, refresh, go, primary, secondary, form, basic = false, maxKids = Infinity }) {
   const kids = state.kids.filter(kid => !kid.placeholder);
   const disposers = new Set();
   const themeNames = new Map();
@@ -195,7 +197,7 @@ export function renderKids({ state, api, auth, refresh, go, primary, secondary, 
         builderHost),
       el('div', { class: 'su-section' },
         el('span', { class: 'su-section-label', id: 'su-splash-label' }, 'Splash screen'), chosen, galleryHost),
-      el('div', { class: 'su-section' }, review, loginBox, loginFields),
+      basic ? null : el('div', { class: 'su-section' }, review, loginBox, loginFields),
       error,
       saveButton || remove ? el('div', { class: 'kp-actions' }, remove || el('span'), saveButton) : null);
     editorHost.replaceChildren(root);
@@ -208,7 +210,7 @@ export function renderKids({ state, api, auth, refresh, go, primary, secondary, 
       const kidName = name.value.trim();
       if (!kidName) { name.setAttribute('aria-invalid', 'true'); name.focus(); error.textContent = 'Add the kid\'s name.'; return false; }
       if (!accentCheck(draft.accent).ok) { error.textContent = 'That accent is hard to read on the dark screens. Pick a lighter color.'; return false; }
-      const loginOn = loginBox.querySelector('input').checked;
+      const loginOn = !basic && loginBox.querySelector('input').checked;
       if (loginOn) {
         if (!HANDLE.test(handle.value)) { handle.setAttribute('aria-invalid', 'true'); handle.focus(); error.textContent = 'Login names use 2 to 24 lowercase letters, numbers or dashes, starting with a letter.'; return false; }
         const needsPass = !kid?.login || kid.login !== handle.value;
@@ -258,6 +260,7 @@ export function renderKids({ state, api, auth, refresh, go, primary, secondary, 
     openEditor(null);
   });
 
+  if (kids.length >= maxKids) addAnother.hidden = true;
   const submit = primary('Continue');
   if (!kids.length || openBlank) openEditor(null);
   openBlank = false;

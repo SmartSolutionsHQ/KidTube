@@ -119,6 +119,20 @@ test('without DEMO_MODE there is no sandbox: no routes, no cookie, no overlay', 
   assert.ok(family.db.prepare("SELECT 1 FROM channels WHERE name='Bram'").get(), 'a real kid, in the real table');
   const clips = await (await family.call('/api/clips?channel=my-kid-1', { headers: { cookie: family.parent.cookie } })).json();
   assert.deepEqual(clips.clips, [], 'no borrowed clips');
+  assert.equal((await family.call('/demo/make')).status, 404, 'no make page');
+});
+
+test('the make page exists only in demo mode, under the page policy and with the banner', async t => {
+  const { dir } = await seeded(t);
+  const origin = await startDemo(t, dir);
+  const response = await fetch(origin + '/demo/make');
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-security-policy'), /script-src 'self'/);
+  const html = await response.text();
+  assert.match(html, /<script type="module" src="\/js\/demo\/make\.js\?v=[a-f0-9]{12}"><\/script>/);
+  assert.match(html, /demo-banner\.js\?v=/);
+  assert.doesNotMatch(html, /\{\{brand\./, 'brand tokens filled in');
+  assert.match(html, /disappear at the next reset/);
 });
 
 test('one visitor\'s changes reach only that visitor, and nothing is written to the family\'s tables or files', async t => {
@@ -309,7 +323,7 @@ test('badge specs are checked exactly like the real badge route, and free text s
   assert.equal((await site.json()).channels.at(-1).name, name);
 
   // The pages that show a sandboxed kid build their DOM from text, never from markup.
-  for (const file of ['public/js/shell/demo-banner.js']) {
+  for (const file of ['public/js/demo/make.js', 'public/js/shell/demo-banner.js']) {
     assert.doesNotMatch(readFileSync(join(ROOT, file), 'utf8'), /innerHTML|outerHTML|insertAdjacentHTML|document\.write/, file);
   }
 });

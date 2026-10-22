@@ -19,7 +19,7 @@ import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { accountCookie, viewer } from './access.mjs';
 import { sessToken } from './api.js';
-import { BRAND_NAME } from './brand.mjs';
+import { BRAND_NAME, BRAND_TOKENS } from './brand.mjs';
 import { migrate, SCHEMA_VERSION } from './schema.mjs';
 import { clientIp } from './setup.mjs';
 import { createSandboxes } from './demo-sandbox.mjs';
@@ -106,6 +106,12 @@ const LIMIT_WINDOW_MS = 60 * 1000;
 const PRETTY = new Set(['/about', '/parents', '/install']);
 const BANNER_SCRIPT = '/js/shell/demo-banner.js';
 const BANNER_STYLE = '/css/demo.css';
+// "Make your own kid's page" (public/js/demo/make.js). Its page lives here, not in public/, so a family's
+// install has no such page at all.
+export const MAKE_PATH = '/demo/make';
+const MAKE_PAGE = new URL('./demo-make.html', import.meta.url);
+const ASSET_REFERENCE = /(\b(?:src|href)=)(["'])(\/[^"'?#\s]+\.(?:js|css))\2/g;
+const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const MINUTE = 60000;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
@@ -465,11 +471,16 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
         return stamps.get(path).value;
       } catch { return path; }
     };
+    // The make page, branded and stamped the way static.mjs does a page in public/.
+    const makePage = () => readFileSync(MAKE_PAGE, 'utf8')
+      .replace(/\{\{brand\.(\w+)\}\}/g, (token, name) => Object.hasOwn(BRAND_TOKENS, name) ? escapeHtml(BRAND_TOKENS[name]) : token)
+      .replace(ASSET_REFERENCE, (reference, attribute, quote, path) => `${attribute}${quote}${stamp(path)}${quote}`);
     const served = (req, res, pathname) => {
       const tags = `<link rel="stylesheet" href="${stamp(BANNER_STYLE)}">\n  <script type="module" src="${stamp(BANNER_SCRIPT)}"></script>\n`;
+      const make = pathname === MAKE_PATH;
       const target = pathname === '/' ? '/index.html' : PRETTY.has(pathname) ? `${pathname}/index.html` : pathname;
-      if (!['GET', 'HEAD'].includes(req.method) || !target.endsWith('.html')) return sendFile(req, res, pathname);
-      const html = sendFile.pageHtml(target);
+      if (!['GET', 'HEAD'].includes(req.method) || (!make && !target.endsWith('.html'))) return sendFile(req, res, pathname);
+      const html = make ? makePage() : sendFile.pageHtml(target);
       if (!html) return sendFile(req, res, pathname);
       const body = Buffer.from(html.replace('</head>', `  ${tags}</head>`));
       const etag = `W/"demo-${sha256(body).slice(0, 16)}"`;

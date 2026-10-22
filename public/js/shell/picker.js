@@ -4,7 +4,8 @@ import { channelHash } from './route.mjs';
 
 const SVG = 'http://www.w3.org/2000/svg';
 const ACCENT = /^#[0-9a-f]{6}$/i;
-const LOGO = /^\/brand\/[a-z0-9-]+\.svg(?:\?v=\d+)?$/;
+// A kid's badge on this site; the public demo serves a visitor's own badges from its sandbox.
+const LOGO = /^\/(?:brand|api\/demo\/sandbox\/badge)\/[a-z0-9-]+\.svg(?:\?v=\d+)?$/;
 
 export const accentOf = channel => (ACCENT.test(channel?.accent || '') ? channel.accent : '#FF5C2B');
 
