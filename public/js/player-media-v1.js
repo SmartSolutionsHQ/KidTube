@@ -1,3 +1,5 @@
+// Starting and retrying one feed slide's <video> (feed.js). Pure DOM, so the tests drive it with a stub slide.
+//
 // A failed metadata preload must not leave a usable clip permanently unplayable.
 export function playClip(slide, { muted = true } = {}) {
   const video = slide?.querySelector('video');

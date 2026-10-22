@@ -10,14 +10,13 @@
 //     live in the visitor's private sandbox on the server (server/demo-sandbox.mjs), never anyone else's;
 //   - the feed's upload button and comment box explain that they are off here. The server refuses
 //     those writes itself; this only says why before anyone types.
-const KEY = 'kid-session';
-const DAY = 86400000;
+import { keepSession, readSession } from './auth-dialog.js';
+
 const UPLOAD_NOTE = 'On your own install, kids record here and a parent can check each video before anyone sees it.';
 const COMMENT_NOTE = 'Comments are read-only in the demo, so nothing you write reaches other visitors. On your own install, a parent can read new comments first.';
 const SANDBOX_NOTE = 'Your changes are only on this device and disappear at the next reset.';
 const MAKE_PAGE = '/demo/make';
 
-window.__ktDemo = { on: true };
 document.documentElement.dataset.ktDemo = '';
 
 let info = null;
@@ -33,14 +32,7 @@ function el(tag, props = {}, ...children) {
   return node;
 }
 
-function session() {
-  try {
-    const value = JSON.parse(localStorage.getItem(KEY) || 'null');
-    return value?.exp > Date.now() ? value : null;
-  } catch { return null; }
-}
-
-const currentRole = () => info?.roles.find(role => role.email && role.email === session()?.email) || null;
+const currentRole = () => info?.roles.find(role => role.email && role.email === readSession()?.email) || null;
 const now = () => Date.now() + skew;
 
 // "resets in 42 min", or "42m" for the phone pill.
@@ -72,7 +64,7 @@ async function enter(role, button, target = '') {
     });
     const reply = await response.json().catch(() => null);
     if (!response.ok || !reply?.ok) throw new Error(reply?.error || 'That did not work. Try again.');
-    try { localStorage.setItem(KEY, JSON.stringify({ email: reply.email, t: reply.t, role: reply.role, exp: Date.now() + 7 * DAY })); } catch {}
+    keepSession(reply);
     go(target || reply.go || '/');
   } catch (error) {
     buttons.forEach(node => { node.disabled = false; });
@@ -249,8 +241,8 @@ function watchDoor() {
     const kidsList = inner?.querySelector('[data-door="kids"]');
     const open = door.dataset.mode === 'door' && kidsList;
     const block = door.querySelector('.ktd-try'), mine = door.querySelector('.ktd-mine');
-    if (open && !session() && !block) kidsList.after(tryBlock());
-    else if ((!open || session()) && block) block.remove();
+    if (open && !readSession() && !block) kidsList.after(tryBlock());
+    else if ((!open || readSession()) && block) block.remove();
     if (open && !mine) (door.querySelector('.ktd-try') || kidsList).after(mineBlock());
     else if (!open && mine) mine.remove();
   };
@@ -263,7 +255,7 @@ function watchSignIn() {
   const spots = [document.getElementById('account-content'), document.getElementById('kd-main')].filter(Boolean);
   for (const spot of spots) {
     const place = () => {
-      if (session() || spot.querySelector('.ktd-try')) return;
+      if (readSession() || spot.querySelector('.ktd-try')) return;
       const form = spot.querySelector('form');
       if (form && form.querySelector('input[type="password"], input[autocomplete="one-time-code"]')) form.before(tryBlock({ compact: true, heading: 'No account needed. Try it as' }));
     };

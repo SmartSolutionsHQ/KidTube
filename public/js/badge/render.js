@@ -32,8 +32,6 @@ const TEXT_BOX = {
 const SPLIT = [{ dx: -3, fill: '#4DF6FF' }, { dx: 3, fill: '#FF3D55' }];
 const SYSTEM_FONT = 'system-ui, -apple-system, Segoe UI, Roboto, sans-serif';
 
-export const SHAPE_IDS = Object.keys(SHAPE_PATHS);
-
 const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 export const escapeXml = value => String(value).replace(/[&<>"']/g, char => ESCAPES[char]);
 // toFixed and Number-to-string are exactly specified, so these strings match across engines.

@@ -1,5 +1,5 @@
-// Who watched: the watch history the launch-story milestone records, filtered by kid and viewer.
-// Until GET /api/admin/views exists this says so calmly instead of failing.
+// Who watched: the watch history (GET /api/admin/views), filtered by kid and viewer. When the server
+// keeps no history (summary.features.views is off) this says so calmly instead of failing.
 import { el, button, field } from './dom.js';
 import { watchCells, watchState, viewsQuery } from './watch-model.js';
 
@@ -33,7 +33,7 @@ export async function render(main, ctx) {
 
   async function load(older) {
     more.disabled = true;
-    // Before the watch-history milestone lands there is no route to ask, so nothing is requested.
+    // Without watch history on the server there is nothing to ask for.
     const data = ctx.summary.features?.views ? await ctx.api.maybe(viewsQuery({ channel: kid.value, viewer: viewer.value, before: older ? next : null })) : null;
     const state = watchState(data);
     rows = older ? rows.concat(state.rows) : state.rows;

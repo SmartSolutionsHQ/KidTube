@@ -1,6 +1,6 @@
 // Kids (owner only): each kid's channel. Name, channel line, accent (checked against the dark screens),
-// badge (the M4 builder), splash screen (the M3 gallery), upload review and an optional login. Reorder
-// the kids, add one, or remove one with their videos. The first kid keeps channel 1 and can't be removed.
+// badge (the badge builder), splash screen (the theme gallery), upload review and an optional login.
+// Reorder the kids, add one, or remove one with their videos. The first kid keeps channel 1 and can't be removed.
 // #/kids/<slug> opens that kid's editor and #/kids/new a blank one.
 //
 // In the public demo the server answers these routes from the visitor's private sandbox and says so in
@@ -12,7 +12,7 @@ import { saveChannelBadge } from '/js/badge/save.js';
 import { INK } from '/js/badge/spec.js';
 import { createThemeGallery } from '/js/shell/theme-gallery.js';
 import { loadRegistry } from '/js/shell/themes.js';
-import { readSession } from './api.js';
+import { accountSession } from '/js/shell/auth-dialog.js';
 import { el, button, primary, quiet, ask, field, check, errorLine, setBusy, badgeImage } from './dom.js';
 import { plural } from './format.js';
 import { mountSlot } from './slots.js';
@@ -209,7 +209,7 @@ export async function render(main, ctx, { open = null, focus = null } = {}) {
           login: loginOn ? { handle: handle.value, ...(pass.value ? { pass: pass.value } : {}) } : null,
         });
         if (badgeEdited || !kid?.logoUrl) {
-          try { await saveChannelBadge(saved.id, draft.badge, readSession()); }
+          try { await saveChannelBadge(saved.id, draft.badge, accountSession()); }
           catch (problem) { done(); error.textContent = `Saved ${kidName}, but not the badge: ${problem.message}`; return; }
         }
         done();

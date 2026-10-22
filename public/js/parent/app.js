@@ -2,7 +2,8 @@
 // at a time from the address (#/review). Each tab module exports render(main, ctx) and may return a
 // cleanup function. The owner ('super') sees everything; a co-parent ('admin') sees videos, review,
 // comments, guest codes and activity. Kid and viewer accounts are sent back to the videos by the server.
-import { api, readSession, signIn, signOut, clearSession } from './api.js';
+import { api, signIn, signOut } from './api.js';
+import { accountSession, clearSession } from '/js/shell/auth-dialog.js';
 import { el, field, errorLine, setBusy } from './dom.js';
 import * as home from './home.js';
 import * as review from './review.js';
@@ -176,7 +177,7 @@ async function start() {
 
 api.onSignedOut = () => { clearSession(); showSignIn('Your session ended. Sign in again.'); };
 
-const session = readSession();
+const session = accountSession();
 if (!session) showSignIn();
 else if (session.role !== 'admin' && session.role !== 'super') showSignIn('This page is for parents. Kid and viewer accounts watch on the main page.');
 else start();

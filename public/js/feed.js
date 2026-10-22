@@ -1,10 +1,14 @@
-// src/scripts/kidtube-feed.js
+// The feed: one kid's clips as a swipe-first reel (phones) or a stage with a running order (wide
+// screens), with likes, comments, the running-order sheet and the kid's upload button. This is the
+// original player (hence the tz- classes); the shell (js/shell/app.js) picks the channel and unlocks it.
 import { publishVideo } from '/js/server-upload-v1.js';
 import { playClip, retryClip } from '/js/player-media-v1.js';
 // Launch story: time capsules (locked tapes, unlocks), reactions and the daily tape (js/shell/*).
 import { lockedSlideMarkup, lockedThumbMarkup, runUnlock, wantsUnlock, watchSealed, wobble } from '/js/shell/capsules.js';
 import { attachReactions, chipsMarkup, railButtonMarkup } from '/js/shell/reactions.js';
 import { attachWatch } from '/js/shell/watch.js';
+import { DEEP_LINK } from '/js/shell/route.mjs';
+import { readSession, writeSession } from '/js/shell/auth-dialog.js';
 var familyZone = () => window.__ktChannel?.timezone || undefined;
 var serverBudget = null;
 // A spent daily tape: the slides carry no video at all, so nothing asks for a file the server will refuse.
@@ -14,7 +18,8 @@ var CATALOG = [];
 // The shell (js/shell/app.js) names the kid's channel in window.__ktChannel before it unlocks the feed.
 var channelSlug = () => window.__ktChannel?.slug || "";
 var clipHash = (id) => (channelSlug() ? "#/c/" + channelSlug() : "#") + "/v/" + id;
-var serverClipsReady = new Promise(resolve => { if(window.kidUnlocked) resolve(); else document.addEventListener("kid:unlocked",resolve,{once:true}); }).then(() => fetch("/api/clips" + (channelSlug() ? "?channel=" + encodeURIComponent(channelSlug()) : ""))).then((r) => r.json()).then((j) => {
+var clipsUrl = () => "/api/clips" + (channelSlug() ? "?channel=" + encodeURIComponent(channelSlug()) : "");
+var serverClipsReady = new Promise(resolve => { if(window.kidUnlocked) resolve(); else document.addEventListener("kid:unlocked",resolve,{once:true}); }).then(() => fetch(clipsUrl())).then((r) => r.json()).then((j) => {
   if (j && j.ok && Array.isArray(j.clips) ) {
     CATALOG.length = 0;
     for (const row of j.clips) CATALOG.push(row);
@@ -22,13 +27,9 @@ var serverClipsReady = new Promise(resolve => { if(window.kidUnlocked) resolve()
   }
 }).catch(() => {
 });
-var clips = [...CATALOG].sort((a, b) => {
-  const sa = Number.isFinite(a.seq) ? a.seq : Infinity;
-  const sb = Number.isFinite(b.seq) ? b.seq : Infinity;
-  if (sa !== sb) return sa - sb;
-  return b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id);
-});
-var order = clips.map((c, i) => i);
+// The clips in channel order (buildReel fills it) and the order they play in (shuffle reorders it).
+var clips = [];
+var order = [];
 var rank = (i) => {
   const n = order.indexOf(i);
   return n < 0 ? 0 : n;
@@ -49,7 +50,6 @@ function syncDomOrder() {
   }
 }
 var MAX_SECONDS = 300;
-var REENCODE_MAX = 48 * 1024 * 1024;
 var LOOP_UNDER = 60;
 var FIT_TOLERANCE = 0.06;
 var DESKTOP = window.matchMedia("(min-width: 900px)");
@@ -150,9 +150,10 @@ function slideMarkup(c, i) {
   </section>`;
 }
 var slides = [];
+var reelBuilt = false;
 function buildReel() {
-  if (window.__tzReelBuilt) return;
-  window.__tzReelBuilt = true;
+  if (reelBuilt) return;
+  reelBuilt = true;
   const sorted = [...CATALOG].sort((a, b) => {
     const sa = Number.isFinite(a.seq) ? a.seq : Infinity;
     const sb = Number.isFinite(b.seq) ? b.seq : Infinity;
@@ -194,7 +195,7 @@ function endplateMarkup() {
 }
 function applyFit(slide) {
   const slot = $(".tz-slot", slide);
-  const el = $("video", slide) || $("img.tz-still", slide);
+  const el = $("video", slide);
   if (!el) return;
   const w = el.videoWidth || el.naturalWidth;
   const h = el.videoHeight || el.naturalHeight;
@@ -211,10 +212,6 @@ function ambient(slide, el) {
   const poster = clips[Number(slide.dataset.i)]?.poster;
   if (poster) {
     amb.src = poster;
-    return;
-  }
-  if (el.tagName === "IMG") {
-    amb.src = el.src;
     return;
   }
   try {
@@ -276,7 +273,6 @@ var io = new IntersectionObserver((entries) => {
     if (i !== state.index) setActive(i, { scroll: false });
   }
 }, { root: reel, threshold: [0, 0.6, 1] });
-slides.forEach((s) => io.observe(s));
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) pauseAllExcept(null);
   else if (!state.sheet) playActive();
@@ -299,11 +295,6 @@ function setActive(i, { scroll = true } = {}) {
   body.toggleAttribute("data-end", !c);
   $('[data-bind="pos"]').textContent = c ? String(rank(state.index) + 1).padStart(2, "0") : "END";
   queryAll(".tz-log-row").forEach((r) => r.setAttribute("aria-current", String(Number(r.dataset.goto) === state.index)));
-  slides.forEach((s, n) => {
-    const up = $('[data-act="newer"]', s), dn = $('[data-act="older"]', s);
-    if (up) up.disabled = false;
-    if (dn) dn.disabled = false;
-  });
   const glow = $(".tz-glow");
   const poster = clips[state.index]?.poster;
   if (glow) glow.style.backgroundImage = poster ? `url("${poster}")` : "none";
@@ -465,16 +456,14 @@ function failNote(slide, msg) {
     n.hidden = true;
   }, 3e3);
 }
-var cSheet = $('[data-sheet="comments"]');
 var cBody = $('[data-bind="comments"]');
 var cForm = $('[data-bind="composer"]');
-var nameF = $("#tz-name");
 var bodyF = $("#tz-body");
 var postBtn = $(".tz-post");
 async function renderComments() {
   const c = clips[state.index];
   if (!c) return;
-  const s = sessRead();
+  const s = readSession();
   let j;
   try {
     j = await fetch("/api/comments?c=" + encodeURIComponent(c.id), { headers: sessHeaders(s) }).then((r) => r.json());
@@ -513,7 +502,7 @@ function syncPost() {
 }
 bodyF.addEventListener("input", syncPost);
 var posting = false;
-var pendingDrafts = /* @__PURE__ */ new Map();
+var pendingDrafts = new Map();
 var postStatus = document.createElement("div");
 postStatus.className = "tz-cmt";
 postStatus.setAttribute("role", "status");
@@ -532,7 +521,7 @@ async function saveDraft(id, draft) {
   showDraft();
   let held = false;
   try {
-    const s = sessRead();
+    const s = readSession();
     const j = await apiPost("/api/comment", { clipId: id, email: s.email, t: s.t, body: draft.body });
     if (!j || !j.ok) throw new Error("save");
     held = !!(j.row && j.row.hidden);
@@ -794,57 +783,6 @@ document.addEventListener("pointerdown", (e) => {
   bar.addEventListener("pointercancel", end);
   flush();
 });
-(() => {
-  const st = document.createElement("style");
-  st.id = "tz-scrub-style";
-  st.textContent = `
-.tz-bar{touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none}
-.tz-bar-fill::after{content:'';position:absolute;right:-6px;top:50%;width:11px;height:11px;
-  border-radius:50%;background:var(--tz-paper,#F7F4EC);
-  box-shadow:0 0 0 1px rgba(5,6,10,.55),0 1px 5px rgba(5,6,10,.45);
-  transform:translateY(-50%);opacity:.85;pointer-events:none;
-  transition:transform 140ms cubic-bezier(.2,0,0,1),opacity 140ms linear}
-.tz-slide[data-scrub='1'] .tz-bar-fill::after{transform:translateY(-50%) scale(1.6);opacity:1}
-.tz-slide[data-state='loading'] .tz-bar-fill::after,
-.tz-slide[data-state='error'] .tz-bar-fill::after{opacity:0}
-.tz-bar-tip{position:absolute;bottom:14px;left:16px;transform:translateX(-50%);
-  padding:5px 8px;border-radius:2px;background:rgba(5,6,10,.82);color:var(--tz-paper,#F7F4EC);
-  font:500 11px/1 var(--tz-mono,'DM Mono',monospace);letter-spacing:.1em;
-  opacity:0;pointer-events:none;white-space:nowrap;transition:opacity 120ms linear}
-.tz-slide[data-scrub='1'] .tz-bar-tip{opacity:1}`;
-  document.head.appendChild(st);
-})();
-(() => {
-  const st = document.createElement("style");
-  st.id = "tz-upload-style";
-  st.textContent = `
-.tz-upload-fab{position:absolute;right:12px;z-index:20;bottom:calc(var(--tz-safe-b,0px) + var(--tz-kb,0px) + 52px);
-  display:flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid rgba(247,244,236,.35);
-  background:rgba(5,6,10,.72);color:var(--tz-paper,#F7F4EC);font:500 11px/1 var(--tz-mono,'DM Mono',monospace);
-  letter-spacing:.12em;text-transform:uppercase;border-radius:999px;cursor:pointer}
-.tz-upload-fab:hover{border-color:var(--tz-flare,#FF5C2B);color:var(--tz-flare,#FF5C2B)}
-.tz-upload-pill{position:absolute;left:50%;transform:translateX(-50%);top:14px;z-index:40;
-  padding:8px 12px;border-radius:2px;background:rgba(5,6,10,.85);color:var(--tz-paper,#F7F4EC);
-  font:500 11px/1.3 var(--tz-mono,'DM Mono',monospace);letter-spacing:.08em;max-width:80%;text-align:center}`;
-  document.head.appendChild(st);
-})();
-(() => {
-  const st = document.createElement("style");
-  st.id = "tz-social-style";
-  st.textContent = `
-.tz-heartburst{position:absolute;z-index:12;width:0;height:0;pointer-events:none}
-.tz-heartburst .tz-ico{position:absolute;left:-26px;top:-26px;width:52px;height:52px;color:var(--tz-flare,#FF5C2B);
-  filter:drop-shadow(0 2px 10px rgba(5,6,10,.6));
-  animation:tz-heartpop 700ms cubic-bezier(.2,0,0,1) forwards}
-@keyframes tz-heartpop{
-  0%{transform:scale(.2) rotate(-8deg);opacity:0}
-  18%{transform:scale(1.18) rotate(3deg);opacity:1}
-  38%{transform:scale(1) rotate(0)}
-  70%{transform:scale(1.02) translateY(-8px);opacity:1}
-  100%{transform:scale(.9) translateY(-46px);opacity:0}}
-#tz-name,label[for="tz-name"]{display:none}`;
-  document.head.appendChild(st);
-})();
 function retry(slide) {
   retryClip(slide, {
     play: slide?.dataset.active === "1" && !document.hidden && !state.sheet,
@@ -913,14 +851,6 @@ function durOf(slide, v) {
 }
 function wireSlide(slide) {
   const v = $("video", slide);
-  const img = $("img.tz-still", slide);
-  if (img) {
-    img.addEventListener("load", () => {
-      slide.dataset.state = "ready";
-      applyFit(slide);
-    });
-    return;
-  }
   if (!v) {
     slide.dataset.state = "ready";
     return;
@@ -987,17 +917,9 @@ window.addEventListener("resize", () => {
     if (slides[state.index]) applyFit(slides[state.index]);
   });
 }, { passive: true });
-var likeState = /* @__PURE__ */ new Map();
-function sessRead() {
-  try {
-    const s = JSON.parse(localStorage.getItem("kid-session") || "null");
-    return s && s.exp && s.exp > Date.now() && (s.guest ? s.guestToken : s.email) ? s : null;
-  } catch (err) {
-    return null;
-  }
-}
+var likeState = new Map();
 function guestSession() {
-  return !!sessRead()?.guest;
+  return !!readSession()?.guest;
 }
 function guestPrompt() {
   if (document.getElementById("tz-guest-prompt")) return;
@@ -1006,12 +928,11 @@ function guestPrompt() {
   wrap.setAttribute("role", "dialog");
   wrap.setAttribute("aria-modal", "true");
   wrap.setAttribute("aria-label", "Register to participate");
-  wrap.style.cssText = "position:fixed;inset:0;z-index:500;display:grid;place-items:center;padding:20px;background:rgba(5,6,10,.82);backdrop-filter:blur(7px)";
-  wrap.innerHTML = `<div style="width:min(100%,380px);padding:24px;border:1px solid var(--tz-line);border-radius:16px;background:var(--tz-surface);color:var(--tz-paper);font:15px/1.5 var(--tz-ui);box-shadow:0 18px 60px rgba(5,6,10,.6)">
-    <h2 style="margin:0 0 10px;color:var(--tz-flare);font:400 26px/1 var(--tz-display);text-transform:uppercase">Guest access is view-only</h2>
+  wrap.innerHTML = `<div class="tz-guest-card">
+    <h2>Guest access is view-only</h2>
     <p>To like or comment, you need to register for an account.</p>
-    <p><a href="/?register=1" style="color:var(--tz-paper);text-decoration:underline;text-underline-offset:4px">Ask for an account</a></p>
-    <button type="button" data-guest-close style="min-height:44px;padding:0 16px;border:1px solid var(--tz-line);background:transparent;color:var(--tz-paper);font:500 12px/1 var(--tz-mono);letter-spacing:.14em;text-transform:uppercase;cursor:pointer">Keep watching</button>
+    <p><a href="/?register=1">Ask for an account</a></p>
+    <button type="button" data-guest-close>Keep watching</button>
   </div>`;
   const close = () => { wrap.remove(); document.removeEventListener("keydown", escape); };
   const escape = (event) => { if (event.key === "Escape") close(); };
@@ -1021,16 +942,10 @@ function guestPrompt() {
   document.body.appendChild(wrap);
   wrap.querySelector("[data-guest-close]").focus();
 }
-function sessWrite(s) {
-  try {
-    localStorage.setItem("kid-session", JSON.stringify(s));
-  } catch (err) {
-  }
-}
 // The signed-in session, or null for guests and visitors. /api/check never hands out a token without one,
 // so there is nothing to fetch here; callers already treat a session without `t` as signed out.
 async function sessToken() {
-  const s = sessRead();
+  const s = readSession();
   return s && !s.guest ? s : null;
 }
 async function apiPost(path, body2) {
@@ -1056,31 +971,12 @@ async function seedLikes() {
     if (!j || !j.ok) return;
     likeState.clear();
     for (const k in j.counts) likeState.set(k, { count: j.counts[k] || 0, liked: !!(j.liked && j.liked[k]) });
-    if (s && s.t) {
-      for (const c of clips) {
-        let v = null;
-        try {
-          v = JSON.parse(localStorage.getItem("tz-r-" + c.id) || "null");
-        } catch (err) {
-        }
-        if (v && v.liked && !(likeState.get(c.id) || { liked: false }).liked) {
-          const r = await apiPost("/api/like", { clipId: c.id, email: s.email, t: s.t, on: true });
-          if (r && r.ok) {
-            likeState.set(c.id, { count: r.count, liked: true });
-            try {
-              localStorage.setItem("tz-r-" + c.id, JSON.stringify({ liked: false, comments: v.comments || [] }));
-            } catch (err) {
-            }
-          }
-        }
-      }
-    }
     paintAllLikes();
   } catch (err) {
   }
 }
 async function serverDeleteComment(id, cid) {
-  const s = sessRead();
+  const s = readSession();
   if (!s || !s.t) throw new Error("log in");
   const j = await apiPost("/api/comment/delete", { id: cid, email: s.email, t: s.t });
   if (!j || !j.ok) throw new Error("delete");
@@ -1127,7 +1023,7 @@ function heartBurst(slide, x, y) {
 // Reactions, the daily tape, and capsules whose date arrives while the feed is open (js/shell/*).
 function bootLaunchStory() {
   const clipOf = (slide) => clips[Number(slide.dataset.i)];
-  reactionsUi = attachReactions({ session: () => { const s = sessRead(); return s && !s.guest ? s : null; }, isGuest: guestSession, guestPrompt, failNote, clipOf });
+  reactionsUi = attachReactions({ session: () => { const s = readSession(); return s && !s.guest ? s : null; }, isGuest: guestSession, guestPrompt, failNote, clipOf });
   attachWatch({ budget: serverBudget, channel: window.__ktChannel || {}, clipOf });
   watchSealed(() => clips, familyZone(), openSealed);
 }
@@ -1135,7 +1031,7 @@ function bootLaunchStory() {
 async function openSealed(id, tries = 0) {
   let row = null;
   try {
-    const j = await fetch("/api/clips" + (channelSlug() ? "?channel=" + encodeURIComponent(channelSlug()) : "")).then((r) => r.json());
+    const j = await fetch(clipsUrl()).then((r) => r.json());
     row = (j.clips || []).find((c) => c.id === id && !c.sealed && c.src) || null;
   } catch {
   }
@@ -1161,12 +1057,12 @@ async function openSealed(id, tries = 0) {
   else applyPreloads();
 }
 function bootFeed() {
-  const deep = location.hash.match(/^#\/(?:c\/[^/]+\/)?v\/(.+)$/);
+  const deep = location.hash.match(DEEP_LINK);
   const start = deep ? clips.findIndex((c) => c.id === deep[1]) : 0;
   syncMode();
   setSound(false);
   async function seedRole() {
-    const s = sessRead();
+    const s = readSession();
     if (!s) return null;
     if (s.guest) return s;
     if (s.role === "admin" || s.role === "super") return s;
@@ -1177,11 +1073,11 @@ function bootFeed() {
       const j = await fetch("/api/check", { headers: sessHeaders(s) }).then((r) => r.json());
       if (j && j.ok && j.status === "approved") {
         s.role = j.role || "";
-        sessWrite(s);
+        writeSession(s);
       }
     } catch (err) {
     }
-    return sessRead();
+    return readSession();
   }
   function mountUploadFab() {
     if ($(".tz-upload-fab")) return;
@@ -1256,7 +1152,7 @@ function bootFeed() {
         file && file.size ? (file.size / 1048576).toFixed(1) + " MB" : ""
       ].filter(Boolean).join(" \xB7 ");
       // Parents' uploads go live; anyone else's may wait for a parent, depending on the kid's settings.
-      const role = sessRead()?.role || "";
+      const role = readSession()?.role || "";
       $(".tz-namecard-note", card).textContent = role === "admin" || role === "super"
         ? "Up to 5 minutes. It goes on the channel as soon as it's converted."
         : "Up to 5 minutes. A parent may check it before it goes on your channel.";
@@ -1319,7 +1215,7 @@ function bootFeed() {
     };
     input.click();
   }
-  async function uploadPicked(file, forcedName) {
+  async function uploadPicked(file) {
     try {
       const secs = await readDuration(file);
       if (secs > MAX_SECONDS) {
@@ -1330,7 +1226,7 @@ function bootFeed() {
         fabSay("Over 512 MB. Trim it first.", 7e3);
         return;
       }
-      const picked = forcedName === void 0 ? await askName(file, secs) : { title: forcedName };
+      const picked = await askName(file, secs);
       if (picked == null) {
         fabSay("Nothing was uploaded.", 2600);
         return;
@@ -1427,181 +1323,6 @@ function bootFeed() {
       }
     });
   }
-  function ebmlId(u8, at) {
-    if (at >= u8.length) return null;
-    const n = ebmlVintLen(u8[at]);
-    if (!n || at + n > u8.length) return null;
-    let v = 0;
-    for (let k = 0; k < n; k++) v = v * 256 + u8[at + k];
-    return { id: v, len: n };
-  }
-  function ebmlSize(u8, at) {
-    if (at >= u8.length) return null;
-    const n = ebmlVintLen(u8[at]);
-    if (!n || at + n > u8.length) return null;
-    let v = u8[at] & (1 << 8 - n) - 1, unknown = v === (1 << 8 - n) - 1;
-    for (let k = 1; k < n; k++) {
-      v = v * 256 + u8[at + k];
-      if (u8[at + k] !== 255) unknown = false;
-    }
-    return { size: v, len: n, unknown };
-  }
-  function ebmlUint(u8, at, n) {
-    let v = 0;
-    for (let k = 0; k < n; k++) v = v * 256 + u8[at + k];
-    return v;
-  }
-  function eachEbml(u8, start2, end, cb) {
-    let i = start2;
-    while (i < end) {
-      const id = ebmlId(u8, i);
-      if (!id) return;
-      const sz = ebmlSize(u8, i + id.len);
-      if (!sz) return;
-      const body2 = i + id.len + sz.len;
-      cb(id.id, body2, sz.unknown ? end : Math.min(end, body2 + sz.size));
-      const next = sz.unknown ? end : body2 + sz.size;
-      i = next > i ? next : i + 1;
-    }
-  }
-  function webmPicture(u8) {
-    const head = ebmlId(u8, 0);
-    if (!head || head.id !== 440786851) return null;
-    const hs = ebmlSize(u8, head.len);
-    if (!hs) return null;
-    const segAt = head.len + hs.len + hs.size;
-    const seg = ebmlId(u8, segAt);
-    if (!seg || seg.id !== 408125543) return null;
-    const ss = ebmlSize(u8, segAt + seg.len);
-    if (!ss) return null;
-    const segBody = segAt + seg.len + ss.len;
-    const segEnd = ss.unknown ? u8.length : Math.min(u8.length, segBody + ss.size);
-    const tracks = [];
-    eachEbml(u8, segBody, segEnd, (id, b, e) => {
-      if (id !== 374648427) return;
-      eachEbml(u8, b, e, (tid, tb, te) => {
-        if (tid !== 174) return;
-        let num = 0, type = 0;
-        eachEbml(u8, tb, te, (cid, cb, ce) => {
-          if (cid === 215) num = ebmlUint(u8, cb, Math.min(ce - cb, 8));
-          else if (cid === 131) type = ebmlUint(u8, cb, Math.min(ce - cb, 8));
-        });
-        if (type === 1 && num) tracks.push(num);
-      });
-    });
-    if (!tracks.length) return false;
-    let clusters = 0, blocks = 0;
-    for (let i = 0; i <= u8.length - 5; i++) {
-      if (u8[i] !== 31 || u8[i + 1] !== 67 || u8[i + 2] !== 182 || u8[i + 3] !== 117) continue;
-      const cs = ebmlSize(u8, i + 4);
-      if (!cs) continue;
-      clusters += 1;
-      const cb = i + 4 + cs.len;
-      const ce = cs.unknown ? u8.length : Math.min(u8.length, cb + cs.size);
-      eachEbml(u8, cb, ce, (bid, bb, be) => {
-        if (bid !== 160 && bid !== 163 && bid !== 161) return;
-        const blockNum = (at) => {
-          const tt = ebmlVintLen(u8[at]);
-          if (!tt || at + tt > u8.length) return 0;
-          return (u8[at] & (1 << 8 - tt) - 1) * Math.pow(256, tt - 1) + (tt > 1 ? ebmlUint(u8, at + 1, tt - 1) : 0);
-        };
-        if (bid === 160) {
-          eachEbml(u8, bb, be, (gid, gb) => {
-            if (gid === 161 && tracks.indexOf(blockNum(gb)) !== -1) blocks += 1;
-          });
-          return;
-        }
-        if (tracks.indexOf(blockNum(bb)) !== -1) blocks += 1;
-      });
-      if (blocks) return true;
-    }
-    return clusters ? false : null;
-  }
-  function eachBox(u8, start2, end, cb) {
-    let i = start2;
-    while (i + 8 <= end) {
-      let size = u8[i] * 16777216 + u8[i + 1] * 65536 + u8[i + 2] * 256 + u8[i + 3], hdr = 8;
-      if (size === 1) {
-        size = 0;
-        for (let k = 0; k < 8; k++) size = size * 256 + u8[i + 8 + k];
-        hdr = 16;
-      } else if (size === 0) size = end - i;
-      if (size < hdr || i + size > end + 1) return;
-      cb(String.fromCharCode(u8[i + 4], u8[i + 5], u8[i + 6], u8[i + 7]), i + hdr, Math.min(end, i + size));
-      i += size;
-    }
-  }
-  function findBox(u8, start2, end, want, depth) {
-    if (depth > 6) return null;
-    let hit = null;
-    eachBox(u8, start2, end, (type, b, e) => {
-      if (hit) return;
-      if (type === want) {
-        hit = { body: b, end: e };
-        return;
-      }
-      if (type === "moov" || type === "trak" || type === "mdia" || type === "minf" || type === "stbl" || type === "edts" || type === "udta") hit = findBox(u8, b, e, want, depth + 1);
-    });
-    return hit;
-  }
-  function hasFourcc(u8, tag) {
-    const a = tag.charCodeAt(0), b = tag.charCodeAt(1), c = tag.charCodeAt(2), d = tag.charCodeAt(3);
-    for (let i = 0; i <= u8.length - 4; i++) {
-      if (u8[i] === a && u8[i + 1] === b && u8[i + 2] === c && u8[i + 3] === d) return true;
-    }
-    return false;
-  }
-  function mp4Picture(u8) {
-    if (hasFourcc(u8, "moof") || hasFourcc(u8, "mvex")) return null;
-    for (let i = 4; i <= u8.length - 8; i++) {
-      if (!(u8[i] === 109 && u8[i + 1] === 111 && u8[i + 2] === 111 && u8[i + 3] === 118)) continue;
-      let samples = 0, sawVideo = false, blind = false;
-      eachBox(u8, i + 4, u8.length, (type, b, e) => {
-        if (type !== "trak") return;
-        const h = findBox(u8, b, e, "hdlr", 0);
-        if (!h) return;
-        if (String.fromCharCode(u8[h.body + 8], u8[h.body + 9], u8[h.body + 10], u8[h.body + 11]) !== "vide") return;
-        sawVideo = true;
-        const sz = findBox(u8, b, e, "stsz", 0);
-        if (!sz) {
-          blind = true;
-          return;
-        }
-        samples += ebmlUint(u8, sz.body + 8, 4);
-      });
-      if (blind) return null;
-      return sawVideo ? samples > 0 : false;
-    }
-    return null;
-  }
-  function pictureVerdict(file) {
-    return new Promise((resolve) => {
-      const CAP = 8 * 1024 * 1024;
-      const slices = [file.slice(0, Math.min(file.size, CAP))];
-      if (file.size > CAP) slices.push(file.slice(file.size - CAP));
-      Promise.all(slices.map((s) => new Promise((res) => {
-        const fr = new FileReader();
-        fr.onerror = () => res(null);
-        fr.onload = () => res(new Uint8Array(fr.result));
-        fr.readAsArrayBuffer(s);
-      }))).then((bufs) => {
-        for (const u8 of bufs) {
-          if (!u8 || u8.length < 16) continue;
-          const webm = webmPicture(u8);
-          if (webm !== null) {
-            resolve(webm ? "yes" : "no");
-            return;
-          }
-          const mp4 = mp4Picture(u8);
-          if (mp4 !== null) {
-            resolve(mp4 ? "yes" : "no");
-            return;
-          }
-        }
-        resolve("unknown");
-      });
-    });
-  }
   async function uploadClip(file, name, seal) {
     const s = await sessToken();
     if (!s || !s.t) {
@@ -1634,7 +1355,7 @@ function bootFeed() {
       kind: clip.kind || "video",
       poster: clip.sealed ? "" : clip.poster || "",
       src: clip.src,
-      publishedAt: clip.publishedAt || (/* @__PURE__ */ new Date()).toISOString(),
+      publishedAt: clip.publishedAt || new Date().toISOString(),
       duration: clip.sealed ? 0 : Number(clip.duration) || 0,
       ...clip.sealed ? { sealed: true, opensAt: clip.opensAt, capsuleNote: clip.capsuleNote || "", sealedBy: clip.sealedBy || "" } : {}
     };
@@ -1666,18 +1387,6 @@ function bootFeed() {
   seedRole().then((s) => {
     if (window.__ktChannel ? window.__ktChannel.canUpload : s && (s.role === "admin" || s.role === "super")) mountUploadFab();
   });
-  window.__tzfeed = {
-    mounted: true,
-    clips: () => clips.map((c) => c.id),
-    order: () => order.slice(),
-    rank: (i) => rank(typeof i === "number" ? i : state.index),
-    active: () => state.index,
-    shuffle: () => state.shuffle,
-    setShuffle,
-    step,
-    durOf: (i) => durOf(slides[i], $("video", slides[i])),
-    pictureVerdict: (file) => pictureVerdict(file),
-    uploadFile: (file, name) => uploadPicked(file, name),
-    pick: () => pickAndUpload()
-  };
+  // The empty channel's "Record your first tape" button (js/shell/app.js) opens the file picker here.
+  window.__tzfeed = { pick: () => pickAndUpload() };
 }

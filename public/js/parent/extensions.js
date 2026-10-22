@@ -14,9 +14,9 @@ import * as tapeBudget from '../launch/tape-budget.js';
 import * as kidTape from '../launch/kid-tape.js';
 import * as familyClock from '../launch/family-clock.js';
 
-// The launch-story modules read { clip | account | channel } and find the parent's session in the shared
-// 'kid-session' store, so each one only needs its ctx renamed. Sealing or opening a capsule changes the
-// video row, so those redraw it; budget changes are shown by the module itself.
+// The launch-story modules read { clip | account | channel } and use the shared account session
+// (js/shell/auth-dialog.js), so each one only needs its ctx renamed. Sealing or opening a capsule
+// changes the video row, so those redraw it; budget changes are shown by the module itself.
 const REDRAW_ON = new Set(['capsule.seal', 'capsule.unseal']);
 
 function adapt(module, launchCtx) {

@@ -73,4 +73,3 @@ export function countLine(kind, n) {
 export const dashboardTitle = (family, brand) => `Parent dashboard · ${String(family || '').trim() || brand}`;
 
 export const ROLE_NAMES = { super: 'Owner', admin: 'Co-parent', kid: 'Kid login', '': 'Viewer' };
-export const STATUS_NAMES = { approved: 'Can watch', pending: 'Asking to watch', denied: 'Turned down' };

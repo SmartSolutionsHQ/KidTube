@@ -1,3 +1,4 @@
+/* The badge playground (/badge/preview.html): a dev page for the badge builder, not linked from the app. */
 :root { color-scheme: dark; }
 html, body { margin: 0; background: #05060A; color: #F7F4EC; }
 body { font-family: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }

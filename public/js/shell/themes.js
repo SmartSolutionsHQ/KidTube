@@ -61,7 +61,7 @@ export function pickTheme(registry, wanted, { lowPower = false, force = false, m
   return { theme, reason: 'chosen' };
 }
 
-// The feed variables a theme asks for, with "accent" filled in. M6 applies them to the feed.
+// The feed variables a theme asks for, with "accent" filled in. app.js applies them to the feed.
 export function feedVars(theme, accent) {
   const out = {};
   for (const [name, value] of Object.entries(theme?.feed || {})) {
@@ -136,7 +136,7 @@ export function loadRegistry({ refresh = false, url = '/api/themes', timeout = I
   return registryPromise;
 }
 
-const prefersReducedMotion = () => {
+export const prefersReducedMotion = () => {
   try { return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true; } catch { return false; }
 };
 

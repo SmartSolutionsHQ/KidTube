@@ -2,16 +2,14 @@
 // family-clock). Each module is mounted by the dashboard into a slot: mount(host, ctx) builds calm
 // parent UI with the kp- classes from /css/parent.css and returns { update(ctx), destroy() }.
 //
-// ctx.staff is the signed-in parent's session { email, t }; without it the stored dashboard session
-// (localStorage "kid-session") is used. Changes are announced with a bubbling "kt:launch-change" event
+// ctx.staff is the signed-in parent's session { email, t }; without it the shared account session
+// (js/shell/auth-dialog.js) is used. Changes are announced with a bubbling "kt:launch-change" event
 // on the host ({ detail: { kind, ... } }) so the dashboard can refresh its own rows.
+import { accountSession } from '../shell/auth-dialog.js';
 
 export function staffSession(ctx) {
   if (ctx?.staff?.email && ctx.staff.t) return ctx.staff;
-  try {
-    const stored = JSON.parse(localStorage.getItem('kid-session') || 'null');
-    return stored?.email && stored.t ? stored : null;
-  } catch { return null; }
+  return accountSession();
 }
 
 // GET with the session in X-Kid-* headers (never the URL), POST with { email, t } in the body.

@@ -95,7 +95,7 @@ export function playWordmark(doc = document) {
 }
 
 // Show a channel in the header: its name, its badge (or the mark) and its accent, then play the wordmark.
-// M6 calls this when a kid's channel opens; today the whole site is one channel named after the family.
+// app.js calls this when a kid's channel opens.
 export function showChannel({ name, logoUrl, accent } = {}, doc = document) {
   const root = brand(doc);
   if (root) {

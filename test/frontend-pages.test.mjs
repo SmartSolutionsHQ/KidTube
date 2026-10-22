@@ -11,7 +11,7 @@ const PAGES = ['index.html', 'about/index.html', 'parents/index.html', 'install/
 // Every id, class and data-* hook the page scripts look up. Renaming one breaks the feed silently.
 const INDEX_HOOKS = [
   'id="tz-reel"', 'id="kt-door"', 'id="switch-kid"', 'id="account-dialog"', 'id="account-content"',
-  'id="account-button"', 'id="tz-name"', 'id="tz-body"', 'class="tz-head"', 'class="tz-brand"', 'class="tz-mark"',
+  'id="account-button"', 'id="tz-body"', 'class="tz-head"', 'class="tz-brand"', 'class="tz-mark"',
   'class="tz-word"', 'class="tz-app"', 'class="tz-glow"', 'class="tz-scrimlayer"', 'class="tz-sound"', 'class="tz-shuffle"',
   'class="tz-pos"', 'class="tz-log"', 'class="tz-post"', 'class="tz-x"', 'class="tz-exit"', 'class="tz-soundpill"',
   'data-sheet="index"', 'data-sheet="comments"', 'data-locked="1"', 'data-site="name"',

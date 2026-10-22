@@ -1,6 +1,6 @@
 // "Who watched": turning GET /api/admin/views into table rows. Pure, so the tests feed it stubbed answers.
 //
-// The route belongs to the launch-story milestone. Its rows, newest first:
+// Its rows, newest first:
 //   { clipId, clipTitle, channel, viewer, viewerName, started, seconds, duration, completed }
 // viewer is an account email or "guest:<12 hex>"; paging is ?channel=&viewer=&before=<started>.
 import { clock, when } from './format.js';

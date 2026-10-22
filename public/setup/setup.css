@@ -254,12 +254,6 @@
   padding: 4px 0 4px 34px;
 }
 
-.su-address {
-  color: var(--kp-dim);
-  font-size: 13px;
-  overflow-wrap: anywhere;
-}
-
 /* done */
 .su-phones {
   display: grid;

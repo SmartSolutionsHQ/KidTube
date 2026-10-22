@@ -2,10 +2,12 @@
 // Log in, Sign up and Code, plus the signed-in profile. Themes restyle it only through the --kt-auth-*
 // variables in kid.css; nothing here knows about themes.
 //
-// The session lives in localStorage 'kid-session' (feed.js reads it for likes, comments and uploads):
+// This module also owns the session every page shares, in localStorage 'kid-session' (the feed, the
+// dashboard, the setup wizard, badge saving and the demo all read it through the functions below):
 //   { email, t, role, exp }                for an account (t is the 7-day session token)
 //   { guest: true, guestToken, role: 'guest', exp, scope }   for a guest pass
 // The server also sets the signed kid_access cookie, which is what /api/me and the videos check.
+// Nothing runs on import, so the dashboard and the Node tests can import it too.
 
 const DAY = 86400000;
 const KEY = 'kid-session';
@@ -26,6 +28,7 @@ const FIELDS = {
 };
 const SUBMITS = { login: 'Log in', signup: 'Ask to join', guest: 'Use guest code' };
 
+// The stored session while it lasts: an account's or a guest pass's.
 export function readSession() {
   try {
     const session = JSON.parse(localStorage.getItem(KEY));
@@ -33,8 +36,21 @@ export function readSession() {
   } catch { return null; }
 }
 
+// Only an account's session (it has the email and token the server checks), never a guest pass.
+export function accountSession() {
+  const session = readSession();
+  return session?.email && session.t ? session : null;
+}
+
 export function writeSession(session) {
   try { localStorage.setItem(KEY, JSON.stringify(session)); } catch {}
+}
+
+// Keeps an account session from a sign-in reply ({ email, t, role }) for as long as its token lasts.
+export function keepSession({ email, t, role }) {
+  const session = { email, t, role, exp: Date.now() + 7 * DAY };
+  writeSession(session);
+  return session;
 }
 
 export function clearSession() {
@@ -116,7 +132,8 @@ function accessForm(box, mode, message) {
   FIELDS[mode].forEach(([name, label, type, autocomplete], index) => {
     const input = el('input', { name, type, autocomplete, required: true });
     if (index === 0) input.autofocus = true;
-    if (name === 'email' && mode === 'login') { input.autocapitalize = 'none'; input.spellcheck = false; }
+    // iOS would otherwise "correct" a kid's login name (ivy becomes I'm).
+    if (name === 'email' && mode === 'login') { input.autocapitalize = 'none'; input.spellcheck = false; input.setAttribute('autocorrect', 'off'); }
     if (name === 'pass') { input.minLength = mode === 'signup' ? 12 : 1; input.maxLength = 128; }
     if (name === 'code') { input.maxLength = 6; input.pattern = '[a-zA-Z0-9]{4}([a-zA-Z0-9]{2})?'; input.autocapitalize = 'characters'; }
     form.append(el('label', { textContent: label }, input));
@@ -135,7 +152,9 @@ function accessForm(box, mode, message) {
       const body = Object.fromEntries(new FormData(form));
       if (body.email) body.email = body.email.toLowerCase().trim();
       const reply = await post(mode === 'guest' ? '/api/guest/redeem' : mode === 'signup' ? '/api/signup' : '/api/login', body);
-      if (!reply.ok) throw Error(reply.error === 'email' ? 'Use your email address.' : reply.error || 'Could not connect. Try again.');
+      // 'email' and 'creds' are the server's codes for an address or login name it can't read at all.
+      const codes = { email: 'Use your email address.', creds: 'Wrong email or password.' };
+      if (!reply.ok) throw Error(codes[reply.error] || reply.error || 'Could not connect. Try again.');
       if (mode === 'signup') { render('login', 'Request sent. Once a parent approves your account, log in here. If you already have one, just log in.'); return; }
       if (mode === 'guest') { finish({ guest: true, guestToken: reply.token, role: 'guest', exp: reply.expires, scope: reply.scope || null }); return; }
       if (reply.status !== 'approved') {

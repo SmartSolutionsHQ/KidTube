@@ -7,7 +7,7 @@
 //     session()      the signed-in { email, t } or null      isGuest()   true for a guest pass
 //     guestPrompt()  the feed's "Guest access is view-only"  failNote(slide, text)
 //     clipOf(slide)  the clip a slide shows (sealed clips have no reaction button)
-import { prefersReducedMotion } from './endings.js';
+import { prefersReducedMotion } from './themes.js';
 
 export const KINDS = ['wow', 'flame', 'star', 'party', 'cool'];
 const NAMES = { wow: 'Wow', flame: 'Fire', star: 'Star', party: 'Party', cool: 'Cool' };

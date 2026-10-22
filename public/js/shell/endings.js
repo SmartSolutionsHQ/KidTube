@@ -9,13 +9,12 @@
 // channel is window.__ktChannel: { slug, name, accent, number, themeId, splashSound, timezone }.
 // Sound follows the pause-accent rule: only when the family allows splash sound and the viewer has
 // tapped something in this session. Reduced motion shows finished frames and plays no sound.
-import { buildCtx, loadRegistry, loadTheme } from './themes.js';
+import { buildCtx, loadRegistry, loadTheme, prefersReducedMotion } from './themes.js';
 
 export const UNLOCK_LIMIT_MS = 3000;
 const THEME_LOAD_MS = 2500;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const within = (promise, ms) => Promise.race([promise, sleep(ms).then(() => { throw new Error('timeout'); })]);
-export const prefersReducedMotion = () => globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
 
 let gestured = false;
 for (const name of ['pointerdown', 'keydown']) globalThis.document?.addEventListener(name, () => { gestured = true; }, { capture: true, passive: true });
