@@ -502,7 +502,7 @@ function syncPost() {
 }
 bodyF.addEventListener("input", syncPost);
 var posting = false;
-var pendingDrafts = /* @__PURE__ */ new Map();
+var pendingDrafts = new Map();
 var postStatus = document.createElement("div");
 postStatus.className = "tz-cmt";
 postStatus.setAttribute("role", "status");
@@ -917,7 +917,7 @@ window.addEventListener("resize", () => {
     if (slides[state.index]) applyFit(slides[state.index]);
   });
 }, { passive: true });
-var likeState = /* @__PURE__ */ new Map();
+var likeState = new Map();
 function guestSession() {
   return !!readSession()?.guest;
 }
@@ -1355,7 +1355,7 @@ function bootFeed() {
       kind: clip.kind || "video",
       poster: clip.sealed ? "" : clip.poster || "",
       src: clip.src,
-      publishedAt: clip.publishedAt || (/* @__PURE__ */ new Date()).toISOString(),
+      publishedAt: clip.publishedAt || new Date().toISOString(),
       duration: clip.sealed ? 0 : Number(clip.duration) || 0,
       ...clip.sealed ? { sealed: true, opensAt: clip.opensAt, capsuleNote: clip.capsuleNote || "", sealedBy: clip.sealedBy || "" } : {}
     };
