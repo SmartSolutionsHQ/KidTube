@@ -23,7 +23,7 @@ export default {
       if (p === '/api/site') return J(env.site.info());
       if (p === '/api/channels') return J(env.site.channels(viewer));
       if (p === '/api/me') return await me(env, viewer);
-      if (p === '/api/notifications/unsubscribe' && env.handleVideoUnsubscribe) return env.handleVideoUnsubscribe(req);
+      if (p === '/api/notifications/unsubscribe') return env.notifications.handleUnsubscribe(req);
 
       if (req.method === 'POST' && p === '/api/signup') return await signup(req, env, ip);
       if (req.method === 'POST' && p === '/api/login') return await login(req, env);
