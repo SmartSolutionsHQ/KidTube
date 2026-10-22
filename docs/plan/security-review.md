@@ -2,8 +2,8 @@
 
 Scope: the whole app on `foundation-clean` at `4a0b4a5` (`git diff main...HEAD` plus the code it builds on): every
 route in `server/`, the viewer shell, the parent dashboard, the setup wizard, themes, the badge renderer, the
-service worker, Docker, Compose, Caddy, the CI workflows and the install docs. This was a review only; no code
-changed.
+service worker, Docker, Compose, Caddy, the CI workflows and the install docs. The first pass was review only;
+the second pass fixed findings on the same branch (see Fix status).
 
 How: I read every server module and the front-end DOM sinks, then probed a scratch install outside the repo
 (Node 24.18, FFmpeg 8.1, `127.0.0.1:3917`, invented family "Testfam", kids Juni and Max with logins, a viewer,
@@ -20,11 +20,42 @@ Severity scale: **high** means a realistic path for an outsider to watch childre
 about children's data. **Medium** means a privacy promise not kept, or a weakness that needs one more mistake.
 **Low** means hardening, small leaks and audit gaps.
 
+## Fix status (second pass, same branch)
+
+All findings were fixed on this branch except where marked open. Each fix has a regression test in
+`test/security-review.test.mjs` that fails on `ae2247a` and passes now; the suite went from 259 to 278 tests.
+The scratch-install reproductions were re-run against a fresh install outside the repo.
+
+| Finding | Status |
+|---|---|
+| H1 rate limits bypassed via X-Forwarded-For | fixed `293641d` |
+| M1 co-parents reach owner data | fixed `d3e45ec` |
+| M2 per-address-only limits | fixed `293641d` (per-account and global caps; 8-character kid minimum unchanged) |
+| M3 abandoned uploads kept | fixed `ad184b8` |
+| M4 kids public by default, cached a year | caching fixed `8bb2632`; default **open** (product decision) |
+| L1 guest pass sees other kids' files | fixed `8bb2632` |
+| L2 likes/comments on unplayable clips | fixed `36e174a` |
+| L3 tokens in URLs | fixed `bba8bb0` |
+| L4 non-constant-time signature check | fixed `9f4d29c` |
+| L5 signup enumeration | fixed `533d888` |
+| L6 deletion leaves email and name | fixed `fcb9647` |
+| L7 stored IPs | fixed `4eb5898` |
+| L8 unrecorded direct clip edits | fixed `7a338df` |
+| L9 email links use the boot-time URL | fixed `4de18bd` |
+| L10 Host check, token path | **open** (would break health checks and LAN access) |
+| L11 ffmpeg demuxers | **open**, unconfirmed (no Docker daemon to test the image's ffmpeg) |
+| L12 deployment and CI pinning | **open** (files owned by the install-test branch; SHA pinning is a separate task) |
+
+SECURITY.md describes the new behaviour (limits, six-character codes, co-parent scope, upload sweep, kids'
+file caching, address retention, removal).
+
 ---
 
 ## High
 
 ### H1. The documented nginx setup lets anyone bypass every rate limit, so guest codes and kid passwords can be brute-forced
+
+**Status:** Fixed in `293641d`. Every limit counts `clientIp()`: the last `X-Forwarded-For` entry, with an IPv6 /64 as one address. Logins pause after 10 wrong passwords per account in 15 minutes. Guest codes are 6 characters from 32 symbols (about 1.07 billion), and 30 wrong codes in 10 minutes pause redeeming for everyone. INSTALL.md needed no change, because the append form is now safe. Test: `test/security-review.test.mjs` (H1, H1/M2). Re-run on a fresh install: the same rotating-prefix tries now give 429, and the right kid password waits too.
 
 - **Where:** `server/index.mjs:87` and `server/index.mjs:124` (the limiter key and `CF-Connecting-IP` are the
   whole `X-Forwarded-For` string); `server/api.js:254` (the guest-code limit keys on that header);
@@ -64,6 +95,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 
 ### M1. Co-parents can read watch history and the people list, and change kids' tape budgets, badges and the family clock
 
+**Status:** Fixed in `d3e45ec`. Owner only: views, budget GET/POST, bonus, time-zone POST, kid and family badge, picture and icon writes. Reading the clock stays open to co-parents. The overview gives co-parents no `accounts` and no emails. Two launch-story assertions in `test/watch.test.mjs` that expected co-parent access now expect 403. Re-run: co-parent gets 403 on each route and an empty account list.
+
 - **Where:** `server/watch.mjs:248` (`GET /api/admin/views`), `watch.mjs:250-262` (budget, bonus and time-zone
   routes), all through `jsonio.mjs:34` `staffFor()` → `asStaff()`, which allows `admin`; `server/api.js:499-537`
   (`/api/admin/overview` returns every account's email, name, status and role to `admin`);
@@ -87,6 +120,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 
 ### M2. Without a proxy, login and guest codes are protected only per address
 
+**Status:** Fixed in `293641d`, together with H1: per-account, global guest-code and IPv6 /64 limits. Still open: distributed guessing at one account just under 10 tries per 15 minutes (about 960 a day). Kid passwords still need only 8 characters; raising that is a product call.
+
 - **Where:** `server/index.mjs:122-128` (20 tries per address per 10 minutes, shared by login, signup and guest
   redeem); `server/api.js:255-260` (5 guest-code tries per address); no per-account, per-handle or global
   counter.
@@ -101,6 +136,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
   limiter.
 
 ### M3. Abandoned uploads stay on disk forever, unconverted and with their GPS, and can fill the disk
+
+**Status:** Fixed in `ad184b8`. At boot and hourly, uploads still receiving after 24 hours are marked failed, and every `incoming/` folder without an upload on its way is deleted. Re-run: after aging the abandoned job by two days, a restart emptied `incoming/` and marked it failed. Not done: counting reserved bytes across unfinished uploads at start (the sweep already bounds it to 3 uploads per account per day).
 
 - **Where:** `server/uploads.mjs:274-295` (start), `uploads.mjs:288` (only 3 unfinished jobs per account per 24
   hours, counted by `created`); nothing ever sweeps `DATA_DIR/incoming/` or old `receiving` jobs (I checked all
@@ -119,6 +156,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
   reserved bytes across all unfinished jobs against free space at start.
 
 ### M4. By default, anyone on the internet sees the kids' names, channel lines, badges and photos, cached for a year
+
+**Status:** Partly fixed in `8bb2632`. Kids' badges and pictures are now `private, max-age=3600` (no shared caches, gone from browsers within the hour). **Open:** `kids_public` still defaults to `true`, because showing kids before sign-in is Eddie's recorded product decision (architecture notes). Changing it is for Eddie and Kevin.
 
 - **Where:** `server/settings.mjs:65` (`kids_public` defaults to `true`); `server/site.mjs:12`;
   `server/brandfiles.mjs:134-136` and `brandfiles.mjs:157-162` (`public, max-age=31536000, immutable` while
@@ -143,6 +182,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 
 ### L1. A guest pass for one kid can fetch the other kids' badges and pictures
 
+**Status:** Fixed in `8bb2632`. With `kids_public` off, a pass for one kid gets 404 for other kids' files. Re-run: Max's pass gets 404 for Juni's badge and picture.
+
 - **Where:** `server/brandfiles.mjs:134-136`. With `kids_public` off, `kidsVisible()` accepts any viewer,
   including a scoped guest; it ignores `canViewChannel()`.
 - **Confirmed:** a pass limited to `max`, with `kids_public` off: `/api/channels` → `["max"]` only, but
@@ -151,6 +192,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
   is off.
 
 ### L2. Likes and comments are accepted for clips the caller can't play, including pending and made-up ones
+
+**Status:** Fixed in `36e174a`. Like and comment use `canPlayClip`; `/api/likes` counts only playable clips; a missing clip has no comments. Re-run: pending and made-up ids get 404.
 
 - **Where:** `server/api.js:600-611` (`likeSet`) and `server/api.js:629-655` (`commentAdd`) check the session but
   not `canPlayClip()` or even that the clip exists; `api.js:613-617` returns comments when the clip row is
@@ -163,6 +206,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 
 ### L3. Seven-day session tokens travel in URL query strings
 
+**Status:** Fixed in `bba8bb0`. The feed, auth dialog and launch parts send `X-Kid-Email`/`X-Kid-Token`. The server reads those first and still accepts `?e=&t=` from shells cached before the change. Covered by route tests and a static check of the pages; not clicked through in a browser.
+
 - **Where:** `public/js/shell/auth-dialog.js:55` and `public/js/feed.js:1177` (`/api/check?e=&t=`),
   `feed.js:478` (`/api/comments?…&t=`), `feed.js:1054` (`/api/likes?…`), `public/js/launch/common.js:28` (staff
   GETs), `server/api.js:500` (`/api/admin/overview?e=&t=`).
@@ -174,6 +219,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 
 ### L4. The session signature check is not constant-time
 
+**Status:** Fixed in `9f4d29c` (`timingSafeEqual` after a shape check).
+
 - **Where:** `server/api.js:177` (`sig!==await hmac(...)`). Cookie checks (`access.mjs:12`) and unsubscribe
   links (`notifications.mjs:97`) do use `timingSafeEqual`.
 - **Scenario:** a remote timing attack against a 64-hex HMAC is impractical over a network, but it's the one
@@ -181,6 +228,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 - **Fix:** compare with `timingSafeEqual` on equal-length buffers after checking `/^[a-f0-9]{64}$/`.
 
 ### L5. Signup reveals which emails and kid login names exist, and re-emails the parent each time
+
+**Status:** Fixed in `533d888`. Every signup answers `200 {status:"pending"}`, only a new request emails the parent, and `@kids.invalid` addresses are refused. Residual: with email on, a new request takes longer (one Brevo call) than a repeat.
 
 - **Where:** `server/api.js:98-103`.
 - **Confirmed:** signup with `juni@kids.invalid` → `409 {"error":"exists"}`; a new email → `200 pending`. The login
@@ -190,6 +239,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
   Notify only on the first request for an email.
 
 ### L6. Deleting a person leaves their email and full name behind
+
+**Status:** Fixed in `fcb9647`. One `erasePerson()` in family.mjs is used by the dashboard, the kid form and removing a kid. Activity rows say "someone". Re-run: no table holds the removed viewer's email or name.
 
 - **Where:** `server/monitor.mjs:682-693` (`removePerson`); `server/family.mjs:126` and `family.mjs:128` (removing
   or renaming a kid login deletes the account row only); `upload_jobs` and sent `video_notification_deliveries`
@@ -204,6 +255,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 
 ### L7. IP addresses are stored, and pruned only when the next request of the same kind arrives
 
+**Status:** Fixed in `4eb5898`. `hits`, `chits` and `guest_code_attempts` are cleared of rows older than an hour, hourly. The claim row no longer stores an IP.
+
 - **Where:** `hits` (signup, `api.js:92-95`), `chits` (comments, `api.js:640-643`) and `guest_code_attempts`
   (`api.js:255-260`) are each pruned only inside their own route. The setup claim logs `{ ip }` in `activity`
   for 365 days (`setup.mjs:227`).
@@ -215,6 +268,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 
 ### L8. A co-parent can rename, reorder, delete or approve clips without an activity row
 
+**Status:** Fixed in `7a338df`. The direct routes write the same activity rows; the dashboard marks its own calls internal, so each change still has exactly one row. Re-run: a direct rename added one row.
+
 - **Where:** `server/api.js:35-38` (`/api/admin/clips/review`, `/api/clips/reorder`, `/api/clips/rename`,
   `/api/clips/delete`) are staff-callable directly. Only monitor.mjs's wrappers write activity.
 - **Confirmed:** `POST /api/clips/rename` as the co-parent → 200, `changes: 1`, and 0 new `activity` rows.
@@ -222,6 +277,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
   activity write into api.js.
 
 ### L9. New-video email links point at `http://localhost:3000` on a fresh install until a restart
+
+**Status:** Fixed in `4de18bd`. Links read `SITE_URL` when the email is built.
 
 - **Where:** `server/notifications.mjs:51` reads `env.SITE_URL` once at boot. A first boot has no site URL yet,
   because the wizard sets it later.
@@ -231,6 +288,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 - **Fix:** read `env.SITE_URL` at send time in `drain()`/`unsubscribeLink()`.
 
 ### L10. No Host check; before setup, the state route reveals the data folder path
+
+**Status:** **Open.** A Host check would also refuse the Docker health check (`127.0.0.1:3000`), LAN-by-IP visits and Tailscale names unless each is listed, and rebinding reaches only signed-out data. The token path helps only someone who already has the server. Not worth the breakage before launch; revisit with an allowed-hosts setting.
 
 - **Where:** `server/setup.mjs:198` (`tokenFile`, `docker` in the anonymous `GET /api/setup/state`),
   `setup.mjs:382-387` (before the site URL is saved, the allowed origin is built from the request's own Host).
@@ -242,6 +301,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 
 ### L11. FFmpeg and ffprobe parse untrusted uploads with every demuxer enabled (unconfirmed)
 
+**Status:** **Open, unconfirmed.** I couldn't test the image's Alpine ffmpeg: there was no Docker daemon on this machine. FFmpeg 8.1 refuses the known trick. Adding `-format_whitelist` without that test risks rejecting real phone formats. Next step: run the playlist test inside the built image, then add the whitelist.
+
 - **Where:** `server/uploads.mjs:82-104` (`ffprobe … file`, `ffmpeg -i input` with no format whitelist).
 - **What I tested:** a "video" that is really an HLS playlist naming local files. FFmpeg 8.1 refused it ("Not
   detecting m3u8/hls with non standard extension"), because the upload is saved as `source` with no extension.
@@ -251,6 +312,8 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
   `-protocol_whitelist file`. Pin the image's ffmpeg version.
 
 ### L12. Deployment and supply-chain hardening
+
+**Status:** **Open.** The compose files and Dockerfile belong to the install-test branch being merged in parallel. Pinning workflow actions to commit SHAs needs a lookup of each action's current release; better done with Dependabot when the repo is public.
 
 - `compose.https.yaml` sets `TRUST_PROXY=1` while `compose.yaml:19` still publishes the app port on the host's
   loopback. Any local process that bypasses Caddy can then spoof `X-Forwarded-For`/`-Proto`. Drop the `ports:`
