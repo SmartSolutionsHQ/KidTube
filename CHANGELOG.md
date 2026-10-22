@@ -5,69 +5,95 @@ version may change how an install is set up, and [docs/UPGRADING.md](docs/UPGRAD
 
 ## 0.2.0 (unreleased)
 
-The first release built as an app families can install: one command, a setup page in the browser, a channel
-for each kid, and a calm dashboard for parents.
+The first release built as an app families can install: one command, a setup page in the browser, a channel for
+each kid, and a dashboard for parents.
+
+### Upgrading from 0.1.0
+
+- Data now lives in a Docker volume by default. An older install that keeps its data in `./data` must add
+  `KIDTUBE_DATA=./data` to `.env` before the first start, or it starts empty and asks for setup.
+- The database is upgraded on the first start, after an automatic backup in `backups/`. Accounts, videos,
+  comments and unexpired guest codes carry over, and the site's videos become the first kid's channel.
+
+[docs/UPGRADING.md](docs/UPGRADING.md) has the steps.
 
 ### For kids
 
-- A channel per kid, with their own name, kicker line, accent colour, badge and splash screen.
-- A badge builder: seven shapes, colours, the kid's name or initials, 61 stickers, effects and Shuffle. Badges
-  are drawn on the server from a checked spec; no picture of a child is needed.
-- Six splash themes: Ember Tape (the VHS original), Glass Gate, Creature Feature, Blueprint Workshop, Arcade
-  and Comic Pow. Each one honours reduced motion, Esc to skip and "skip my intro next time".
-- The VHS pause screen, the wordmark slide and posters for every video, loaded ahead of the swipe.
-- Time capsules: seal a video until a birthday or any date, with a note. It waits as a locked tape and opens
-  with the theme's own unlock.
-- Sticker reactions from the people a parent approved.
-- An end-of-tape screen when a daily watch limit runs out.
-- Kid logins with a short name instead of an email address. A kid's uploads wait for a parent by default.
-- The upload card from the design: "What's it called?", "Record it to tape", "Sent to a parent".
+- A channel per kid, with their own name, line, colour, badge and splash screen.
+- A badge builder: nine shapes, fonts, colours, the kid's name or initials, 61 stickers, effects and Shuffle. No
+  photo of a child is needed.
+- Six splash themes: Ember Tape, Glass Gate, Creature Feature, Blueprint Workshop, Arcade and Comic Pow. Each
+  honours reduced motion, Esc to skip and "skip my intro next time".
+- Kid logins with a short name instead of an email address, and posting from a phone: "What's it called?",
+  "Record it to tape", "Sent to a parent".
+- Time capsules: a video sealed until a birthday or any date, with a note, that opens with the theme's unlock.
+- Sticker reactions, and an "end of tape" screen when a daily watch limit runs out.
+- Posters for every video, loaded ahead of the swipe, and the VHS pause screen.
 
 ### For parents
 
-- `docker compose up -d`, then a link and a one-time setup code in the logs. No `.env` needed.
-- A seven-step setup wizard: the code, the parent account, the family name and address, the kids, who can
-  watch, optional email, and putting it on a phone.
-- The parent dashboard at `/parents`: review queue, videos, comments (approve, hide, delete), people and
-  co-parents, guest codes with a printable QR card (a code can be limited to one kid), the activity feed,
-  who watched what, daily watch limits with bonus minutes, time capsules and settings.
-- A front door that shows the kids' badges, or only the family name when the family prefers.
-- Add to Home Screen: a manifest built from the family's name, accent and badge; a service worker that keeps
-  only the app's shell and never videos or private answers; a calm offline page; and an install page at
-  `/install` with Android's install button or the iPhone steps.
+- `docker compose up -d`, then a link and a one-time setup code in the log. No `.env` needed.
+- A seven-step setup page: the code, the parent account, the family, the kids, who can watch, optional email,
+  and putting it on a phone.
+- The parent dashboard at `/parents`: review, kids, videos, comments, people and co-parents, guest codes with a
+  printable QR card (optionally for one kid), activity, who watched what, daily watch limits with bonus minutes,
+  time capsules, storage and settings.
+- A front door that shows the kids' badges, or only the family name.
+- Add to Home Screen: a manifest from the family's name, colour and badge, a service worker that keeps only the
+  app's look, an offline page, and install steps at `/install`.
+- A public demo mode with an invented family that resets every hour, where visitors can customize kids in a
+  private sandbox ([docs/DEMO.md](docs/DEMO.md)).
+
+### Security and privacy
+
+From an end-to-end review; each fix has a regression test.
+
+- Rate limits that can't be bypassed through `X-Forwarded-For`, a per-account pause after wrong passwords, and
+  six-character guest codes.
+- Co-parents no longer see watch history or people, or change kids' settings.
+- Uploads nobody finished are deleted after a day; FFmpeg opens only local files in the formats phones make, and
+  every video loses its metadata, including phone GPS.
+- Kids' badges and pictures are never kept by shared caches, and a guest code for one kid can't fetch another
+  kid's files.
+- Session tokens never travel in URLs; signup no longer reveals which accounts exist; removing a person removes
+  their data; rate-limit addresses are deleted within about an hour.
+- Other host names get 421 once the web address is set (`ALLOWED_HOSTS` adds names).
+- A strict Content Security Policy header on every page, self-hosted fonts and stickers, and no outside
+  requests.
+- The container runs read-only as uid 1000 with no capabilities; the base image and CI actions are pinned.
 
 ### Under the hood
 
 - One migration ladder (`PRAGMA user_version`, schema v4) with a backup before every upgrade.
-- Settings in the database (environment variables still win and lock a setting).
+- Settings in the database; an environment variable still wins and locks the setting.
 - The product name in one module (`server/brand.mjs`), so the planned rename is one change.
-- A strict Content Security Policy sent as an HTTP header; fonts and stickers are self-hosted.
-- Server-side checks on every clip, video, poster, badge and comment read: channel access, review state,
-  sealed capsules and spent daily tapes.
-- FFmpeg posters, a conversion timeout, metadata stripping (no phone GPS in published videos).
-- CI checks that the npm package and Docker image ship no maintainer folders. A release workflow builds the
-  image for amd64 and arm64 on a version tag.
-- 259 automated tests on Node 24.
+- CI checks that the npm package and the Docker image ship no maintainer folders, and that a first install
+  starts healthy. A release workflow builds the image for amd64 and arm64 on a version tag.
+- 305 automated tests on Node 24.
 
 ### Docs
 
 - A README for parents, with screenshots of an invented family.
-- `docs/INSTALL.md` in plain words: a mini PC or NAS, phones on the home Wi-Fi, Tailscale for private HTTPS
-  without a domain, your own domain, an existing reverse proxy, phones, and a tour of the dashboard.
-- `docs/UPGRADING.md`: the automatic backup before each upgrade, rolling back, and moving an older family site
-  onto KidTube.
-- `docs/VERIFY.md`: the release checklist and the results of the last run.
-- `SECURITY.md` covers the setup claim, badges and pictures, themes, reactions and watch history.
+- `docs/INSTALL.md` in plain words, including NAS boxes, Colima on a Mac, Tailscale, a domain with Caddy, an
+  existing reverse proxy and running without Docker.
+- `docs/OPERATIONS.md` for the dashboard, backups, recovery and troubleshooting; `docs/UPGRADING.md`;
+  `docs/EMAIL.md`; `docs/DEMO.md`; `docs/THEMES.md` for theme makers.
+- `docs/ARCHITECTURE.md` and `CONTRIBUTING.md` for contributors; `docs/VERIFY.md`, the release checklist with
+  the results of the last run.
 
 ### Fixed
 
 - The dashboard tab read "Parent dashboard · Parent dashboard" when the family had no name.
 - People and comment rows were squeezed into a narrow column on wide screens.
-- Activity showed raw names for time capsule and daily tape events.
+- Activity showed raw names for time capsule and daily limit events.
 - A comment waiting for a parent disappeared without a word.
 - On short phones the pause screen ran into the upload button and the caption, with two play marks.
-- Kids, viewers and guests no longer see a "Parents" link they can't use.
-- `npm run email:test` and the parent reset script work without a `.env`.
+- Kids, viewers and guests saw a "Parents" link they couldn't use.
+- `npm run email:test` and the parent reset script failed without a `.env`.
+- A data folder the app couldn't write printed a fix for the path inside the container instead of the folder
+  on the computer.
+- With `SITE_URL` set only in the shell, the HTTPS overlay restarted the app forever.
+- New-video email links pointed at `http://localhost:3000` on a fresh install until a restart.
 
 ## 0.1.0 (2026-10-21)
 

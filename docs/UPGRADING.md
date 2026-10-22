@@ -23,8 +23,9 @@ docker compose up -d --build
 docker logs kidtube
 ```
 
-Add `-f compose.yaml -f compose.https.yaml` to the `up` command if you use the included Caddy. With Node, stop the
-app, `git pull`, and start it again with `npm start`.
+If you use the included Caddy without `COMPOSE_FILE` in `.env` ([INSTALL.md](INSTALL.md#your-own-domain)), add
+`-f compose.yaml -f compose.https.yaml` to the `up` command. Without Docker, stop the app, `git pull`, and start
+it again with `npm start`.
 
 ### What happens on the first start
 

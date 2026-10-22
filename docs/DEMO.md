@@ -72,7 +72,8 @@ device and disappear at the next reset."
 **Never run the demo on a family's install.** The demo replaces its data every hour. It refuses to start if its
 database or data folder holds anything that is not the demo (it looks for its own marker in both), so setting
 `DEMO_MODE=1` on a real install by mistake stops the server instead of wiping it. Give the demo its own server,
-or at least its own folder and its own Docker volume.
+or at least its own folder, its own Docker volume and its own container name (see
+[INSTALL.md](INSTALL.md#a-second-family-on-the-same-computer)).
 
 ## With Docker
 

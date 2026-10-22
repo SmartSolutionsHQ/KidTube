@@ -14,12 +14,13 @@ settings, and falls back to `BRAND_NAME`.
   `bin/create-kidtube.mjs` (usage text and the next-steps lines).
 - Docker: the `kidtube` service and `container_name` in `compose.yaml` and `compose.https.yaml`, and the matching
   `reverse_proxy kidtube:3000` in `Caddyfile`. Changing the service name changes the command families type
-  (`docker logs kidtube`), so update the docs with it.
+  (`docker logs kidtube`), which the setup page (`public/setup/setup.js`), the ownership hint in
+  `server/config.mjs`, `bin/create-kidtube.mjs` and the docs all print.
 - CI and releases: the workflow names and the `kidtube:check` tag in `.github/workflows/test.yml`; the `IMAGE`
   (`ghcr.io/smartsolutionshq/kidtube`) and the `org.opencontainers.image.title` and description labels in
   `.github/workflows/release.yml`.
-- Words: `README.md` (including the positioning line and the "Why not YouTube Kids?" section), `SECURITY.md`,
-  `CHANGELOG.md` and `docs/`. The README's screenshots under `docs/images/` show the old name in the setup header
+- Words: `README.md` (including the "not affiliated with YouTube or Google" line, which can go with the
+  rename), `SECURITY.md`, `CHANGELOG.md`, `CONTRIBUTING.md` and `docs/`. The README's screenshots under `docs/images/` show the old name in the setup header
   and the dashboard footer; retake them on a scratch install.
 - The mark: `public/assets/logo.svg`, then run `node scripts/dev/build-icons.mjs` to redraw the default
   home-screen icons in `public/assets/icons/`.
@@ -47,5 +48,7 @@ orphan a family's data or break existing installs, so they stay as they are:
 | `data-kt-theme` and `kt-<theme id>-` keyframes | the theme contract in `docs/THEMES.md` |
 | `kt-shell-<version>` | the service worker's cache name (a rename would only re-download the shell) |
 | `kt-opened-<id>` | browser localStorage key for capsules a viewer has seen open |
+| `kt-always-enter` | browser localStorage key for "skip my intro next time" |
+| `kt_sandbox`, `kidtube-demo-v1` | the demo's sandbox cookie, and the marker that tells a demo's data from a family's |
 
 Lowercase identifiers like these are not the product name; the brand test ignores them.
