@@ -20,6 +20,7 @@ import { createCapsules } from './capsules.mjs';
 import { createReactions } from './reactions.mjs';
 import { createWatch } from './watch.mjs';
 import { createPwa } from './pwa.mjs';
+import { DemoError, openDemo } from './demo.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const publicDir = resolve(process.env.PUBLIC_DIR || 'public');
@@ -32,8 +33,12 @@ let install;
 try { install = prepareInstall(); } catch (error) { if (error instanceof InstallError) stop(error.message); throw error; }
 const { database: dbFile, dataDir } = install;
 const { sqlite, DB } = openDatabase(dbFile, { allowEmpty: true });
+// DEMO_MODE=1 makes this the public demo (server/demo.mjs). It refuses a family's install before anything is written.
+let demo = null;
+try { demo = openDemo({ sqlite, dataDir, database: dbFile }); } catch (error) { if (error instanceof DemoError) stop(error.message); throw error; }
 await migrate(sqlite, { dataDir });
-const settings = createSettings(sqlite);
+if (demo) await demo.restore();
+const settings = createSettings(sqlite, demo ? demo.environment(process.env) : process.env);
 try { checkSiteUrl(settings.get('site_url')); } catch (error) { stop(error.message); }
 if(settings.get('mail_mode')==='brevo')for(const key of ['brevo_api_key','notify_email','sender_email'])if(!settings.get(key))stop(key.toUpperCase()+' is required for email');
 // Site and mail settings are read live, so a parent's change applies without a restart.
@@ -68,11 +73,13 @@ const uploads = createUploadManager({ sqlite, env, databasePath: dbFile, notific
 env.deleteLocalVideo = uploads.deleteVideo;
 const brandFiles = createBrandFiles({ sqlite, env, dataDir });
 const family = createFamily({ sqlite, themeIds: () => themes.list().map(theme => theme.id), removeChannelFiles: brandFiles.removeChannel });
-const setup = createSetup({ sqlite, settings, env, paths: install, family, sendFile });
+const pages = demo ? demo.pages(sendFile, publicDir) : sendFile;
+const setup = createSetup({ sqlite, settings, env, paths: install, family, sendFile: pages });
 // The home-screen app: manifest, Apple icon and the service worker, built from the shell as it is now.
 const pwa = createPwa({ settings, brandFiles, dataDir, publicDir, pageHtml: sendFile.pageHtml });
 const monitor = (await import('./monitor.mjs')).createMonitor({ sqlite, settings, env, family, paths: install });
 notifications.kick();
+demo?.start(env);
 
 async function sendApi(req, res, who) {
   const chunks = [];
@@ -116,10 +123,11 @@ const server = http.createServer((req, res) => {
   if(!['GET','HEAD','OPTIONS'].includes(req.method)&&!setup.originAllowed(req)){res.writeHead(403).end();return;}
   let pathname;
   try { pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname).replace(/\/+$/, '') || '/'; }catch{res.writeHead(400).end();return;}
+  if(demo?.handle(req,res,pathname))return;
   if(pathname==='/api/themes'){themes.handle(req,res);return;}
   if(pwa.handle(req,res,pathname))return;
   if(setup.handle(req,res,pathname))return;
-  if(monitor.handle(req,res,pathname))return;
+  if(!demo?.quiet(pathname)&&monitor.handle(req,res,pathname))return;
   if(['/api/login','/api/signup','/api/guest/redeem'].includes(pathname)){
     const ip=process.env.TRUST_PROXY==='1'?(req.headers['x-forwarded-for']||req.socket.remoteAddress):req.socket.remoteAddress;
     const now=Date.now(); for(const [k,v] of attempts)if(v.until<now)attempts.delete(k);
@@ -143,7 +151,7 @@ const server = http.createServer((req, res) => {
       if (!res.headersSent) res.writeHead(500).end(); else res.destroy(error);
     });
   } else if (req.method === 'GET' || req.method === 'HEAD') {
-    sendFile(req, res, pathname);
+    pages(req, res, pathname);
   } else {
     res.writeHead(405).end();
   }
