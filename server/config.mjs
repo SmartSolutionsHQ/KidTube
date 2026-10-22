@@ -17,9 +17,15 @@ export function installPaths(env = process.env) {
 }
 
 // The exact command that gives this process its folder back, for the common Docker bind-mount trap.
-export function ownershipFix(dir) {
+// In Docker, dir is the path inside the container; compose.yaml passes the host side as HOST_DATA
+// (a folder such as ./data, or the name of a volume, which has no folder to chown on the computer).
+export function ownershipFix(dir, env = process.env) {
   const user = typeof process.getuid === 'function' ? `${process.getuid()}:${process.getgid()}` : '1000:1000';
-  return `sudo chown -R ${user} "${dir}"`;
+  const host = env.HOST_DATA;
+  if (!host) return `sudo chown -R ${user} "${dir}"`;
+  if (host.startsWith('.')) return `sudo chown -R ${user} "${host}" (in the folder with compose.yaml)`;
+  if (/[/\\]/.test(host)) return `sudo chown -R ${user} "${host}"`;
+  return `docker compose run --rm --user root --entrypoint chown kidtube -R ${user} ${dir}`;
 }
 
 export function ensureDataDir(dir) {

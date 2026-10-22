@@ -12,6 +12,8 @@ services:
       HOST: 0.0.0.0
       PORT: "3000"
       HOST_PORT: "${HOST_PORT:-3000}"
+      # The host side of /data, so an ownership problem prints a fix for the right folder.
+      HOST_DATA: "${KIDTUBE_DATA:-kidtube-data}"
       DATABASE_PATH: /data/kidtube.sqlite
       PUBLIC_DIR: /app/public
     ports:
