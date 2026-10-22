@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import vm from 'node:vm';
 import { BRAND_NAME, DEFAULT_ACCENT } from '../server/brand.mjs';
 import { buildManifest, buildWorker, shortName } from '../server/pwa.mjs';
+import { dashboardTitle } from '../public/js/parent/format.js';
 import { startInstall, ROOT } from './helpers.mjs';
 import { join } from 'node:path';
 
@@ -174,3 +175,9 @@ test('the served manifest, Apple icon and worker', async t => {
   assert.match(await offline.text(), /You're offline/);
 });
 
+test('the dashboard tab title falls back to the product name, never repeating itself', () => {
+  assert.equal(dashboardTitle('', BRAND_NAME), `Parent dashboard · ${BRAND_NAME}`);
+  assert.equal(dashboardTitle('   ', BRAND_NAME), `Parent dashboard · ${BRAND_NAME}`);
+  assert.equal(dashboardTitle(undefined, BRAND_NAME), `Parent dashboard · ${BRAND_NAME}`);
+  assert.equal(dashboardTitle('The Okafors', BRAND_NAME), 'Parent dashboard · The Okafors');
+});

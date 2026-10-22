@@ -69,5 +69,8 @@ export function countLine(kind, n) {
   }[kind];
 }
 
+// The tab title names the family, or the product while the family has no name yet.
+export const dashboardTitle = (family, brand) => `Parent dashboard · ${String(family || '').trim() || brand}`;
+
 export const ROLE_NAMES = { super: 'Owner', admin: 'Co-parent', kid: 'Kid login', '': 'Viewer' };
 export const STATUS_NAMES = { approved: 'Can watch', pending: 'Asking to watch', denied: 'Turned down' };
