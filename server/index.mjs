@@ -54,6 +54,7 @@ env.deleteLocalVideo = uploads.deleteVideo;
 const brandFiles = createBrandFiles({ sqlite, env, dataDir });
 const family = createFamily({ sqlite, themeIds: () => themes.list().map(theme => theme.id), removeChannelFiles: brandFiles.removeChannel });
 const setup = createSetup({ sqlite, settings, env, paths: install, family, sendFile });
+const monitor = (await import('./monitor.mjs')).createMonitor({ sqlite, settings, env, family, paths: install });
 notifications.kick();
 
 async function sendApi(req, res, who) {
@@ -100,6 +101,7 @@ const server = http.createServer((req, res) => {
   try { pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname).replace(/\/+$/, '') || '/'; }catch{res.writeHead(400).end();return;}
   if(pathname==='/api/themes'){themes.handle(req,res);return;}
   if(setup.handle(req,res,pathname))return;
+  if(monitor.handle(req,res,pathname))return;
   if(['/api/login','/api/signup','/api/guest/redeem'].includes(pathname)){
     const ip=process.env.TRUST_PROXY==='1'?(req.headers['x-forwarded-for']||req.socket.remoteAddress):req.socket.remoteAddress;
     const now=Date.now(); for(const [k,v] of attempts)if(v.until<now)attempts.delete(k);
