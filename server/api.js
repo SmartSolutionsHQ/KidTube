@@ -27,7 +27,7 @@ export default {
       if (req.method === 'POST' && p === '/api/guest/generate') return await guestGenerate(req, env);
       if (req.method === 'POST' && p === '/api/guest/redeem') return await guestRedeem(req, env);
       if (req.method === 'POST' && p === '/api/guest/validate') return await guestValidate(req, env);
-      if (p === '/api/check') return await check(url, env);
+      if (p === '/api/check') return await check(req, url, env);
       if (p === '/api/pending') return DENY403();
       if (p === '/api/decide') return PAGE('Open the parent dashboard to review account requests.', 200);
       if (p === '/api/clips') return await clipsList(url, env, viewer);
@@ -37,13 +37,13 @@ export default {
       if (req.method === 'POST' && p === '/api/clips/rename') return await clipsRename(req, env);
       if (req.method === 'POST' && p === '/api/clips/delete') return await clipsDelete(req, env);
       if (p.startsWith('/api/media/')) return await mediaServe(req, env, p, viewer);
-      if (p === '/api/admin/overview') return await adminOverview(url, env);
+      if (p === '/api/admin/overview') return await adminOverview(req, url, env);
       if (req.method === 'POST' && p === '/api/admin/status') return await adminStatus(req, env);
       if (req.method === 'POST' && p === '/api/admin/role') return await adminRole(req, env);
       if (req.method === 'POST' && p === '/api/admin/password') return await adminPassword(req, env);
-      if (p === '/api/likes') { const r = await likesAll(url, env, viewer); return env.capsules ? env.capsules.omitSealed(r) : r; }
+      if (p === '/api/likes') { const r = await likesAll(req, url, env, viewer); return env.capsules ? env.capsules.omitSealed(r) : r; }
       if (req.method === 'POST' && p === '/api/like') return await likeSet(req, env);
-      if (p === '/api/comments') return await commentsList(url, env, viewer);
+      if (p === '/api/comments') return await commentsList(req, url, env, viewer);
       if (req.method === 'POST' && p === '/api/comment') return await commentAdd(req, env);
       if (req.method === 'POST' && p === '/api/comment/delete') return await commentDelete(req, env);
       return J({ ok: false, error: 'not found' }, 404);
@@ -167,9 +167,15 @@ async function login(req, env) {
 }
 
 /* ---------- status check: without a valid session it says nothing about the email ---------- */
-async function check(url, env) {
-  const email = unb64uSafe(url.searchParams.get('e')).trim().toLowerCase();
-  const t = url.searchParams.get('t') || '';
+/* The session a GET carries: X-Kid-Email and X-Kid-Token headers, which the pages send so tokens stay out
+   of logs, or the older ?e=<base64url email>&t= that a shell cached before the change may still use. */
+function getSession(req, url) {
+  const email = req.headers.get('x-kid-email');
+  if (email) return { email: email.trim().toLowerCase(), t: req.headers.get('x-kid-token') || '' };
+  return { email: unb64uSafe(url.searchParams.get('e')).trim().toLowerCase(), t: url.searchParams.get('t') || '' };
+}
+async function check(req, url, env) {
+  const { email, t } = getSession(req, url);
   if (!await sessOk(env, email, t)) return J({ ok: true, status: 'none', role: '' });
   return J({ ok: true, email, status: 'approved', role: await roleOf(env, email), t });
 }
@@ -513,8 +519,9 @@ function chunkStream(env, id, from, to, size) {
 }
 
 /* ---------- staff analytics + super controls ---------- */
-async function adminOverview(url, env) {
-  const s = await asStaff(env, unb64uSafe(url.searchParams.get('e') || ''), url.searchParams.get('t') || '');
+async function adminOverview(req, url, env) {
+  const session = getSession(req, url);
+  const s = await asStaff(env, session.email, session.t);
   if (!s) return DENY403();
   const acc = await db(env, 'SELECT email, first, last, status, role, created FROM accounts ORDER BY created ASC');
   const cpl = await db(env, `SELECT c.id, c.title, c.position, c.review, c.hidden, ch.slug AS channel,
@@ -599,17 +606,16 @@ async function adminPassword(req, env) {
   return J({ ok: true, changes: (r.meta && r.meta.changes) || 0 });
 }
 
-async function likesAll(url, env, viewer) {
+async function likesAll(req, url, env, viewer) {
   /* counts only for clips this viewer may play: a guest pass limited to one kid sees that kid's, and
      clips waiting for review or hidden never show up for viewers */
   const cr = await db(env, `SELECT l.clip_id AS c, COUNT(*) AS n, k.channel_id, k.review, k.hidden FROM likes l
     JOIN clips k ON k.id = l.clip_id GROUP BY l.clip_id`);
   const counts = {};
   for (const row of (cr.results || [])) if (canPlayClip(viewer, row)) counts[row.c] = row.n;
-  let email = '';
-  try { email = unb64u(url.searchParams.get('e') || '').trim().toLowerCase(); } catch (e) { /* bad b64 */ }
+  const { email, t } = getSession(req, url);
   const liked = {};
-  if (EMAIL_OK(email) && await sessOk(env, email, url.searchParams.get('t') || '')) {
+  if (EMAIL_OK(email) && await sessOk(env, email, t)) {
     const lr = await db(env, 'SELECT clip_id AS c FROM likes WHERE email = ?', [email]);
     for (const row of (lr.results || [])) liked[row.c] = true;
   }
@@ -636,14 +642,13 @@ async function playable(env, email, clipId) {
   const clip = ((await db(env, `${CLIP_ACCESS_SQL} WHERE c.id = ?`, [clipId])).results || [])[0];
   return canPlayClip({ email, role: await roleOf(env, email) }, clip);
 }
-async function commentsList(url, env, viewer) {
+async function commentsList(req, url, env, viewer) {
   const clip = url.searchParams.get('c') || '';
   if (!CLIP_OK(clip)) return J({ ok: false, error: 'clip' }, 400);
   const owner = ((await db(env, `${CLIP_ACCESS_SQL} WHERE c.id = ?`, [clip])).results || [])[0];
   if (!canPlayClip(viewer, owner)) return J({ ok: true, rows: [] });
-  let email = '';
-  try { email = unb64u(url.searchParams.get('e') || '').trim().toLowerCase(); } catch (e) { /* bad b64 */ }
-  const known = EMAIL_OK(email) && !!(await sessOk(env, email, url.searchParams.get('t') || ''));
+  const { email, t } = getSession(req, url);
+  const known = EMAIL_OK(email) && !!(await sessOk(env, email, t));
   const r = await db(env, 'SELECT id, email, name, body, created FROM comments WHERE clip_id = ? AND hidden = 0 ORDER BY created ASC LIMIT 500', [clip]);
   const rows = (r.results || []).map((m) => ({
     id: m.id, name: m.name, body: m.body, at: m.created,

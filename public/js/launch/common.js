@@ -14,21 +14,18 @@ export function staffSession(ctx) {
   } catch { return null; }
 }
 
-const b64u = text => btoa(String.fromCharCode(...new TextEncoder().encode(text))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
-// GET with the adminOverview-style ?e=&t= session, POST with { email, t } in the body.
+// GET with the session in X-Kid-* headers (never the URL), POST with { email, t } in the body.
 export async function api(path, { staff, body } = {}) {
-  let url = path;
   const init = { credentials: 'same-origin', headers: { accept: 'application/json' } };
   if (body) {
     init.method = 'POST';
     init.headers['content-type'] = 'application/json';
     init.body = JSON.stringify({ ...body, email: staff?.email, t: staff?.t });
   } else if (staff) {
-    url += `${path.includes('?') ? '&' : '?'}e=${b64u(staff.email)}&t=${encodeURIComponent(staff.t)}`;
+    Object.assign(init.headers, { 'x-kid-email': staff.email, 'x-kid-token': staff.t });
   }
   try {
-    const response = await fetch(url, init);
+    const response = await fetch(path, init);
     const result = await response.json().catch(() => null);
     if (!response.ok || !result?.ok) return { ok: false, error: result?.error || 'Something went wrong. Try again.' };
     return result;

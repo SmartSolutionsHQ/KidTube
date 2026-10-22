@@ -2,11 +2,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { addressKey, clientIp } from '../server/setup.mjs';
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createUploadManager, STALE_UPLOAD_MS } from '../server/uploads.mjs';
-import { startInstall, PARENT } from './helpers.mjs';
+import { ROOT, startInstall, PARENT } from './helpers.mjs';
 import { startFamily, memoryDatabase, KID, KID_EMAIL } from './family-fixture.mjs';
 
 const fakeReq = (forwarded, remote = '10.0.0.9') => ({ headers: forwarded ? { 'x-forwarded-for': forwarded } : {}, socket: { remoteAddress: remote } });
@@ -166,4 +166,26 @@ test('L2: likes and comments only land on, and only count, clips the caller may 
   assert.equal(counts['tobi-pending'], undefined, 'a clip waiting for review is not named to viewers');
   assert.equal((await json('/api/likes', { cookie: parent.cookie })).body.counts['tobi-pending'], 1, 'parents still see it');
   assert.deepEqual((await json('/api/comments?c=gone-clip', { cookie: viewer.cookie })).body.rows, []);
+});
+
+test('L3: pages never put a session token in a URL', () => {
+  const files = ['public/js/feed.js', 'public/js/shell/auth-dialog.js', ...readdirSync(join(ROOT, 'public/js/launch')).map(name => `public/js/launch/${name}`)];
+  for (const file of files) {
+    const source = readFileSync(join(ROOT, file), 'utf8');
+    assert.doesNotMatch(source, /[?&]t=/, file);
+    assert.doesNotMatch(source, /[?&]e=\$\{|"[?&]e=" \+/, file);
+  }
+});
+
+test('L3: GET routes take the session from X-Kid-Email and X-Kid-Token', { timeout: 60000 }, async t => {
+  const family = await startFamily(t);
+  const { json, parent, viewer } = family;
+  const headers = who => ({ 'x-kid-email': who.email, 'x-kid-token': who.t });
+  assert.equal((await json('/api/check', { headers: headers(viewer) })).body.status, 'approved');
+  await json('/api/like', { body: { email: viewer.email, t: viewer.t, clipId: 'tobi-1', on: true } });
+  // The feed's own reads also carry the media cookie, which index.mjs asks for first.
+  assert.equal((await json('/api/likes', { cookie: viewer.cookie, headers: headers(viewer) })).body.liked['tobi-1'], true);
+  assert.equal((await json('/api/admin/views', { headers: headers(parent) })).status, 200);
+  assert.equal((await json('/api/admin/overview', { headers: headers(parent) })).status, 200);
+  assert.equal((await json('/api/admin/views', { headers: headers(viewer) })).status, 403);
 });

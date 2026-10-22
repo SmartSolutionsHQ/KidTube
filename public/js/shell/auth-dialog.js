@@ -41,8 +41,6 @@ export function clearSession() {
   try { localStorage.removeItem(KEY); } catch {}
 }
 
-const b64 = text => btoa(String.fromCharCode(...new TextEncoder().encode(text))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-
 async function post(path, body) {
   const response = await fetch(path, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
   return response.json().catch(() => ({ ok: false, error: `Something went wrong (${response.status}).` }));
@@ -52,7 +50,8 @@ async function post(path, body) {
 export async function revalidate(session) {
   try {
     if (session.guest) return !!(await post('/api/guest/validate', { token: session.guestToken })).ok;
-    const check = await fetch(`/api/check?e=${b64(session.email)}&t=${encodeURIComponent(session.t || '')}`).then(r => r.json());
+    // The token rides in headers, never the URL, so proxy and server logs don't keep it.
+    const check = await fetch('/api/check', { headers: { 'x-kid-email': session.email, 'x-kid-token': session.t || '' } }).then(r => r.json());
     return check.ok && check.status === 'approved' && !!check.t;
   } catch { return false; }
 }
