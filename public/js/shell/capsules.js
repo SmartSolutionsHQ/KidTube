@@ -3,7 +3,8 @@
 // the note and who sealed it. Swiping and the running order work as usual; there is nothing to play,
 // like, comment on or react to. When an opened capsule comes on screen for the first time in a week,
 // the theme's unlock plays over it before the clip starts (endings.js), once per device.
-import { playUnlock, prefersReducedMotion } from './endings.js';
+import { playUnlock } from './endings.js';
+import { prefersReducedMotion } from './themes.js';
 
 export const UNLOCK_WINDOW_MS = 7 * 86400000;
 const STORE = id => `kt-opened-${id}`;

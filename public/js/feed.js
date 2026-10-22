@@ -18,7 +18,8 @@ var CATALOG = [];
 // The shell (js/shell/app.js) names the kid's channel in window.__ktChannel before it unlocks the feed.
 var channelSlug = () => window.__ktChannel?.slug || "";
 var clipHash = (id) => (channelSlug() ? "#/c/" + channelSlug() : "#") + "/v/" + id;
-var serverClipsReady = new Promise(resolve => { if(window.kidUnlocked) resolve(); else document.addEventListener("kid:unlocked",resolve,{once:true}); }).then(() => fetch("/api/clips" + (channelSlug() ? "?channel=" + encodeURIComponent(channelSlug()) : ""))).then((r) => r.json()).then((j) => {
+var clipsUrl = () => "/api/clips" + (channelSlug() ? "?channel=" + encodeURIComponent(channelSlug()) : "");
+var serverClipsReady = new Promise(resolve => { if(window.kidUnlocked) resolve(); else document.addEventListener("kid:unlocked",resolve,{once:true}); }).then(() => fetch(clipsUrl())).then((r) => r.json()).then((j) => {
   if (j && j.ok && Array.isArray(j.clips) ) {
     CATALOG.length = 0;
     for (const row of j.clips) CATALOG.push(row);
@@ -1030,7 +1031,7 @@ function bootLaunchStory() {
 async function openSealed(id, tries = 0) {
   let row = null;
   try {
-    const j = await fetch("/api/clips" + (channelSlug() ? "?channel=" + encodeURIComponent(channelSlug()) : "")).then((r) => r.json());
+    const j = await fetch(clipsUrl()).then((r) => r.json());
     row = (j.clips || []).find((c) => c.id === id && !c.sealed && c.src) || null;
   } catch {
   }

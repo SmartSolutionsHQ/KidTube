@@ -136,7 +136,7 @@ export function loadRegistry({ refresh = false, url = '/api/themes', timeout = I
   return registryPromise;
 }
 
-const prefersReducedMotion = () => {
+export const prefersReducedMotion = () => {
   try { return globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true; } catch { return false; }
 };
 
