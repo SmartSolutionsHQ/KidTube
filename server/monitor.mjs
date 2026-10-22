@@ -97,6 +97,14 @@ export function describeActivity(row, { names = () => '', kids = () => '' } = {}
       : `${who} changed the ${SETTING_NAMES[row.subject] || row.subject} setting.`;
     case 'setup:claim': return `${who} set up the family.`;
     case 'email:test': return `${who} sent a test email to ${d.to}.`;
+    case 'capsule.seal:': return `${who} sealed ${quote(d.title)} as a time capsule.`;
+    case 'capsule.unseal:': return `${who} opened the time capsule ${quote(d.title)} early.`;
+    case 'capsule.open:': return `The time capsule ${quote(d.title)} opened.`;
+    case 'budget.set:': return Number(d.minutes) > 0
+      ? `${who} set ${names(row.subject) || row.subject}'s daily tape to ${plural(Number(d.minutes), 'minute', 'minutes')}.`
+      : `${who} took away ${names(row.subject) || row.subject}'s daily tape.`;
+    case 'budget.bonus:': return `${who} gave ${names(row.subject) || row.subject} ${plural(Number(d.minutes) || 0, 'extra minute', 'extra minutes')} today.`;
+    case 'budget.end:': return `${names(row.subject) || row.subject} reached the end of today's tape.`;
     default: return `${who}: ${row.kind}${row.action ? ` ${row.action}` : ''}.`;
   }
 }
@@ -112,7 +120,9 @@ export const SETTING_NAMES = {
 
 // Which feed group a row belongs to, for the Activity filter.
 const GROUP = { upload: 'upload', signup: 'people', person: 'people', review: 'review', comment: 'comment', guest: 'guest',
-  channel: 'kids', badge: 'kids', image: 'kids', clip: 'videos', setting: 'settings', icon: 'settings', setup: 'settings', email: 'settings' };
+  channel: 'kids', badge: 'kids', image: 'kids', clip: 'videos', setting: 'settings', icon: 'settings', setup: 'settings', email: 'settings',
+  'capsule.seal': 'videos', 'capsule.unseal': 'videos', 'capsule.open': 'videos',
+  'budget.set': 'people', 'budget.bonus': 'people', 'budget.end': 'people' };
 
 export function createMonitor({ sqlite, settings, env, family, paths = {}, now = () => Date.now() }) {
   const hmac = text => createHmac('sha256', env.SIGN_SECRET).update(text).digest('hex');
@@ -234,7 +244,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
       let cursor = until;
       for (let found = 0; found < cap;) {
         const batch = sqlite.prepare(`SELECT id, ts, actor, kind, subject, detail FROM activity
-          WHERE ts < ? AND kind NOT IN ('seen') AND NOT (kind='setup' AND subject='step') ORDER BY ts DESC, id DESC LIMIT 200`).all(cursor);
+          WHERE ts < ? AND kind NOT IN ('seen', 'icon') AND NOT (kind='setup' AND subject='step') ORDER BY ts DESC, id DESC LIMIT 200`).all(cursor);
         if (!batch.length) break;
         for (const row of batch) {
           const detail = parse(row.detail);
@@ -246,6 +256,12 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
           }
           else item.channel = detail.channel || '';
           if (row.kind === 'review' && !detail.title) detail.title = sqlite.prepare('SELECT title FROM clips WHERE id=?').get(row.subject)?.title || 'a video';
+          // Time capsules are logged by clip id; the feed names the video and files it under its kid.
+          if (row.kind.startsWith('capsule.')) {
+            const clip = sqlite.prepare('SELECT c.title, ch.slug FROM clips c LEFT JOIN channels ch ON ch.id=c.channel_id WHERE c.id=?').get(row.subject);
+            detail.title ??= clip?.title;
+            item.channel ||= clip?.slug || '';
+          }
           if (want(item)) { rows.push(item); found++; }
         }
         cursor = batch.at(-1).ts;

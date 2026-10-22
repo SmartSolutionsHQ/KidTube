@@ -528,10 +528,12 @@ async function saveDraft(id, draft) {
   pendingDrafts.set(id, draft);
   syncPost();
   showDraft();
+  let held = false;
   try {
     const s = sessRead();
     const j = await apiPost("/api/comment", { clipId: id, email: s.email, t: s.t, body: draft.body });
     if (!j || !j.ok) throw new Error("save");
+    held = !!(j.row && j.row.hidden);
     pendingDrafts.delete(id);
     if (clips[state.index]?.id === id) await renderComments();
   } catch {
@@ -540,6 +542,11 @@ async function saveDraft(id, draft) {
     posting = false;
     syncPost();
     showDraft();
+  }
+  // Comments a parent reads first would otherwise just vanish from the sheet.
+  if (held && clips[state.index]?.id === id) {
+    postStatus.innerHTML = '<p class="tz-cmt-body">Sent. A parent reads new comments before they show here.</p>';
+    postStatus.style.opacity = "1";
   }
 }
 cForm.addEventListener("submit", async (e) => {
