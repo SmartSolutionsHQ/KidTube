@@ -4,7 +4,7 @@
 
 # KidTube
 
-**Your kid's first YouTube channel, with an audience you choose.**
+**Your kid's first video channel, with an audience you choose.**
 
 KidTube gives each kid in your family their own little video channel. They design the badge, pick the intro and
 post the videos. You run it on a computer at home, decide who can watch, and see every upload before it goes
@@ -68,17 +68,17 @@ and putting it on your phone.
 Wi-Fi, private HTTPS with Tailscale and no domain, your own domain, an existing reverse proxy, and running it
 without Docker.
 
-## Why not YouTube Kids?
+## Why not a big video app?
 
-YouTube Kids is built for watching. KidTube is built for making.
+Big video apps are built for watching other people's tapes. KidTube is built for recording your own.
 
-| | YouTube Kids | KidTube |
+| | Big video apps | KidTube |
 |---|---|---|
-| Whose videos | Other people's channels | Your kids' own |
-| Who picks what plays | Recommendations, unless you hand-pick every video | Your kid's videos, newest first |
-| Who can watch your kid | Your kid can't post there | People you approved by name |
-| Ads | Yes | None |
-| Where it runs | Google's servers | A computer in your home |
+| Whose videos | Strangers' channels | Your kids' own |
+| Who picks what plays | A recommendation feed | Your kid's videos, newest first |
+| Who can watch your kid | Anyone, or nobody if kids can't post | People you approved by name |
+| Ads | Usually | None |
+| Where it runs | The company's servers | A computer in your home |
 
 KidTube is not affiliated with YouTube or Google.
 
