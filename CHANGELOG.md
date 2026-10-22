@@ -47,7 +47,27 @@ for each kid, and a calm dashboard for parents.
 - FFmpeg posters, a conversion timeout, metadata stripping (no phone GPS in published videos).
 - CI checks that the npm package and Docker image ship no maintainer folders. A release workflow builds the
   image for amd64 and arm64 on a version tag.
-- 266 automated tests on Node 24.
+- 259 automated tests on Node 24.
+
+### Docs
+
+- A README for parents, with screenshots of an invented family.
+- `docs/INSTALL.md` in plain words: a mini PC or NAS, phones on the home Wi-Fi, Tailscale for private HTTPS
+  without a domain, your own domain, an existing reverse proxy, phones, and a tour of the dashboard.
+- `docs/UPGRADING.md`: the automatic backup before each upgrade, rolling back, and moving an older family site
+  onto KidTube.
+- `docs/VERIFY.md`: the release checklist and the results of the last run.
+- `SECURITY.md` covers the setup claim, badges and pictures, themes, reactions and watch history.
+
+### Fixed
+
+- The dashboard tab read "Parent dashboard · Parent dashboard" when the family had no name.
+- People and comment rows were squeezed into a narrow column on wide screens.
+- Activity showed raw names for time capsule and daily tape events.
+- A comment waiting for a parent disappeared without a word.
+- On short phones the pause screen ran into the upload button and the caption, with two play marks.
+- Kids, viewers and guests no longer see a "Parents" link they can't use.
+- `npm run email:test` and the parent reset script work without a `.env`.
 
 ## 0.1.0 (2026-10-21)
 

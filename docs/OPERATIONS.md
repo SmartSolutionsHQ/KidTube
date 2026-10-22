@@ -12,7 +12,20 @@ Health confirms the HTTP process responds; it does not prove FFmpeg conversion, 
 
 ## Back up and restore
 
-The live snapshot command uses Node's SQLite backup API, so it includes committed data even when WAL journaling is active:
+Everything KidTube keeps is in one data folder: in Docker, the `kidtube-data` volume mounted at `/data`
+(`kidtube_kidtube-data` in `docker volume ls`); with
+Node, `data/` next to the app (or `KIDTUBE_DATA=./data` with Docker). It holds:
+
+| Path | What |
+| --- | --- |
+| `kidtube.sqlite` (plus `-wal`/`-shm` while running) | accounts, kids, videos' details, comments, settings, activity, watch history |
+| `videos/` | converted videos and posters |
+| `brand/` | the family badge, kids' badges and pictures, home-screen icons |
+| `secret` | the signing key; without it everyone is signed out (unless `SIGN_SECRET` is set in `.env`) |
+| `backups/` | snapshots, including the automatic one made before each upgrade |
+| `incoming/` | uploads in progress; not needed in a backup |
+
+A live database snapshot uses SQLite's backup API, so it is consistent even while the app runs:
 
 ```sh
 npm run backup
@@ -20,13 +33,32 @@ npm run backup
 docker compose exec kidtube node scripts/backup.mjs
 ```
 
-It prints a timestamped database snapshot in `data/backups/`. Copy that snapshot, `data/videos/`, and `.env` to your backup destination. For a matching restore set, stop uploads and moderation while creating the snapshot and copying videos, or stop the app and copy the entire `data/` directory (including any SQLite WAL/SHM files) plus `.env` as a unit. Protect backups like the original private data.
+It prints the path of a timestamped snapshot in `backups/`. Copy that snapshot together with `videos/`, `brand/`,
+`secret` and your `.env` (if you have one) to somewhere off the computer. For a matching set, avoid uploads and
+moderation while you copy, or stop the app and copy the whole data folder.
 
-To restore a live snapshot: stop the app; move the current data directory to a separate recovery location; create a new `data/` directory; place the snapshot at `data/kidtube.sqlite` and matching videos at `data/videos/`; restore the matching `.env`; set ownership to PUID/PGID; restart. Do not put a snapshot beside stale `-wal`/`-shm` files from a different database. Verify logins, playback, comments, and a test upload before discarding recovery files.
+With Docker, Compose names the volume after the install folder: `kidtube_kidtube-data` for a folder called
+`kidtube` (`docker volume ls` lists it). One way to copy it out, from the install folder:
+
+```sh
+docker compose stop kidtube
+docker run --rm -v kidtube_kidtube-data:/data -v "$PWD":/out alpine tar czf /out/kidtube-backup.tgz -C /data .
+docker compose start kidtube
+```
+
+Protect backups like the original: they contain personal data and the means to sign in.
+
+To restore: stop the app, move the current data aside (never delete it until the restore works), put the
+snapshot at `kidtube.sqlite` with the matching `videos/`, `brand/` and `secret` next to it, make the files belong
+to PUID:PGID (1000:1000 by default), and start again. Don't put a snapshot beside stale `-wal`/`-shm` files from a
+different database. With Docker, restoring the archive above into an empty volume is
+`docker run --rm -v kidtube_kidtube-data:/data -v "$PWD":/in alpine tar xzf /in/kidtube-backup.tgz -C /data`. Check
+sign-ins, playback, comments and a test upload before discarding the old data.
 
 ## Updates
 
-Back up first. Pull the desired repository revision, review its changes, and run `npm test`. Rebuild with `docker compose up -d --build` (include the HTTPS override if used). For Node installs, restart the process after updating files. Keep `.env` and `data/`; never rerun setup as an update. Test changes on a copy before applying them to family data.
+See [UPGRADING.md](UPGRADING.md): back up, pull, `docker compose up -d --build`. The app copies the database to
+`backups/pre-migrate-v*` before changing it, and the guide shows how to roll back.
 
 ## Time capsules, reactions and the daily tape
 
@@ -56,7 +88,7 @@ An existing parent owner can change an account password and roles in the parent 
 If the only parent is locked out, stop the app and use local recovery from the project directory:
 
 ```sh
-node --env-file=.env scripts/reset-parent.mjs parent@example.com
+node --env-file-if-exists=.env scripts/reset-parent.mjs parent@example.com
 # Docker (app stopped; mounts the same data and environment):
 docker compose run --rm kidtube node scripts/reset-parent.mjs parent@example.com
 ```
@@ -67,10 +99,12 @@ The command only resets an existing owner account, prints a new generated passwo
 
 | Symptom | Check |
 | --- | --- |
-| Database missing at startup | Run setup once in the project directory; verify the data mount |
+| Setup asks for a code after an update | Compose started a new, empty volume: put `KIDTUBE_DATA=./data` in `.env` if your data is in a folder ([UPGRADING.md](UPGRADING.md)) |
 | Permission denied writing SQLite/uploads | PUID/PGID must match the owner of `data/` |
-| Login works but video is blocked | Use the exact SITE_URL origin; HTTPS cookies cannot be used on an HTTP URL |
-| Browser requests return 403 | Origin must match SITE_URL; do not mix localhost and 127.0.0.1 |
+| Login works but video is blocked | Use the exact web address from Settings (or SITE_URL); HTTPS cookies cannot be used on an HTTP URL |
+| Kids on iPhone are signed out in the home-screen app | Expected once: iOS home-screen apps keep their own sign-in, separate from Safari |
+| The app won't install on a phone | Phones install only from an `https://` address; see the HTTPS parts of [INSTALL.md](INSTALL.md) |
+| Browser requests return 403 | The address in the browser must match the web address in Settings; do not mix localhost and 127.0.0.1 |
 | No videos after login | A fresh channel is empty; upload from the parent dashboard |
 | A kid sees "That's the tape for today" | Their daily tape is spent; add bonus minutes or change the limit in the dashboard |
 | A video shows as a locked tape | It is a time capsule; parents can still play it, or open it now from the dashboard |
@@ -82,4 +116,10 @@ The command only resets an existing owner account, prints a new generated passwo
 
 ## Release packaging
 
-`npm pack --dry-run` lists the distributable files. The `files` allowlist excludes `.env`, data, and backups; tests use only synthetic fixtures. `npm pack` creates a versioned archive. The CLI can create a second blank project from that archive without copying the current installation's state. Registry publishing is a separate maintainer action; no npm access token is included in the repository.
+`npm pack --dry-run` lists the distributable files. The `files` allowlist excludes `.env`, data and backups, and
+maintainer folders (`docs/plan`, `docs/superpowers`, `scripts/dev`) never ship: CI fails if the package or the
+Docker image carries them, and `test/package.test.mjs` checks the same list. Tests use only synthetic fixtures.
+
+Images are built by `.github/workflows/release.yml` for amd64 and arm64 when a version tag matching
+`package.json` (such as `v0.2.0`) is pushed, after the tests pass. Registry publishing is a maintainer action; no
+npm or registry token is kept in the repository. [VERIFY.md](VERIFY.md) is the manual checklist before tagging.

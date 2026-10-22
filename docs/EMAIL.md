@@ -37,6 +37,9 @@ npm run email:test
 docker compose exec kidtube node scripts/test-email.mjs
 ```
 
+The test reads the same settings the app uses: values in `.env` first, otherwise what a parent saved in the setup
+wizard or the dashboard's Settings. The dashboard's Settings also has a "Send a test email" button.
+
 Check the parent's inbox and Brevo transactional logs. API acceptance is not proof of inbox delivery. Then create a disposable viewer account, approve it in `/parents`, and verify its approval email. Publishing a short test video should notify approved accounts once each; unsubscribe from one test account and verify that it stops receiving new-video emails.
 
 ## Limits and delivery behavior

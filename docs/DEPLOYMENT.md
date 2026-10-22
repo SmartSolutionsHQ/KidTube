@@ -20,9 +20,9 @@ An HTTPS tunnel can forward a hostname to the app's loopback port when inbound p
 
 For family-only VPN access, use the VPN's supported HTTPS hostname/certificate setup and allow only intended devices. Do not assume a private IP address alone provides HTTPS.
 
-## Multiple channels
+## More than one family on one computer
 
-Each channel needs its own project folder and its own run of setup. Never copy `.env` or `data/` between families. Use unique `HOST_PORT` values in each `.env` and unique Compose project names:
+One install already holds every kid in a family, each with their own channel. A second family needs its own install: its own project folder and its own run of setup. Never copy `.env` or data between families. Use unique `HOST_PORT` values in each `.env` and unique Compose project names:
 
 ```sh
 docker compose -p family-one up -d --build
@@ -30,10 +30,17 @@ docker compose -p family-one up -d --build
 docker compose -p family-two up -d --build
 ```
 
-Use one shared reverse proxy for multiple public domains instead of starting multiple Caddy containers that all bind ports 80/443. Point each domain at the corresponding app service. Do not run replicas against the same SQLite file: the conversion queue is designed for one app process.
+Use one shared reverse proxy for multiple public domains instead of starting multiple Caddy containers that all bind ports 80/443. Point each domain at the corresponding app service. Do not run replicas against the same SQLite file: the conversion queue is designed for one app process. Each folder gets its own volume (`family-one_kidtube-data` and so on).
 
 ## Persistent state
 
-`data/kidtube.sqlite` stores accounts, roles, likes, comments, the catalog, upload jobs, and notification preferences/queue. `data/videos/` stores converted videos; `data/incoming/` holds temporary upload sources/chunks. `.env` holds the signing secret and optional mail key. These files are local and must remain outside Git and image layers.
+Everything lives in the data folder (the `kidtube-data` volume in Docker, `data/` with Node): `kidtube.sqlite`
+holds accounts, kids, the catalog, comments, reactions, settings, activity, watch history, upload jobs and the
+email queue; `videos/` the converted videos and posters; `brand/` the badges, pictures and home-screen icons;
+`secret` the signing key (unless `SIGN_SECRET` is set); `backups/` snapshots; `incoming/` uploads in progress.
+`.env`, when you have one, holds settings you want locked and the optional mail key. These stay local and must
+remain outside Git and image layers. [OPERATIONS.md](OPERATIONS.md) shows how to back them up.
 
-Disk use grows with uploads. Monitor free space, remove abandoned incoming uploads only while the app is stopped, and store backups somewhere separate from the host. Interrupted conversions are marked failed at startup; users can upload the source again.
+Disk use grows with uploads. Watch the storage card on the dashboard's home page, remove abandoned incoming
+uploads only while the app is stopped, and keep backups somewhere other than the same disk. Interrupted
+conversions are marked failed at startup; the uploader can send the video again.
