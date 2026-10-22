@@ -96,6 +96,13 @@ test('uploads land in the right channel with a poster, and kid uploads wait for 
     assert.ok(poster.length < 100000, 'the poster stays small');
     assert.ok(!(await clips()).some(clip => clip.id === result.clip.id));
     assert.equal(install.db.prepare('SELECT COUNT(*) n FROM video_announcements').get().n, 0, 'pending clips are not announced');
+    // While it waits, the kid who posted it can still play it back.
+    assert.equal((await install.call(result.clip.src, { cookie: kid.cookie })).status, 200);
+
+    const approve = await install.call('/api/admin/clips/review', { body: { email: PARENT.email, t: parent.t, id: result.clip.id, decision: 'approve' } });
+    assert.deepEqual(await approve.json(), { ok: true, review: 'approved', channel: 'ana' });
+    const live = (await (await install.call('/api/clips?channel=ana', { cookie: parent.cookie })).json()).clips;
+    assert.equal(live[0].id, result.clip.id, 'an approved upload leads its channel');
   });
 
   await t.test('parent uploads go live in the chosen or default channel, posters stay private', async () => {
@@ -103,7 +110,8 @@ test('uploads land in the right channel with a poster, and kid uploads wait for 
     const fallback = await upload(install, parent, video);
     assert.deepEqual([chosen.clip.review, chosen.clip.channel], ['approved', 'ben']);
     assert.deepEqual([fallback.clip.review, fallback.clip.channel], ['approved', 'ana']);
-    assert.deepEqual((await clips()).map(clip => [clip.id, clip.channel, clip.poster]), [
+    const mine = new Set([chosen.clip.id, fallback.clip.id]);
+    assert.deepEqual((await clips()).filter(clip => mine.has(clip.id)).map(clip => [clip.id, clip.channel, clip.poster]), [
       [fallback.clip.id, 'ana', `/api/video/${fallback.uploadId}/poster`],
       [chosen.clip.id, 'ben', `/api/video/${chosen.uploadId}/poster`],
     ]);

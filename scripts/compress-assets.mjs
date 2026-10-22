@@ -10,7 +10,7 @@ export async function compressAssets(directory) {
     if (entry.isDirectory()) {
       const nested = await compressAssets(file);
       rawBytes += nested.rawBytes; brotliBytes += nested.brotliBytes; gzipBytes += nested.gzipBytes; files += nested.files;
-    } else if (entry.isFile() && ['.html', '.js', '.css', '.json', '.svg'].includes(extname(file))) {
+    } else if (entry.isFile() && ['.html', '.js', '.mjs', '.css', '.json', '.svg'].includes(extname(file))) {
       const data = await readFile(file);
       const br = brotliCompressSync(data, { params: { [constants.BROTLI_PARAM_QUALITY]: 9 } });
       const gz = gzipSync(data, { level: 9 });
