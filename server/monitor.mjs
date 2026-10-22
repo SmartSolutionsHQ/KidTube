@@ -565,7 +565,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
           const state = row.redeemed == null ? (row.expires > at ? 'waiting' : 'expired') : row.session_expires > at ? 'active' : 'ended';
           return { id, created: row.created, creator: row.creator, creatorName: book.names(row.creator), expires: row.expires,
             redeemed: row.redeemed, sessionExpires: row.session_expires, scope: row.slug || null, scopeName: book.kids(row.slug) || null,
-            note: guestNote(id), state, lastUsed: row.token_hash ? seenAt.get('guest:' + row.token_hash.slice(0, 12)) || row.redeemed : null };
+            note: guestNote(id), state, viewer: row.token_hash ? 'guest:' + row.token_hash.slice(0, 12) : null, lastUsed: row.token_hash ? seenAt.get('guest:' + row.token_hash.slice(0, 12)) || row.redeemed : null };
         }),
       };
     },
