@@ -2,8 +2,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { addressKey, clientIp } from '../server/setup.mjs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createUploadManager, STALE_UPLOAD_MS } from '../server/uploads.mjs';
 import { startInstall, PARENT } from './helpers.mjs';
-import { startFamily, KID, KID_EMAIL } from './family-fixture.mjs';
+import { startFamily, memoryDatabase, KID, KID_EMAIL } from './family-fixture.mjs';
 
 const fakeReq = (forwarded, remote = '10.0.0.9') => ({ headers: forwarded ? { 'x-forwarded-for': forwarded } : {}, socket: { remoteAddress: remote } });
 
@@ -92,4 +96,31 @@ test('M1: co-parents can review and moderate, but watch history, people, tapes a
   assert.ok(mine.body.clips.length > 0);
   assert.ok(!JSON.stringify(mine.body).includes('@'), 'no email addresses for a co-parent');
   assert.ok((await json(`/api/admin/overview?${staffQuery(parent)}`)).body.accounts.length >= 4);
+});
+
+test('M3: uploads nobody finished are swept after a day, with any stray folders', async t => {
+  const sqlite = await memoryDatabase(t);
+  const dir = mkdtempSync(join(tmpdir(), 'kidtube-sweep-'));
+  const dataDir = process.env.DATA_DIR;
+  delete process.env.DATA_DIR;
+  t.after(() => { if (dataDir !== undefined) process.env.DATA_DIR = dataDir; rmSync(dir, { recursive: true, force: true }); });
+  const uploads = createUploadManager({ sqlite, env: {}, databasePath: join(dir, 'kidtube.sqlite'), notifications: { enqueue() {}, kick() {} } });
+  const now = Date.now();
+  const job = (id, created, status = 'receiving') => {
+    sqlite.prepare('INSERT INTO upload_jobs (id,email,title,size,status,created,updated) VALUES (?,?,?,?,?,?,?)').run(id, KID_EMAIL, 'A clip', 5000, status, created, created);
+    mkdirSync(join(dir, 'incoming', id), { recursive: true });
+    writeFileSync(join(dir, 'incoming', id, '0'), 'raw phone video with GPS');
+    return join(dir, 'incoming', id);
+  };
+  const stale = job('11111111-1111-4111-8111-111111111111', now - STALE_UPLOAD_MS - 60000);
+  const fresh = job('22222222-2222-4222-8222-222222222222', now - 60000);
+  const queued = job('33333333-3333-4333-8333-333333333333', now - STALE_UPLOAD_MS - 60000, 'queued');
+  const stray = join(dir, 'incoming', '44444444-4444-4444-8444-444444444444');
+  mkdirSync(stray, { recursive: true });
+  await uploads.sweep(now);
+  assert.equal(existsSync(stale), false, 'the raw chunks of an abandoned upload are gone');
+  assert.equal(sqlite.prepare('SELECT status FROM upload_jobs WHERE id=?').get('11111111-1111-4111-8111-111111111111').status, 'failed');
+  assert.equal(existsSync(fresh), true, 'an upload still on its way stays');
+  assert.equal(existsSync(queued), true, 'a finished upload waiting to convert stays');
+  assert.equal(existsSync(stray), false);
 });
