@@ -138,6 +138,14 @@ async function approvalMail(env, email, first) {
 /* ---------- login: unknown emails and wrong passwords look identical ---------- */
 const DECOY = { salt: '0'.repeat(32), hash: 'scrypt:' + '0'.repeat(128) };
 const BAD_LOGIN = () => J({ ok: false, error: 'Wrong email or password.' }, 401);
+/* Wrong passwords per account, from any address: a kid's short password can't be worked through by many
+   machines at once. Unknown emails count the same, so the pause says nothing about who has an account. */
+const LOGIN_FAILS = 10, LOGIN_WINDOW = 15 * 60 * 1000;
+const loginFails = new Map();
+function failsFor(email, now) {
+  if (loginFails.size > 10000) for (const [key, list] of loginFails) if (list.at(-1) <= now - LOGIN_WINDOW) loginFails.delete(key);
+  return (loginFails.get(email) || []).filter((at) => at > now - LOGIN_WINDOW);
+}
 async function login(req, env) {
   const b = await req.json().catch(() => null);
   if (!b) return J({ ok: false, error: 'bad body' }, 400);
@@ -146,11 +154,15 @@ async function login(req, env) {
   if (/^[a-z][a-z0-9-]{1,23}$/.test(email)) email = kidEmail(email);
   const pass = String(b.pass || '');
   if (!EMAIL_OK(email) || !pass) return J({ ok: false, error: 'creds' }, 400);
+  const now = Date.now();
+  const fails = failsFor(email, now);
+  if (fails.length >= LOGIN_FAILS) return J({ ok: false, error: 'Too many wrong passwords for this account. Try again in 15 minutes.' }, 429);
   const r = await db(env, 'SELECT salt, hash, status, role FROM accounts WHERE email = ?', [email]);
   const row = r.results && r.results[0];
   /* hash against a decoy so a missing account takes as long as a wrong password */
   const matches = await passwordMatches(pass, row || DECOY);
-  if (!row || !matches) return BAD_LOGIN();
+  if (!row || !matches) { loginFails.set(email, [...fails, now]); return BAD_LOGIN(); }
+  loginFails.delete(email);
   return J({ ok: true, email, status: row.status, role: String(row.role || ''), t: await sessToken(env, email) });
 }
 
@@ -214,15 +226,16 @@ const SUPER403 = () => J({ ok: false, error: 'super only' }, 403);
 
 /* ---------- one-use guest codes and 24-hour view-only sessions ---------- */
 const GUEST_DAY = 24 * 60 * 60 * 1000;
-const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-const CODE_DIGITS = '23456789';
+/* six symbols from 32 that can't be misread (no I, O, 0 or 1): about a billion codes */
+const CODE_SYMBOLS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function freshGuestCode() {
-  const bytes = new Uint8Array(5);
+  const bytes = new Uint8Array(6);
   crypto.getRandomValues(bytes);
-  const code = Array.from(bytes.slice(0, 3), b => CODE_LETTERS[b % CODE_LETTERS.length]);
-  code.splice(bytes[4] % 4, 0, CODE_DIGITS[bytes[3] % CODE_DIGITS.length]);
-  return code.join('');
+  return Array.from(bytes, b => CODE_SYMBOLS[b % CODE_SYMBOLS.length]).join('');
 }
+/* wrong guest codes from every address together; past this, redeeming pauses for everyone */
+const GUEST_FAILS = 30, GUEST_WINDOW = 10 * 60 * 1000;
+let guestFails = [];
 /* a pass may be limited to one kid's channel: { channel: '<slug>' } */
 async function guestGenerate(req, env) {
   const ctx = await staffFrom(req, env);
@@ -249,8 +262,11 @@ async function guestRedeem(req, env) {
   const payload = await req.json().catch(() => null);
   if (!payload) return J({ ok: false, error: 'Invalid request.' }, 400);
   const code = String(payload.code || '').trim().toUpperCase();
-  if (!/^[A-Z0-9]{4}$/.test(code)) return J({ ok: false, error: 'Enter the four-character code.' }, 400);
+  /* four-character codes made before the six-character ones still work for their last day */
+  if (!/^[A-Z0-9]{4}(?:[A-Z0-9]{2})?$/.test(code)) return J({ ok: false, error: 'Enter the six-character code.' }, 400);
   const now = Date.now();
+  guestFails = guestFails.filter((at) => at > now - GUEST_WINDOW);
+  if (guestFails.length >= GUEST_FAILS) return J({ ok: false, error: 'Too many wrong codes. Try again in ten minutes.' }, 429);
   const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
   await db(env, 'DELETE FROM guest_code_attempts WHERE ts < ?', [now - 10 * 60 * 1000]);
   const recent = await db(env, 'SELECT COUNT(*) AS n FROM guest_code_attempts WHERE ip = ?', [ip]);
@@ -267,6 +283,7 @@ async function guestRedeem(req, env) {
     WHERE code_hash = ? AND redeemed IS NULL AND expires > ?`,
   [now, tokenHash, expires, codeHash, now]);
   if (!result.meta || !result.meta.changes) {
+    guestFails.push(now);
     return J({ ok: false, error: 'That code is invalid, already used, or expired.' }, 400);
   }
   return J({ ok: true, token, expires, role: 'guest', scope: await guestScope(env, tokenHash) });

@@ -119,7 +119,7 @@ function accessForm(box, mode, message) {
     if (index === 0) input.autofocus = true;
     if (name === 'email' && mode === 'login') { input.autocapitalize = 'none'; input.spellcheck = false; }
     if (name === 'pass') { input.minLength = mode === 'signup' ? 12 : 1; input.maxLength = 128; }
-    if (name === 'code') { input.maxLength = 4; input.pattern = '[a-zA-Z0-9]{4}'; input.autocapitalize = 'characters'; }
+    if (name === 'code') { input.maxLength = 6; input.pattern = '[a-zA-Z0-9]{4}([a-zA-Z0-9]{2})?'; input.autocapitalize = 'characters'; }
     form.append(el('label', { textContent: label }, input));
   });
   const status = el('p', { className: 'form-status', textContent: message });

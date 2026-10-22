@@ -273,7 +273,7 @@ test('every change writes an activity row, and the feed reads them back in plain
 test('guest codes carry a kid scope, list their state and can be ended', { timeout: 60000 }, async t => {
   const f = await family(t);
   const made = await f.ok('co', '/api/admin/guests', { channel: 'juni', note: 'Aunt Bea' });
-  assert.match(made.code, /^[A-Z0-9]{4}$/);
+  assert.match(made.code, /^[A-HJ-NP-Z2-9]{6}$/);
   assert.equal(made.scope, 'juni');
   assert.equal((await f.call('co', '/api/admin/guests', { channel: 'nobody' })).status, 400);
   let list = await f.ok('co', '/api/admin/guests');

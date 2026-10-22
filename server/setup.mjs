@@ -39,12 +39,27 @@ export function normalizeCode(input) {
 
 const digest = text => createHash('sha256').update(text).digest();
 
+// The address every rate limit counts by. index.mjs and api.js use it too, so no limit can be skipped by
+// sending a made-up X-Forwarded-For.
 export function clientIp(req) {
   if (process.env.TRUST_PROXY === '1' && req.headers['x-forwarded-for']) {
     // The trusted proxy appends the address it saw, so the last entry is the one to believe.
-    return String(req.headers['x-forwarded-for']).split(',').pop().trim();
+    return addressKey(String(req.headers['x-forwarded-for']).split(',').pop());
   }
-  return req.socket.remoteAddress || 'unknown';
+  return addressKey(req.socket.remoteAddress);
+}
+
+// One IPv6 client usually holds a whole /64, so those addresses count as one.
+export function addressKey(ip) {
+  const text = String(ip || '').trim().toLowerCase();
+  if (!text) return 'unknown';
+  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/.exec(text);
+  if (mapped) return mapped[1];
+  if (!text.includes(':')) return text;
+  const [head, tail] = text.split('%')[0].split('::');
+  const left = head ? head.split(':') : [], right = tail ? tail.split(':') : [];
+  const groups = [...left, ...Array(Math.max(0, 8 - left.length - right.length)).fill('0'), ...right];
+  return groups.slice(0, 4).map(group => group.replace(/^0+(?=.)/, '')).join(':') + '::/64';
 }
 
 // The origin a browser on this request would send: the socket's scheme (or the trusted proxy's) and Host.

@@ -1,4 +1,4 @@
-// Guest codes: a four-character code for one person, for every kid or just one. It works once within
+// Guest codes: a six-character code for one person, for every kid or just one. It works once within
 // 24 hours and then gives 24 hours of watching. The new code is shown once, with a QR code that opens the
 // site and a card to print.
 import { el, button, primary, field, errorLine, setBusy, svg } from './dom.js';
