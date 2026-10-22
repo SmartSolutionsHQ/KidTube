@@ -132,7 +132,8 @@ function accessForm(box, mode, message) {
   FIELDS[mode].forEach(([name, label, type, autocomplete], index) => {
     const input = el('input', { name, type, autocomplete, required: true });
     if (index === 0) input.autofocus = true;
-    if (name === 'email' && mode === 'login') { input.autocapitalize = 'none'; input.spellcheck = false; }
+    // iOS would otherwise "correct" a kid's login name (ivy becomes I'm).
+    if (name === 'email' && mode === 'login') { input.autocapitalize = 'none'; input.spellcheck = false; input.setAttribute('autocorrect', 'off'); }
     if (name === 'pass') { input.minLength = mode === 'signup' ? 12 : 1; input.maxLength = 128; }
     if (name === 'code') { input.maxLength = 6; input.pattern = '[a-zA-Z0-9]{4}([a-zA-Z0-9]{2})?'; input.autocapitalize = 'characters'; }
     form.append(el('label', { textContent: label }, input));
@@ -151,7 +152,9 @@ function accessForm(box, mode, message) {
       const body = Object.fromEntries(new FormData(form));
       if (body.email) body.email = body.email.toLowerCase().trim();
       const reply = await post(mode === 'guest' ? '/api/guest/redeem' : mode === 'signup' ? '/api/signup' : '/api/login', body);
-      if (!reply.ok) throw Error(reply.error === 'email' ? 'Use your email address.' : reply.error || 'Could not connect. Try again.');
+      // 'email' and 'creds' are the server's codes for an address or login name it can't read at all.
+      const codes = { email: 'Use your email address.', creds: 'Wrong email or password.' };
+      if (!reply.ok) throw Error(codes[reply.error] || reply.error || 'Could not connect. Try again.');
       if (mode === 'signup') { render('login', 'Request sent. Once a parent approves your account, log in here. If you already have one, just log in.'); return; }
       if (mode === 'guest') { finish({ guest: true, guestToken: reply.token, role: 'guest', exp: reply.expires, scope: reply.scope || null }); return; }
       if (reply.status !== 'approved') {
