@@ -13,6 +13,9 @@ export default {
     /* who the signed cookie names (access.mjs), or null; index.mjs passes it in */
     const viewer = (ctx && ctx.viewer) || null;
     try {
+      /* a sealed time capsule's comments, likes and legacy media are closed to all but parents (capsules.mjs) */
+      const sealed = env.capsules && await env.capsules.guard(req, p, viewer);
+      if (sealed) return sealed;
       if (p === '/api/health') return J({ ok: true, mode: 'server' });
       if (p === '/api/site') return J(env.site.info());
       if (p === '/api/channels') return J(env.site.channels(viewer));
@@ -38,7 +41,7 @@ export default {
       if (req.method === 'POST' && p === '/api/admin/status') return await adminStatus(req, env);
       if (req.method === 'POST' && p === '/api/admin/role') return await adminRole(req, env);
       if (req.method === 'POST' && p === '/api/admin/password') return await adminPassword(req, env);
-      if (p === '/api/likes') return await likesAll(url, env, viewer);
+      if (p === '/api/likes') { const r = await likesAll(url, env, viewer); return env.capsules ? env.capsules.omitSealed(r) : r; }
       if (req.method === 'POST' && p === '/api/like') return await likeSet(req, env);
       if (p === '/api/comments') return await commentsList(url, env, viewer);
       if (req.method === 'POST' && p === '/api/comment') return await commentAdd(req, env);
@@ -300,16 +303,23 @@ async function clipsList(url, env, viewer) {
     const ch = ((await db(env, 'SELECT id FROM channels WHERE slug = ?', [slug])).results || [])[0];
     if (ch && !canViewChannel(viewer, ch)) return OUTSIDE_PASS();
   }
-  const r = await db(env, `SELECT c.id, c.title, c.src, c.poster, c.kind, c.blurb, c.published, c.duration, c.channel_id, ch.slug AS channel
+  const r = await db(env, `SELECT c.id, c.title, c.src, c.poster, c.kind, c.blurb, c.published, c.duration, c.channel_id, ch.slug AS channel,
+    c.opens_at, c.opened_at, c.capsule_note, c.sealed_by
     FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id
     WHERE c.hidden = 0 AND c.review = 'approved' ${slug ? 'AND ch.slug = ?' : ''} ${CHANNEL_ORDER}`, slug ? [slug] : []);
-  /* seq is the place in this list, which feed.js sorts by */
-  const clips = (r.results || []).filter((c) => canViewChannel(viewer, { id: c.channel_id })).map((c, i) => ({
-    id: c.id, title: c.title, src: c.src, poster: c.poster || '', kind: c.kind || 'video',
-    blurb: c.blurb || '', publishedAt: c.published || '', duration: c.duration || 0, seq: i + 1,
-    channel: c.channel || '',
-  }));
-  return J({ ok: true, clips: clips });
+  /* seq is the place in this list, which feed.js sorts by. A sealed time capsule keeps its place as a
+     locked tape, with no media, length, blurb or kind; an opened one carries openedAt for its unlock */
+  const now = Date.now();
+  const clips = (r.results || []).filter((c) => canViewChannel(viewer, { id: c.channel_id })).map((c, i) => (c.opens_at > now && env.capsules
+    ? { id: c.id, title: c.title, channel: c.channel || '', publishedAt: c.published || '', seq: i + 1, ...env.capsules.lockedFields(c) }
+    : {
+      id: c.id, title: c.title, src: c.src, poster: c.poster || '', kind: c.kind || 'video',
+      blurb: c.blurb || '', publishedAt: c.published || '', duration: c.duration || 0, seq: i + 1,
+      channel: c.channel || '', ...(c.opened_at ? { openedAt: c.opened_at } : {}),
+    }));
+  /* a budgeted account's daily tape (watch.mjs); null when it has no limit */
+  const budget = env.watch && viewer && viewer.email ? env.watch.budgetFor(viewer.email, now) : null;
+  return J({ ok: true, clips: clips, budget });
 }
 
 /* where a clip lives, for links made before channels (#/v/<id>) and for a stale channel name;
@@ -490,8 +500,10 @@ async function adminOverview(url, env) {
   const s = await asStaff(env, unb64uSafe(url.searchParams.get('e') || ''), url.searchParams.get('t') || '');
   if (!s) return DENY403();
   const acc = await db(env, 'SELECT email, first, last, status, role, created FROM accounts ORDER BY created ASC');
-  const cpl = await db(env, `SELECT c.id, c.title, c.position, c.review, c.hidden, ch.slug AS channel
+  const cpl = await db(env, `SELECT c.id, c.title, c.position, c.review, c.hidden, ch.slug AS channel,
+    c.opens_at, c.opened_at, c.capsule_note
     FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id ${CHANNEL_ORDER}`);
+  const reactionTotals = env.reactions ? env.reactions.totals() : {};
   const lk = await db(env, 'SELECT clip_id, email FROM likes');
   const cmAgg = await db(env, 'SELECT clip_id, COUNT(*) AS n FROM comments GROUP BY clip_id');
   const cm = await db(env, 'SELECT clip_id, name, body, created, hidden FROM comments ORDER BY created DESC LIMIT 40');
@@ -510,6 +522,8 @@ async function adminOverview(url, env) {
     review: c.review, hidden: !!c.hidden, channel: c.channel || '',
     likes: likesByClip[c.id] || 0, comments: cmCount[c.id] || 0,
     likers: (likers[c.id] || []).slice(0, 24),
+    reactions: reactionTotals[c.id] || {},
+    sealed: c.opens_at > Date.now(), opensAt: c.opens_at || 0, openedAt: c.opened_at || 0, capsuleNote: c.capsule_note || '',
   }));
   const fans = Object.entries(likesByFan)
     .map(([email, n]) => ({ name: byName[email] || email, email: email, likes: n }))

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { migrate } from '../server/schema.mjs';
 import { DEFAULT_ACCENT, TAGLINE } from '../server/brand.mjs';
-import { createSettings, SettingError, SETTING_KEYS } from '../server/settings.mjs';
+import { createSettings, SettingError, SERVER_TIMEZONE, SETTING_KEYS } from '../server/settings.mjs';
 
 async function database(t) {
   const sqlite = new DatabaseSync(':memory:');
@@ -19,7 +19,7 @@ test('settings fall back to defaults, then the database, then the environment', 
     site_name: '', site_tagline: TAGLINE, site_url: '', family_accent: DEFAULT_ACCENT, gate_theme: 'ember-tape',
     family_badge: null, kids_public: true, signup_mode: 'approval', guest_passes: true, comments_default: 'review',
     review_uploads_default: 'creators', mail_mode: 'disabled', brevo_api_key: '', notify_email: '', sender_email: '',
-    splash_sound: true, views_retention_days: 90, activity_retention_days: 365, setup_complete: false,
+    splash_sound: true, views_retention_days: 90, activity_retention_days: 365, family_timezone: SERVER_TIMEZONE, setup_complete: false,
   });
   assert.deepEqual(Object.keys(settings.all()), SETTING_KEYS);
   assert.equal(settings.set('site_name', '  The Rivera Family ', 'parent@example.com'), 'The Rivera Family');

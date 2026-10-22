@@ -16,6 +16,9 @@ import { createBrandFiles } from './brandfiles.mjs';
 import { InstallError, checkSiteUrl, prepareInstall } from './config.mjs';
 import { createFamily } from './family.mjs';
 import { createSetup } from './setup.mjs';
+import { createCapsules } from './capsules.mjs';
+import { createReactions } from './reactions.mjs';
+import { createWatch } from './watch.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const publicDir = resolve(process.env.PUBLIC_DIR || 'public');
@@ -49,7 +52,18 @@ env.handleVideoUnsubscribe = request => notifications.handleUnsubscribe(request)
 // The review endpoint publishes through publish.mjs, which works on the raw database and the outbox.
 env.sqlite = sqlite;
 env.notifications = notifications;
-const uploads = createUploadManager({ sqlite, env, databasePath: dbFile, notifications });
+// Time capsules, reactions and the watch log behind daily tape budgets. api.js reads capsules and watch from env.
+const capsules = createCapsules({ sqlite, notifications, env });
+const reactions = createReactions({ sqlite, env });
+const watch = createWatch({ sqlite, settings, env });
+env.capsules = capsules;
+env.watch = watch;
+env.reactions = reactions;
+capsules.start();
+watch.start();
+// A sealed clip's video and poster stay closed to all but parents; a spent daily tape stops video, not posters.
+const canWatch = (who, at, media) => capsules.mediaRefusal(who, media.clipId, at) || (media.poster || watch.canWatch(who, at));
+const uploads = createUploadManager({ sqlite, env, databasePath: dbFile, notifications, canWatch });
 env.deleteLocalVideo = uploads.deleteVideo;
 const brandFiles = createBrandFiles({ sqlite, env, dataDir });
 const family = createFamily({ sqlite, themeIds: () => themes.list().map(theme => theme.id), removeChannelFiles: brandFiles.removeChannel });
@@ -108,10 +122,11 @@ const server = http.createServer((req, res) => {
   }
   // Who is asking, from the signed cookie: the API and the video routes check channels and review with it.
   const who=pathname.startsWith('/api/')?viewer(req,sqlite,env):null;
-  if(['/api/clips','/api/clips/locate','/api/likes','/api/comments','/api/channels'].includes(pathname)||pathname.startsWith('/api/video/')||pathname.startsWith('/api/media/')){
+  if(['/api/clips','/api/clips/locate','/api/likes','/api/comments','/api/channels','/api/reactions','/api/view','/api/view/beat'].includes(pathname)||pathname.startsWith('/api/video/')||pathname.startsWith('/api/media/')){
     if(!who){res.writeHead(401,{'Content-Type':'application/json','Cache-Control':'no-store'}).end('{"ok":false,"error":"Log in to view this channel."}');return;}
     res.setHeader('Cache-Control','private, no-store');
   }
+  if(capsules.handle(req,res,pathname,who)||reactions.handle(req,res,pathname,who)||watch.handle(req,res,pathname,who))return;
   if(pathname.startsWith('/brand/')||/^\/api\/admin\/(?:brand(?:\/|$)|channels\/[^/]+\/(?:badge|image)$)/.test(pathname)){brandFiles.handle(req,res,pathname);return;}
   if(pathname.startsWith('/uploads/')){res.writeHead(404).end();return;}
   if (pathname.startsWith('/api/upload/raw/') || pathname.startsWith('/api/video/')) {

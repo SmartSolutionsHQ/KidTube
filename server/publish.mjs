@@ -1,4 +1,5 @@
 import { DEFAULT_CHANNEL_ID, channelById } from './channels.mjs';
+import { openCapsule } from './capsules.mjs';
 
 // Keep publication and its notification outbox in one SQLite transaction.
 export function publishClip(sqlite, notifications, clip, uploadJobId) {
@@ -10,19 +11,26 @@ export function publishClip(sqlite, notifications, clip, uploadJobId) {
     if (!channelById(sqlite, channelId)) throw new Error(`Channel ${channelId} does not exist`);
     // New clips lead their own channel's reel.
     sqlite.prepare('UPDATE clips SET position=position+1 WHERE channel_id=?').run(channelId);
+    // A time capsule (opensAt in the future) is published sealed; validateSeal checked it at upload start.
+    const opensAt = Number(clip.opensAt) || 0;
+    const sealed = opensAt > Date.now();
     sqlite.prepare(`INSERT INTO clips
-      (id,title,src,poster,kind,blurb,published,duration,position,created,channel_id,review)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(
+      (id,title,src,poster,kind,blurb,published,duration,position,created,channel_id,review,opens_at,sealed_by,capsule_note)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(
       clip.id, clip.title, clip.src, clip.poster || '', clip.kind || 'video',
       clip.blurb || '', clip.publishedAt, clip.duration, 1, Date.now(),
-      channelId, review,
+      channelId, review, sealed ? opensAt : 0, sealed ? clip.sealedBy || '' : '', sealed ? clip.capsuleNote || '' : '',
     );
+    if (sealed) {
+      sqlite.prepare("INSERT INTO activity (ts,actor,kind,subject,detail) VALUES (?,?,'capsule.seal',?,?)")
+        .run(Date.now(), clip.sealedBy || 'system', clip.id, JSON.stringify({ opensAt }));
+    }
     if (uploadJobId) {
       sqlite.prepare("UPDATE upload_jobs SET status='done', progress=100, clip_id=?, updated=? WHERE id=?")
         .run(clip.id, Date.now(), uploadJobId);
     }
-    // A clip waiting for review is announced when a parent approves it.
-    if (review === 'approved') notifications.enqueue({ ...clip, channelId });
+    // A clip waiting for review is announced when a parent approves it, a capsule when it opens.
+    if (review === 'approved' && !sealed) notifications.enqueue({ ...clip, channelId });
     sqlite.exec('COMMIT');
   } catch (error) { sqlite.exec('ROLLBACK'); throw error; }
   notifications.kick();
@@ -41,9 +49,13 @@ export function approveClip(sqlite, notifications, clipId, actor = 'system') {
     const clip = sqlite.prepare(`SELECT c.*, ch.slug FROM clips c LEFT JOIN channels ch ON ch.id=c.channel_id
       WHERE c.id=? AND c.review<>'approved'`).get(clipId);
     if (clip) {
+      const now = Date.now();
       sqlite.prepare('UPDATE clips SET position=position+1 WHERE channel_id=? AND id<>?').run(clip.channel_id, clip.id);
       sqlite.prepare("UPDATE clips SET review='approved', position=1 WHERE id=?").run(clip.id);
-      if (!clip.hidden) {
+      // A capsule is announced when it opens: now, if its date passed while it waited, else on its date.
+      const capsule = clip.opens_at > 0 && !clip.opened_at;
+      if (capsule && clip.opens_at <= now) openCapsule(sqlite, notifications, clip, now, actor);
+      else if (!clip.hidden && !capsule) {
         notifications.enqueue({ id: clip.id, title: clip.title, blurb: clip.blurb, duration: clip.duration,
           kind: clip.kind, publishedAt: clip.published, channelId: clip.channel_id });
       }

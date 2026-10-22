@@ -38,6 +38,14 @@ const origin = value => {
   }
   return url.origin;
 };
+// UTC is valid everywhere but missing from some engines' list of zones.
+const timezone = value => {
+  if (typeof value !== 'string' || !(['UTC', 'Etc/UTC'].includes(value) || Intl.supportedValuesOf('timeZone').includes(value))) {
+    throw new SettingError('Use a time zone name like America/Chicago.');
+  }
+  return value;
+};
+export const SERVER_TIMEZONE = (() => { try { return timezone(Intl.DateTimeFormat().resolvedOptions().timeZone); } catch { return 'UTC'; } })();
 // The badge builder validates the spec itself; here it only has to be a small JSON object.
 const badge = value => {
   if (value === null) return null;
@@ -66,6 +74,8 @@ const SETTINGS = {
   splash_sound: { env: 'SPLASH_SOUND', fallback: true, parse: flag, public: true },
   views_retention_days: { env: 'VIEWS_RETENTION_DAYS', fallback: 90, parse: days },
   activity_retention_days: { env: 'ACTIVITY_RETENTION_DAYS', fallback: 365, parse: days },
+  // Days, capsule countdowns and the daily tape reset follow the family's clock, not the server's.
+  family_timezone: { env: 'FAMILY_TIMEZONE', fallback: SERVER_TIMEZONE, parse: timezone, public: true },
   setup_complete: { fallback: false, parse: flag },
 };
 export const SETTING_KEYS = Object.keys(SETTINGS);
