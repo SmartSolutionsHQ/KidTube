@@ -146,3 +146,24 @@ test('L1 and M4: kids\' badges stay within a guest pass and never sit in a share
     assert.equal((await get(path, guest.cookie)).status, 200, `a whole-family pass ${path}`);
   }
 });
+
+test('L2: likes and comments only land on, and only count, clips the caller may play', { timeout: 60000 }, async t => {
+  const family = await startFamily(t);
+  const { json, db, addClip, viewer, parent } = family;
+  addClip('tobi-pending', '77777777-7777-4777-8777-777777777777', 1, 3, { review: 'pending' });
+  db.prepare("INSERT INTO likes (clip_id,email,created) VALUES ('tobi-pending','someone@example.com',0), ('tobi-1','someone@example.com',0)").run();
+  db.prepare("INSERT INTO comments (id,clip_id,email,name,body,created) VALUES ('ghost-1','gone-clip','someone@example.com','Someone','left behind',0)").run();
+  const as = who => ({ email: who.email, t: who.t });
+  for (const clipId of ['tobi-pending', 'no-such-clip']) {
+    assert.equal((await json('/api/like', { body: { ...as(viewer), clipId, on: true } })).status, 404, `like ${clipId}`);
+    assert.equal((await json('/api/comment', { body: { ...as(viewer), clipId, body: 'hello' } })).status, 404, `comment ${clipId}`);
+  }
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM comments WHERE clip_id IN ('tobi-pending','no-such-clip')").get().n, 0);
+  assert.equal((await json('/api/like', { body: { ...as(viewer), clipId: 'tobi-1', on: true } })).body.count, 2);
+  assert.equal((await json('/api/comment', { body: { ...as(viewer), clipId: 'tobi-1', body: 'hello' } })).status, 200);
+  const counts = (await json('/api/likes', { cookie: viewer.cookie })).body.counts;
+  assert.equal(counts['tobi-1'], 2);
+  assert.equal(counts['tobi-pending'], undefined, 'a clip waiting for review is not named to viewers');
+  assert.equal((await json('/api/likes', { cookie: parent.cookie })).body.counts['tobi-pending'], 1, 'parents still see it');
+  assert.deepEqual((await json('/api/comments?c=gone-clip', { cookie: viewer.cookie })).body.rows, []);
+});

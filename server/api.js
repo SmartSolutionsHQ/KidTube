@@ -600,12 +600,12 @@ async function adminPassword(req, env) {
 }
 
 async function likesAll(url, env, viewer) {
-  /* a guest pass limited to one kid sees that channel's counts only */
-  const scoped = viewer && viewer.role === 'guest' && viewer.channelId != null;
-  const cr = await db(env, `SELECT l.clip_id AS c, COUNT(*) AS n FROM likes l
-    ${scoped ? 'JOIN clips k ON k.id = l.clip_id AND k.channel_id = ?' : ''} GROUP BY l.clip_id`, scoped ? [viewer.channelId] : []);
+  /* counts only for clips this viewer may play: a guest pass limited to one kid sees that kid's, and
+     clips waiting for review or hidden never show up for viewers */
+  const cr = await db(env, `SELECT l.clip_id AS c, COUNT(*) AS n, k.channel_id, k.review, k.hidden FROM likes l
+    JOIN clips k ON k.id = l.clip_id GROUP BY l.clip_id`);
   const counts = {};
-  for (const row of (cr.results || [])) counts[row.c] = row.n;
+  for (const row of (cr.results || [])) if (canPlayClip(viewer, row)) counts[row.c] = row.n;
   let email = '';
   try { email = unb64u(url.searchParams.get('e') || '').trim().toLowerCase(); } catch (e) { /* bad b64 */ }
   const liked = {};
@@ -622,6 +622,7 @@ async function likeSet(req, env) {
   if (!CLIP_OK(b.clipId)) return J({ ok: false, error: 'clip' }, 400);
   const email = await sessOk(env, String(b.email || '').trim().toLowerCase(), String(b.t || ''));
   if (!email) return J({ ok: false, error: 'log in to like' }, 401);
+  if (!await playable(env, email, b.clipId)) return GONE404();
   if (b.on) await db(env, 'INSERT OR IGNORE INTO likes (clip_id, email, created) VALUES (?,?,?)', [b.clipId, email, Date.now()]);
   else await db(env, 'DELETE FROM likes WHERE clip_id = ? AND email = ?', [b.clipId, email]);
   const c = await db(env, 'SELECT COUNT(*) AS n FROM likes WHERE clip_id = ?', [b.clipId]);
@@ -629,11 +630,17 @@ async function likeSet(req, env) {
   return J({ ok: true, liked: !!b.on, count: count });
 }
 
+/* likes and comments only for a clip the account may play, like reactions and the watch log */
+const GONE404 = () => J({ ok: false, error: 'That video is gone.' }, 404);
+async function playable(env, email, clipId) {
+  const clip = ((await db(env, `${CLIP_ACCESS_SQL} WHERE c.id = ?`, [clipId])).results || [])[0];
+  return canPlayClip({ email, role: await roleOf(env, email) }, clip);
+}
 async function commentsList(url, env, viewer) {
   const clip = url.searchParams.get('c') || '';
   if (!CLIP_OK(clip)) return J({ ok: false, error: 'clip' }, 400);
   const owner = ((await db(env, `${CLIP_ACCESS_SQL} WHERE c.id = ?`, [clip])).results || [])[0];
-  if (owner && !canPlayClip(viewer, owner)) return J({ ok: true, rows: [] });
+  if (!canPlayClip(viewer, owner)) return J({ ok: true, rows: [] });
   let email = '';
   try { email = unb64u(url.searchParams.get('e') || '').trim().toLowerCase(); } catch (e) { /* bad b64 */ }
   const known = EMAIL_OK(email) && !!(await sessOk(env, email, url.searchParams.get('t') || ''));
@@ -653,6 +660,7 @@ async function commentAdd(req, env) {
   if (!body || body.length > 500) return J({ ok: false, error: 'body' }, 400);
   const email = await sessOk(env, String(b.email || '').trim().toLowerCase(), String(b.t || ''));
   if (!email) return J({ ok: false, error: 'log in to comment' }, 401);
+  if (!await playable(env, email, b.clipId)) return GONE404();
   const mode = env.settings.get('comments_default');
   if (mode === 'off') return J({ ok: false, error: 'Comments are turned off.' }, 403);
   /* light rate limit per IP: max 10 comments per 10 minutes */
