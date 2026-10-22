@@ -5,6 +5,8 @@ import { addressKey, clientIp, createSetup } from '../server/setup.mjs';
 import { createMonitor } from '../server/monitor.mjs';
 import { createSettings } from '../server/settings.mjs';
 import { createFamily } from '../server/family.mjs';
+import { createVideoNotifications } from '../server/notifications.mjs';
+import { publishClip } from '../server/publish.mjs';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -314,4 +316,23 @@ test('L8: clip changes made through the direct routes are recorded once, like th
   const headers = { 'x-kid-email': coparent.email, 'x-kid-token': coparent.t };
   assert.equal((await json('/api/admin/clips/rename', { headers, body: { id: 'tobi-2', title: 'Through the dashboard' } })).status, 200);
   assert.equal(rows().filter(([, subject]) => subject === 'tobi-2').length, 1, 'the dashboard route still writes exactly one row');
+});
+
+test('L9: new-video emails link to the web address the wizard saved after boot', async t => {
+  const { sqlite } = openDatabase(':memory:');
+  t.after(() => sqlite.close());
+  await migrate(sqlite);
+  sqlite.prepare("INSERT INTO accounts (email,first,last,salt,hash,status,created) VALUES ('nana@example.com','Nana','O','s','h','approved',0)").run();
+  const env = { SIGN_SECRET: 'a-test-only-signing-secret-of-enough-length', SITE_URL: '', MAIL_MODE: 'brevo', BREVO_API_KEY: 'k', SENDER_EMAIL: 'tube@example.com' };
+  const sent = [];
+  const notifications = createVideoNotifications({ sqlite, env, logger: { error() {} },
+    fetchImpl: async (url, options) => { sent.push(JSON.parse(options.body)); return Response.json({ messageId: 'm1' }, { status: 201 }); } });
+  t.after(() => notifications.close());
+  env.SITE_URL = 'https://videos.example.test';
+  publishClip(sqlite, notifications, { id: 'clip-1', title: 'A clip', src: '/api/video/x', duration: 3, kind: 'video', publishedAt: '2026-10-22T10:00:00Z' });
+  await notifications.kick();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0].htmlContent, /https:\/\/videos\.example\.test\/#\/c\/main\/v\/clip-1/);
+  assert.match(sent[0].textContent, /https:\/\/videos\.example\.test\/api\/notifications\/unsubscribe\?/);
+  assert.doesNotMatch(sent[0].htmlContent, /localhost/);
 });
