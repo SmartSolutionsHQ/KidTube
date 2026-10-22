@@ -1,11 +1,11 @@
+// Read-only checks for a Node install. It creates nothing and sends no email; a first install with
+// no .env is fine, because the server makes its own secret and database on first start.
 import { spawnSync } from 'node:child_process';
 import { accessSync, constants, existsSync, statSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { installPaths, ownershipFix } from '../server/config.mjs';
 
-// Read-only checks for a Node install. It creates nothing and sends no email; a first install with
-// no .env is fine, because the server makes its own secret and database on first start.
 let failures = 0;
 const line = (status, name, detail = '') => console.log(`${status}: ${name}${detail ? ` (${detail})` : ''}`);
 function check(name, ok, hint = '') { line(ok ? 'OK' : 'MISSING', name, ok ? '' : hint); if (!ok) failures++; }
