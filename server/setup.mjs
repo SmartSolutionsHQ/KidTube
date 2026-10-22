@@ -1,27 +1,26 @@
+// Setup mode: until an owner (role 'super') exists, the app only serves the wizard. A one-time code
+// printed at boot and written to DATA_DIR/setup-token proves the person claiming the install can see
+// the server. After the claim, every wizard step uses the owner's normal session.
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { rmSync, writeFileSync, chmodSync } from 'node:fs';
 import { isIP } from 'node:net';
 import { accountCookie, viewer } from './access.mjs';
-import { asStaff, sessToken } from './api.js';
+import { isEmail, sessToken } from './api.js';
 import { BRAND_NAME, ENDORSEMENT } from './brand.mjs';
 import { checkSiteUrl, InstallError } from './config.mjs';
 import { FamilyError } from './family.mjs';
+import { HttpError, headerStaff, readJson, sendJson } from './jsonio.mjs';
 import { sendMail } from './mail.mjs';
-import { passwordRecord } from './passwords.mjs';
+import { PASSWORD_MAX, PASSWORD_MIN, passwordRecord } from './passwords.mjs';
 import { SettingError } from './settings.mjs';
-
-// Setup mode: until an owner (role 'super') exists, the app only serves the wizard. A one-time code
-// printed at boot and written to DATA_DIR/setup-token proves the person claiming the install can see
-// the server. After the claim, every wizard step uses the owner's normal session.
 
 // Crockford's base32: no I, L, O or U. People still type O for 0 and I or L for 1, so input is folded
 // back before comparing. 20 symbols of 5 bits each make 100 bits.
 export const CODE_ALPHABET = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
 const GROUPS = 4, GROUP = 5;
-export const FAIL_WINDOW = 10 * 60 * 1000;
-export const FAILS_PER_IP = 5;
-export const FAILS_TOTAL = 30;
-const MAX_BODY = 16 * 1024;
+const FAIL_WINDOW = 10 * 60 * 1000;
+const FAILS_PER_IP = 5;
+const FAILS_TOTAL = 30;
 // While there is no owner these still answer; every other API says 503 {setup:true}.
 const OPEN_APIS = new Set(['/api/health', '/api/site', '/api/themes']);
 const PAGES = new Set(['/', '/parents', '/about']);
@@ -64,37 +63,11 @@ export function addressKey(ip) {
 }
 
 // The origin a browser on this request would send: the socket's scheme (or the trusted proxy's) and Host.
-export function requestOrigin(req) {
+function requestOrigin(req) {
   const forwarded = process.env.TRUST_PROXY === '1' && String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
   const proto = forwarded === 'https' || forwarded === 'http' ? forwarded : req.socket.encrypted ? 'https' : 'http';
   return req.headers.host ? `${proto}://${req.headers.host}` : '';
 }
-
-function json(res, status, value, headers = {}) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers });
-  res.end(JSON.stringify(value));
-}
-
-class HttpError extends Error {
-  constructor(status, message, extra = {}) { super(message); this.status = status; this.extra = extra; }
-}
-
-async function readJson(req) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > MAX_BODY) throw new HttpError(413, 'That request is too big.');
-    chunks.push(chunk);
-  }
-  try {
-    const value = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
-    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
-  } catch {}
-  throw new HttpError(400, 'Invalid request.');
-}
-
-const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 export function createSetup({ sqlite, settings, env, paths, family, sendFile, log = console.log }) {
   let codeHash = null;
@@ -165,9 +138,7 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
   }
 
   async function owner(req) {
-    const email = String(req.headers['x-kid-email'] || '').trim().toLowerCase();
-    const token = String(req.headers['x-kid-token'] || '');
-    const staff = email && token ? await asStaff(env, email, token) : null;
+    const staff = await headerStaff(env, req);
     if (staff?.role !== 'super') throw new HttpError(401, 'Sign in as the parent who set this up.');
     return staff.email;
   }
@@ -230,8 +201,8 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
     const last = String(body.last || '').trim().slice(0, 40);
     const email = String(body.email || '').trim().toLowerCase();
     if (!first) throw new HttpError(400, 'Add your first name.');
-    if (!EMAIL.test(email) || email.length >= 120) throw new HttpError(400, 'Use your email address.');
-    if (typeof body.pass !== 'string' || body.pass.length < 12 || body.pass.length > 128) throw new HttpError(400, 'Use a password of 12 to 128 characters.');
+    if (!isEmail(email)) throw new HttpError(400, 'Use your email address.');
+    if (typeof body.pass !== 'string' || body.pass.length < PASSWORD_MIN || body.pass.length > PASSWORD_MAX) throw new HttpError(400, `Use a password of ${PASSWORD_MIN} to ${PASSWORD_MAX} characters.`);
     const record = await passwordRecord(body.pass);
     // Two people with the code may press Continue at once; the write lock lets exactly one win.
     sqlite.exec('BEGIN IMMEDIATE');
@@ -252,7 +223,7 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
     code = null;
     forgetToken();
     log(`Setup claimed by ${email}.`);
-    json(res, 200, { ok: true, t: await sessToken(env, email), email, role: 'super' }, { 'Set-Cookie': accountCookie(env, sqlite, email) });
+    sendJson(res, 200, { ok: true, t: await sessToken(env, email), email, role: 'super' }, { 'Set-Cookie': accountCookie(env, sqlite, email) });
   }
 
   async function saveFamily(req, res) {
@@ -267,26 +238,26 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
     }
     saveSettings({ site_name: name, site_tagline: body.tagline === undefined ? undefined : String(body.tagline), site_url: siteUrl }, actor);
     step(actor, 3);
-    json(res, 200, { ok: true, siteUrl: settings.get('site_url') });
+    sendJson(res, 200, { ok: true, siteUrl: settings.get('site_url') });
   }
 
   async function saveKid(req, res) {
     const actor = await owner(req);
     const kid = await family.saveKid(await readJson(req), actor);
-    json(res, 200, { ok: true, kid, kids: family.listKids() });
+    sendJson(res, 200, { ok: true, kid, kids: family.listKids() });
   }
 
   async function removeKid(req, res, id) {
     const actor = await owner(req);
     await family.removeKid(id, actor);
-    json(res, 200, { ok: true, kids: family.listKids() });
+    sendJson(res, 200, { ok: true, kids: family.listKids() });
   }
 
   async function kidsDone(req, res) {
     const actor = await owner(req);
     if (family.listKids().every(kid => kid.placeholder)) throw new HttpError(400, 'Add at least one kid first.');
     step(actor, 4);
-    json(res, 200, { ok: true });
+    sendJson(res, 200, { ok: true });
   }
 
   async function saveWatch(req, res) {
@@ -294,7 +265,7 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
     const body = await readJson(req);
     saveSettings({ kids_public: body.kidsPublic, signup_mode: body.signupMode, guest_passes: body.guestPasses, comments_default: body.comments }, actor);
     step(actor, 5);
-    json(res, 200, { ok: true });
+    sendJson(res, 200, { ok: true });
   }
 
   async function saveEmail(req, res) {
@@ -304,14 +275,14 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
       const key = String(body.key || '').trim();
       if (!key && !settings.get('brevo_api_key')) throw new HttpError(400, 'Paste your Brevo API key.');
       for (const [field, label] of [['sender', 'the sender address'], ['notify', 'where to send notices']]) {
-        if (!EMAIL.test(String(body[field] || '').trim())) throw new HttpError(400, `Add ${label}.`);
+        if (!isEmail(String(body[field] || '').trim())) throw new HttpError(400, `Add ${label}.`);
       }
       saveSettings({ brevo_api_key: key || undefined, sender_email: body.sender, notify_email: body.notify, mail_mode: 'brevo' }, actor);
     } else {
       saveSettings({ mail_mode: 'disabled' }, actor);
     }
     step(actor, 6);
-    json(res, 200, { ok: true, mode: settings.get('mail_mode') });
+    sendJson(res, 200, { ok: true, mode: settings.get('mail_mode') });
   }
 
   async function testEmail(req, res) {
@@ -325,7 +296,7 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
       console.error('Test email failed:', error);
       throw new HttpError(502, `The email service said no${error.status ? ` (HTTP ${error.status})` : ''}. Check the key and that the sender address is verified in Brevo.`);
     }
-    json(res, 200, { ok: true, to });
+    sendJson(res, 200, { ok: true, to });
   }
 
   async function finish(req, res) {
@@ -335,7 +306,7 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
       step(actor, 7);
       log('Setup is finished.');
     }
-    json(res, 200, { ok: true });
+    sendJson(res, 200, { ok: true });
   }
 
   async function verify(req, res) {
@@ -343,11 +314,11 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
     const ip = clientIp(req);
     gate(ip);
     checkCode(ip, (await readJson(req)).code);
-    json(res, 200, { ok: true });
+    sendJson(res, 200, { ok: true });
   }
 
   const routes = {
-    'GET /api/setup/state': async (req, res) => json(res, 200, await state(req)),
+    'GET /api/setup/state': async (req, res) => sendJson(res, 200, await state(req)),
     'POST /api/setup/verify': verify,
     'POST /api/setup/claim': claim,
     'POST /api/setup/family': saveFamily,
@@ -368,11 +339,11 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
       await route(req, res);
     } catch (error) {
       if (res.headersSent) { res.destroy(error); return; }
-      if (error instanceof HttpError) return json(res, error.status, { ok: false, error: error.message, ...error.extra });
-      if (error instanceof FamilyError) return json(res, error.status, { ok: false, error: error.message });
-      if (error instanceof SettingError) return json(res, 400, { ok: false, error: error.message });
+      if (error instanceof HttpError) return sendJson(res, error.status, { ok: false, error: error.message, ...error.extra });
+      if (error instanceof FamilyError) return sendJson(res, error.status, { ok: false, error: error.message });
+      if (error instanceof SettingError) return sendJson(res, 400, { ok: false, error: error.message });
       console.error('Setup request failed', error);
-      json(res, 500, { ok: false, error: 'Something went wrong. Try again.' });
+      sendJson(res, 500, { ok: false, error: 'Something went wrong. Try again.' });
     }
   }
 
@@ -383,7 +354,7 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
     if (unclaimed()) {
       if (PAGES.has(pathname)) { res.writeHead(302, { Location: '/setup', 'Cache-Control': 'no-store' }).end(); return true; }
       if (pathname.startsWith('/api/') && !OPEN_APIS.has(pathname)) {
-        json(res, 503, { ok: false, setup: true, error: 'This install is still being set up.' }, { 'Retry-After': '60' });
+        sendJson(res, 503, { ok: false, setup: true, error: 'This install is still being set up.' }, { 'Retry-After': '60' });
         return true;
       }
       return false;

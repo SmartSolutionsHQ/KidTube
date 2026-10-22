@@ -1,11 +1,11 @@
+// The home-screen app: GET /manifest.webmanifest from the family's settings and badge, the Apple touch
+// icon, and GET /sw.js, a service worker built once at boot around the current shell files.
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { basename, join, resolve } from 'node:path';
 import { BRAND_NAME, DEFAULT_ACCENT, TAGLINE } from './brand.mjs';
 
-// The home-screen app: GET /manifest.webmanifest from the family's settings and badge, the Apple touch
-// icon, and GET /sw.js, a service worker built once at boot around the current shell files.
 const BACKGROUND = '#05060A';
 const SHORT_NAME = 12;
 const DEFAULT_ICONS = {

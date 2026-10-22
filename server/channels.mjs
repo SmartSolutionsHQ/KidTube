@@ -1,3 +1,5 @@
+// Kids' channels and who may watch them: the lookups, what viewers may see about a channel, and the
+// rule for playing a clip that api.js, uploads, reactions and the watch log all follow.
 const SLUG = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 
 export function listChannels(sqlite) {
@@ -32,8 +34,13 @@ export function canViewChannel(viewer, channel) {
   return true;
 }
 
+// Parents: 'super' is the owner, 'admin' a co-parent. Takes anything with a role (a viewer, an account row).
 const STAFF = new Set(['admin', 'super']);
 export const isStaff = viewer => STAFF.has(viewer?.role);
+
+// Clip ids: UUIDs for uploads, short names for older and seeded clips.
+const CLIP_ID = /^[A-Za-z0-9_-]{1,80}$/;
+export const isClipId = id => CLIP_ID.test(String(id || ''));
 
 // Who may play a clip: clip carries channel_id, review, hidden and uploader (the upload job's email).
 // A clip waiting for review, rejected or hidden is for parents and the kid who posted it, nobody else.

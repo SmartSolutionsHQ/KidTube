@@ -2,8 +2,6 @@
 // the parent, a co-parent (Family), an approved viewer, a kid login and a guest pass. Invented names only.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-import { migrate } from '../server/schema.mjs';
 import { passwordRecord } from '../server/passwords.mjs';
 import { startInstall, PARENT } from './helpers.mjs';
 
@@ -64,29 +62,4 @@ export async function startFamily(t, env = {}) {
   const status = async (path, options) => (await install.call(path, options)).status;
   const staffQuery = who => `e=${Buffer.from(who.email).toString('base64url')}&t=${encodeURIComponent(who.t)}`;
   return { ...install, addClip, parent, coparent, viewer, kid, guest, json, status, staffQuery };
-}
-
-// An in-memory database at the current schema, for module-level tests with an injected clock.
-export async function memoryDatabase(t) {
-  const sqlite = new DatabaseSync(':memory:');
-  t.after(() => sqlite.close());
-  await migrate(sqlite);
-  return sqlite;
-}
-
-// Drives a node:http-style handler without a server: returns { status, body } once the route answers.
-export function drive(handler, { method = 'POST', url, body, who = null }) {
-  return new Promise((resolve, reject) => {
-    const payload = body === undefined ? [] : [Buffer.from(JSON.stringify(body))];
-    const req = { method, url, headers: { host: 'localhost' }, async *[Symbol.asyncIterator]() { yield* payload; } };
-    let status = 0;
-    const res = {
-      headersSent: false,
-      writeHead(code) { status = code; this.headersSent = true; return this; },
-      end(text) { resolve({ status, body: text ? JSON.parse(text) : null }); },
-      destroy(error) { reject(error || new Error('destroyed')); },
-    };
-    const pathname = new URL(url, 'http://localhost').pathname;
-    if (!handler(req, res, pathname, who)) reject(new Error(`${method} ${url} was not handled`));
-  });
 }

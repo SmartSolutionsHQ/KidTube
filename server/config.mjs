@@ -1,9 +1,9 @@
+// First boot needs no .env: the data folder, the signing secret and the database are made here.
+// Every problem is an InstallError with a message a parent can act on; index.mjs prints it and exits.
 import { randomBytes } from 'node:crypto';
 import { accessSync, chmodSync, constants, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 
-// First boot needs no .env: the data folder, the signing secret and the database are made here.
-// Every problem is an InstallError with a message a parent can act on; index.mjs prints it and exits.
 export class InstallError extends Error {}
 
 export const DEFAULT_DATABASE = 'data/kidtube.sqlite';
@@ -29,7 +29,7 @@ export function ownershipFix(dir, env = process.env) {
   return `docker compose run --rm --user root --cap-add CHOWN --cap-add DAC_OVERRIDE --entrypoint chown kidtube -R ${user} ${dir}`;
 }
 
-export function ensureDataDir(dir) {
+function ensureDataDir(dir) {
   try {
     mkdirSync(dir, { recursive: true, mode: 0o700 });
     accessSync(dir, constants.W_OK | constants.X_OK);
@@ -45,7 +45,7 @@ export function ensureDataDir(dir) {
 
 // SIGN_SECRET from the environment wins. Otherwise DATA_DIR/secret is created once (0600, never
 // overwritten) and read on every later start.
-export function loadSecret(env, secretFile) {
+function loadSecret(env, secretFile) {
   if (env.SIGN_SECRET) {
     if (env.SIGN_SECRET.length < MIN_SECRET) throw new InstallError(`SIGN_SECRET must have at least ${MIN_SECRET} characters.`);
     return { secret: env.SIGN_SECRET, source: 'env' };

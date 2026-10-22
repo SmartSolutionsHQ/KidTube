@@ -1,6 +1,6 @@
 // Regressions for docs/plan/security-review.md: each test names the finding it pins down.
 import test from 'node:test';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { request } from 'node:http';
 import assert from 'node:assert/strict';
 import { addressKey, clientIp, createSetup } from '../server/setup.mjs';
@@ -16,8 +16,8 @@ import { createUploadManager, probe, STALE_UPLOAD_MS } from '../server/uploads.m
 import { loginPause, sessOk, sessToken } from '../server/api.js';
 import { openDatabase } from '../server/db.mjs';
 import { migrate } from '../server/schema.mjs';
-import { ROOT, startInstall, PARENT } from './helpers.mjs';
-import { startFamily, memoryDatabase, KID, KID_EMAIL, VIEWER } from './family-fixture.mjs';
+import { ROOT, cleanEnv, memoryDatabase, scratch, startInstall, startServer, PARENT } from './helpers.mjs';
+import { startFamily, KID, KID_EMAIL, VIEWER } from './family-fixture.mjs';
 
 const fakeReq = (forwarded, remote = '10.0.0.9') => ({ headers: forwarded ? { 'x-forwarded-for': forwarded } : {}, socket: { remoteAddress: remote } });
 
@@ -213,7 +213,7 @@ test('L4: session signatures are checked in constant time', async t => {
     assert.equal(await sessOk(env, 'nana@example.com', bad), null, bad);
   }
   const source = readFileSync(join(ROOT, 'server/api.js'), 'utf8');
-  const body = source.slice(source.indexOf('async function sessOk'), source.indexOf('const dispName'));
+  const body = source.slice(source.indexOf('async function sessOk'), source.indexOf('export const displayName'));
   assert.doesNotMatch(body, /sig\s*!==/, 'no plain string comparison of the signature');
   assert.match(body, /sameHex\(/);
 });
@@ -287,8 +287,7 @@ test('L7: rate-limit addresses go within the hour, and the setup claim keeps no 
   monitor.prune();
   for (const table of ['hits', 'chits', 'guest_code_attempts']) assert.equal(sqlite.prepare(`SELECT COUNT(*) n FROM ${table}`).get().n, 0, table);
 
-  const dir = mkdtempSync(join(tmpdir(), 'kidtube-claim-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = scratch(t, 'kidtube-claim-');
   const paths = { tokenFile: join(dir, 'setup-token'), dataDir: dir };
   const setup = createSetup({ sqlite, settings, env, paths, family, sendFile() {}, log() {} });
   const code = readFileSync(paths.tokenFile, 'utf8').trim();
@@ -365,26 +364,17 @@ test('L10: once the family has a web address, other host names are refused (DNS 
 });
 
 test('L10: before setup, anyone may ask for the state, but it no longer names the data folder', { timeout: 60000 }, async t => {
-  const dir = mkdtempSync(join(tmpdir(), 'kidtube-fresh-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  const env = { ...process.env, PORT: '0', HOST: '127.0.0.1', DATABASE_PATH: join(dir, 'data/kidtube.sqlite'), PUBLIC_DIR: join(ROOT, 'public'), MAIL_MODE: 'disabled' };
-  for (const key of ['SIGN_SECRET', 'SITE_URL', 'DATA_DIR', 'TRUST_PROXY']) delete env[key];
-  const child = spawn(process.execPath, [join(ROOT, 'server/index.mjs')], { cwd: dir, env, stdio: ['ignore', 'pipe', 'pipe'] });
-  t.after(() => child.kill());
-  const port = await new Promise((resolve, reject) => {
-    child.stdout.on('data', chunk => { const match = /listening on (\d+)/.exec(String(chunk)); if (match) resolve(match[1]); });
-    child.once('exit', () => reject(new Error('the server stopped')));
-  });
-  const state = await (await fetch(`http://127.0.0.1:${port}/api/setup/state`)).json();
+  const dir = scratch(t, 'kidtube-fresh-');
+  const { origin } = await startServer(t, { cwd: dir, env: cleanEnv({ DATABASE_PATH: join(dir, 'data/kidtube.sqlite'), MAIL_MODE: 'disabled' }) });
+  const state = await (await fetch(`${origin}/api/setup/state`)).json();
   assert.equal(state.stage, 'code');
   assert.equal('tokenFile' in state, false);
   assert.ok(!JSON.stringify(state).includes(dir), 'the data folder path is not in the answer');
-  assert.equal((await withHost(`http://127.0.0.1:${port}`, '/api/setup/state', 'any-name.example')).status, 200, 'no web address yet, so any name works');
+  assert.equal((await withHost(origin, '/api/setup/state', 'any-name.example')).status, 200, 'no web address yet, so any name works');
 });
 
 test('L11: FFmpeg opens uploads only as local files in the containers phones make', async t => {
-  const dir = mkdtempSync(join(tmpdir(), 'kidtube-ffmpeg-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const dir = scratch(t, 'kidtube-ffmpeg-');
   const make = (name, ...args) => {
     const made = spawnSync('ffmpeg', ['-nostdin', '-loglevel', 'error', '-y', '-f', 'lavfi', '-i', 'testsrc=s=160x120:d=1', ...args, join(dir, name)]);
     assert.equal(made.status, 0, `${name}: ${made.stderr}`);

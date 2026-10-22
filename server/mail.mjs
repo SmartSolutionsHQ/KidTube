@@ -1,3 +1,4 @@
+// Sends one email through Brevo's API, or nothing at all when email is off (MAIL_MODE=disabled).
 import { BRAND_NAME } from './brand.mjs';
 
 export class MailError extends Error {

@@ -170,7 +170,7 @@ test('v3 to v4: capsule, reaction, budget and watch-log tables, with a backup fi
   const dir = mkdtempSync(join(tmpdir(), 'kidtube-migrate-v4-'));
   t.after(() => rmSync(dir, { recursive: true, force: true }));
   const sqlite = v0Database(t, V0_SCHEMA, join(dir, 'kidtube.sqlite'));
-  // Stop at v3 the way an M6 install would be, with a v2-shaped views row.
+  // Stop at v3, as an install from before time capsules and watch time would be, with a v2-shaped views row.
   const full = SCHEMA_VERSION;
   assert.ok(full >= 4);
   sqlite.exec('PRAGMA user_version=0');

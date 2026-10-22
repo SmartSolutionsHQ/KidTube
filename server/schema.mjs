@@ -1,9 +1,10 @@
+// The database schema: every table, and the migrations that bring an older database up to date.
 import { backup } from 'node:sqlite';
 import { chmodSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { BRAND_NAME } from './brand.mjs';
 
-// Every table lives here. Each step upgrades a database from PRAGMA user_version N to N+1,
+// Each step upgrades a database from PRAGMA user_version N to N+1,
 // and is safe to rerun so a half-known database (an old install, an import) still lands cleanly.
 const MIGRATIONS = [
   // v1: the tables the app created on the fly before migrations existed.
@@ -44,7 +45,7 @@ const MIGRATIONS = [
       PRIMARY KEY (clip_id, email));
     CREATE INDEX IF NOT EXISTS video_notification_pending ON video_notification_deliveries(status, next_attempt);
     CREATE TABLE IF NOT EXISTS video_email_preferences (email TEXT PRIMARY KEY, unsubscribed INTEGER NOT NULL);`);
-    // Databases from the original Worker (and TanzenTube) may lack columns added since.
+    // Databases from the original hosted version (and TanzenTube) may lack columns added since.
     ensureColumn(sqlite, 'accounts', 'role', "TEXT NOT NULL DEFAULT ''");
     for (const [column, definition] of [['poster', "TEXT DEFAULT ''"], ['kind', "TEXT DEFAULT 'video'"], ['blurb', "TEXT DEFAULT ''"],
       ['published', "TEXT DEFAULT ''"], ['duration', 'REAL DEFAULT 0'], ['position', 'INTEGER NOT NULL DEFAULT 0'],

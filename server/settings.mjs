@@ -1,3 +1,5 @@
+// Family settings: for each one, its environment variable, stored value, default and parser. The setup
+// wizard and the dashboard change them; everything else reads them through createSettings().
 import { DEFAULT_ACCENT, TAGLINE } from './brand.mjs';
 
 export class SettingError extends Error {}

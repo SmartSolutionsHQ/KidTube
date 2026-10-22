@@ -1,9 +1,9 @@
+// The server draws every badge itself with the same renderer the builder previews with, from a spec
+// that passed the whitelist. Glyph tables and stickers are committed data, read once.
 import { readFileSync } from 'node:fs';
 import { FONTS, BadgeSpecError, normalizeSpec } from '../public/js/badge/spec.js';
 import { renderBadge, stickerMap } from '../public/js/badge/render.js';
 
-// The server draws every badge itself with the same renderer the builder previews with, from a spec
-// that passed the whitelist. Glyph tables and stickers are committed data, read once.
 const BADGE_DIR = new URL('../public/badge/', import.meta.url);
 let data;
 

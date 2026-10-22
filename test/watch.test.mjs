@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSettings } from '../server/settings.mjs';
 import { BEAT_SLACK_S, createWatch, dayKey, dayStart, resetsAt } from '../server/watch.mjs';
-import { PARENT } from './helpers.mjs';
-import { KID_EMAIL, MEDIA, drive, memoryDatabase, startFamily } from './family-fixture.mjs';
+import { PARENT, drive, memoryDatabase } from './helpers.mjs';
+import { KID_EMAIL, MEDIA, startFamily } from './family-fixture.mjs';
 
 const LA = 'America/Los_Angeles';
 const iso = ms => new Date(ms).toISOString();

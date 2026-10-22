@@ -1,12 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn, spawnSync } from 'node:child_process';
-import { once } from 'node:events';
+import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { ROOT } from './helpers.mjs';
+import { ROOT, cleanEnv, startServer } from './helpers.mjs';
 import { CODE_ALPHABET, newCode, normalizeCode } from '../server/setup.mjs';
 import { slugFrom } from '../server/family.mjs';
 import { ownershipFix } from '../server/config.mjs';
@@ -15,42 +14,15 @@ import { accentCheck, addressNotes, formatCode, initials, kidPassword } from '..
 const OWNER = { first: 'Ada', last: 'Okafor', email: 'ada@example.com', pass: 'A-test-only-owner-password!' };
 const mode = file => statSync(file).mode & 0o777;
 
-// The environment a family has on first run: no .env, no secret, no site address.
-function bareEnv(extra = {}) {
-  const env = { ...process.env };
-  for (const key of ['SIGN_SECRET', 'SITE_URL', 'DATABASE_PATH', 'DATA_DIR', 'NODE_ENV', 'TRUST_PROXY', 'MAIL_MODE', 'HOST_PORT']) delete env[key];
-  return { ...env, PORT: '0', HOST: '127.0.0.1', PUBLIC_DIR: join(ROOT, 'public'), ...extra };
-}
-
-// Starts server/index.mjs in an empty folder (or `dir`), the way `npm start` or Docker would.
+// Starts server/index.mjs in an empty folder (or `dir`), the way `npm start` or Docker would on first run.
 async function startFresh(t, { env = {}, dir } = {}) {
   dir ??= mkdtempSync(join(tmpdir(), 'kidtube-fresh-'));
-  const child = spawn(process.execPath, [join(ROOT, 'server/index.mjs')], { cwd: dir, env: bareEnv(env), stdio: ['ignore', 'pipe', 'pipe'] });
-  let out = '', err = '';
-  child.stdout.on('data', chunk => { out += chunk; });
-  child.stderr.on('data', chunk => { err += chunk; });
-  const stop = async () => { if (child.exitCode === null) { child.kill(); await once(child, 'exit').catch(() => {}); } };
-  t.after(stop);
-  const port = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Startup timeout ' + err)), 10000);
-    // The setup lines follow the "listening" line in the same tick, but may arrive in a later chunk.
-    const look = () => {
-      const match = /listening on (\d+)/.exec(out);
-      if (match) { clearTimeout(timer); setTimeout(() => resolve(match[1]), 150); }
-    };
-    child.stdout.on('data', look);
-    child.once('exit', code => { clearTimeout(timer); reject(Object.assign(new Error(err || `exited ${code}`), { code, stderr: err })); });
-  });
-  const origin = `http://127.0.0.1:${port}`;
-  const code = /Setup code: (KT-[0-9A-Z-]+)/.exec(out)?.[1];
-  function call(path, { body, method, headers = {} } = {}) {
-    return fetch(origin + path, {
-      method: method || (body === undefined ? 'GET' : 'POST'), redirect: 'manual',
-      headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...headers },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-  }
-  return { dir, origin, port, code, call, stop, out: () => out, err: () => err, data: join(dir, 'data') };
+  const server = await startServer(t, { cwd: dir, env: cleanEnv(env) });
+  // The setup lines follow the "listening" line in the same tick, but may arrive in a later chunk.
+  await new Promise(resolve => setTimeout(resolve, 150));
+  const code = /Setup code: (KT-[0-9A-Z-]+)/.exec(server.out())?.[1];
+  const call = (path, options = {}) => server.call(path, { redirect: 'manual', ...options });
+  return { ...server, dir, code, call, data: join(dir, 'data') };
 }
 
 async function claimed(t, env) {
@@ -306,7 +278,7 @@ test('the other wizard steps save settings for the owner only', { timeout: 30000
 
 test('the command-line setup still works and refuses an install the server already created', { timeout: 30000 }, async t => {
   const cli = (cwd, env = {}) => spawnSync(process.execPath, [join(ROOT, 'scripts/setup.mjs')], {
-    cwd, encoding: 'utf8', env: { ...bareEnv(), KIDTUBE_ADMIN_EMAIL: OWNER.email, KIDTUBE_ADMIN_PASSWORD: OWNER.pass, SITE_URL: 'http://localhost:3000', ...env },
+    cwd, encoding: 'utf8', env: { ...cleanEnv(), KIDTUBE_ADMIN_EMAIL: OWNER.email, KIDTUBE_ADMIN_PASSWORD: OWNER.pass, SITE_URL: 'http://localhost:3000', ...env },
   });
   const fresh = mkdtempSync(join(tmpdir(), 'kidtube-cli-'));
   t.after(() => rmSync(fresh, { recursive: true, force: true }));

@@ -19,10 +19,11 @@ import { dirname, join, resolve } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { accountCookie, viewer } from './access.mjs';
 import { sessToken } from './api.js';
-import { BRAND_NAME, BRAND_TOKENS } from './brand.mjs';
+import { BRAND_NAME } from './brand.mjs';
 import { migrate, SCHEMA_VERSION } from './schema.mjs';
 import { clientIp } from './setup.mjs';
 import { createSandboxes } from './demo-sandbox.mjs';
+import { rateLimit, readJson, sendJson } from './jsonio.mjs';
 import { PAGE_POLICY } from './static.mjs';
 
 export class DemoError extends Error {}
@@ -30,19 +31,19 @@ export class DemoError extends Error {}
 export const DEMO_MARKER = 'kidtube-demo-v1';
 // The marker lives in the settings table under a key settings.mjs does not know, so no screen shows it.
 export const MARKER_KEY = 'demo_marker';
-export const FOLDER_MARKER = 'demo-mode.json';
+const FOLDER_MARKER = 'demo-mode.json';
 export const SNAPSHOT_META = 'demo.json';
 export const SNAPSHOT_DATABASE = 'demo.sqlite';
 export const SNAPSHOT_FILES = 'files';
 // Rewritten by every reset, so the running server sees a reset made by scripts/demo-reset.mjs and drops
 // every visitor's sandbox with it.
-export const RESET_STAMP = 'demo-last-reset.json';
+const RESET_STAMP = 'demo-last-reset.json';
 // The folders under DATA_DIR the snapshot fills. Restores add and replace files there, never delete.
-export const FILE_ROOTS = ['videos', 'brand'];
-export const DEFAULT_RESET_MINUTES = 60;
+const FILE_ROOTS = ['videos', 'brand'];
+const DEFAULT_RESET_MINUTES = 60;
 // The README's install section, from package.json's repository, so a rename never has to touch this file.
 // DEMO_INSTALL_URL overrides it (a landing page, say).
-export const INSTALL_URL = (() => {
+const INSTALL_URL = (() => {
   try {
     const { repository } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
     return `${String(repository.url || repository).replace(/^git\+/, '').replace(/\.git$/, '')}#install-in-three-lines`;
@@ -108,17 +109,11 @@ const BANNER_SCRIPT = '/js/shell/demo-banner.js';
 const BANNER_STYLE = '/css/demo.css';
 // "Make your own kid's page" (public/js/demo/make.js). Its page lives here, not in public/, so a family's
 // install has no such page at all.
-export const MAKE_PATH = '/demo/make';
+const MAKE_PATH = '/demo/make';
 const MAKE_PAGE = new URL('./demo-make.html', import.meta.url);
-const ASSET_REFERENCE = /(\b(?:src|href)=)(["'])(\/[^"'?#\s]+\.(?:js|css))\2/g;
-const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const MINUTE = 60000;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-const json = (res, status, value) => {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(value));
-};
 
 // DEMO_MODE=1 (or true, yes, on) turns it on; unset, empty or 0 leaves a normal install. Anything else
 // stops the server, so a typo never quietly runs a family's install as a demo or the demo as a family's.
@@ -227,7 +222,7 @@ export async function prepareBase(snapshot, dataDir) {
 
 // Copies every snapshot file that is missing or different into DATA_DIR, each through a temporary
 // name so a reader never sees half a file. Returns how many it wrote.
-export function syncFiles(snapshot, dataDir) {
+function syncFiles(snapshot, dataDir) {
   let written = 0;
   for (const [rel, hash] of Object.entries(snapshot.meta.files)) {
     const target = join(dataDir, rel);
@@ -250,7 +245,7 @@ const quote = name => `"${String(name).replace(/"/g, '""')}"`;
 // every timestamp forward by `shift` ms. Triggers are set aside inside the transaction (the first
 // channel's guard would refuse the delete) and put back before it commits, so no reader ever sees a
 // database without them, or half a reset. Synchronous: nothing else runs on this connection meanwhile.
-export function restoreDatabase(sqlite, baseFile, { shift = 0 } = {}) {
+function restoreDatabase(sqlite, baseFile, { shift = 0 } = {}) {
   sqlite.prepare('ATTACH DATABASE ? AS demo_base').run(baseFile);
   try {
     const marker = sqlite.prepare('SELECT value FROM demo_base.settings WHERE key=?').get(MARKER_KEY);
@@ -321,7 +316,7 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
   const snapshot = readSnapshot(snapshotDir(dataDir, processEnv));
   const installUrl = processEnv.DEMO_INSTALL_URL || INSTALL_URL;
   const salt = randomBytes(32);
-  const hits = new Map();
+  const limits = Object.fromEntries(Object.entries(LIMITED).map(([name, limit]) => [name, rateLimit({ limit, windowMs: LIMIT_WINDOW_MS, maxKeys: 20000 })]));
   let base = null, env = null, timer = null, lastReset = 0, nextReset = 0, sandboxes = null;
 
   const interval = minutes * MINUTE;
@@ -329,15 +324,9 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
 
   // Per visitor, in memory only: the address is keyed through a per-boot secret and never written down.
   function limited(req, pathname) {
-    const limit = LIMITED[pathname];
-    if (!limit) return false;
-    const at = now();
-    const key = pathname + '|' + createHmac('sha256', salt).update(clientIp(req)).digest('hex').slice(0, 24);
-    if (hits.size > 20000) hits.clear();
-    const recent = (hits.get(key) || []).filter(time => time > at - LIMIT_WINDOW_MS);
-    recent.push(at);
-    hits.set(key, recent);
-    return recent.length > limit;
+    if (!Object.hasOwn(limits, pathname)) return false;
+    const visitor = createHmac('sha256', salt).update(clientIp(req)).digest('hex').slice(0, 24);
+    return limits[pathname](visitor, now());
   }
 
   function reset() {
@@ -383,57 +372,45 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
     };
   }
 
-  async function readBody(req, limit = 4096) {
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of req) {
-      size += chunk.length;
-      if (size > limit) return null;
-      chunks.push(chunk);
-    }
-    try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { return null; }
-  }
-
   // The one-tap sign-in: the same session and cookie a real login gets, for a demo account only.
   async function enter(req, res) {
-    if (limited(req, '/api/demo/enter')) { req.resume(); return json(res, 429, { ok: false, error: 'Slow down a little.' }); }
-    const body = await readBody(req);
+    if (limited(req, '/api/demo/enter')) { req.resume(); return sendJson(res, 429, { ok: false, error: 'Slow down a little.' }); }
+    const body = await readJson(req, 4096).catch(() => null);
     const role = body && Object.hasOwn(DEMO_ROLES, body.role) ? DEMO_ROLES[body.role] : null;
-    if (!role) return json(res, 400, { ok: false, error: 'Pick a kid, Grandma or a parent.' });
+    if (!role) return sendJson(res, 400, { ok: false, error: 'Pick a kid, Grandma or a parent.' });
     const account = sqlite.prepare('SELECT email, role, status FROM accounts WHERE email=?').get(role.email);
-    if (!account || account.status !== 'approved') return json(res, 503, { ok: false, error: 'The demo is resetting. Try again in a moment.' });
+    if (!account || account.status !== 'approved') return sendJson(res, 503, { ok: false, error: 'The demo is resetting. Try again in a moment.' });
     const t = await sessToken(env, account.email);
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Set-Cookie': accountCookie(env, sqlite, account.email) });
-    res.end(JSON.stringify({ ok: true, email: account.email, status: 'approved', role: account.role, t, go: role.go }));
+    sendJson(res, 200, { ok: true, email: account.email, status: 'approved', role: account.role, t, go: role.go }, { 'Set-Cookie': accountCookie(env, sqlite, account.email) });
   }
 
   // The feed reports what it watched; the demo says thanks and keeps nothing, so one visitor's
   // watching never shows in "Who watched" or spends a shared kid's daily tape.
   async function watched(req, res, pathname) {
-    await readBody(req, 16384);
+    await readJson(req).catch(() => null);
     const who = viewer(req, sqlite, env);
-    if (!who) return json(res, 401, { ok: false, error: 'Log in to view this channel.' });
+    if (!who) return sendJson(res, 401, { ok: false, error: 'Log in to view this channel.' });
     const budget = env.watch && who.email ? env.watch.budgetFor(who.email) : null;
-    json(res, 200, pathname === '/api/view' ? { ok: true, viewId: 0, budget } : { ok: true, added: 0, budget });
+    sendJson(res, 200, pathname === '/api/view' ? { ok: true, viewId: 0, budget } : { ok: true, added: 0, budget });
   }
 
   function refuse(req, res, pathname) {
     req.resume();
     const error = REFUSALS.find(([pattern]) => pattern.test(pathname))?.[1] || CALM;
-    json(res, 403, { ok: false, demo: true, error });
+    sendJson(res, 403, { ok: false, demo: true, error });
   }
 
   // Runs before every other route. True when the demo answered the request.
   function handle(req, res, pathname) {
     const method = req.method === 'HEAD' ? 'GET' : req.method;
     if (pathname === '/api/demo') {
-      if (method !== 'GET') { req.resume(); json(res, 405, { ok: false, error: 'Method not allowed.' }); return true; }
-      json(res, 200, info());
+      if (method !== 'GET') { req.resume(); sendJson(res, 405, { ok: false, error: 'Method not allowed.' }); return true; }
+      sendJson(res, 200, info());
       return true;
     }
     if (pathname === '/api/demo/enter') {
-      if (method !== 'POST') { req.resume(); json(res, 405, { ok: false, error: 'Method not allowed.' }); return true; }
-      enter(req, res).catch(error => { console.error('Demo sign-in failed', error); if (!res.headersSent) json(res, 500, { ok: false, error: 'Something went wrong. Try again.' }); });
+      if (method !== 'POST') { req.resume(); sendJson(res, 405, { ok: false, error: 'Method not allowed.' }); return true; }
+      enter(req, res).catch(error => { console.error('Demo sign-in failed', error); if (!res.headersSent) sendJson(res, 500, { ok: false, error: 'Something went wrong. Try again.' }); });
       return true;
     }
     // A visitor's own sandbox, and the dashboard's kid routes it answers for the demo's parent.
@@ -442,13 +419,13 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
     if (pathname === '/api/notifications/unsubscribe') { refuse(req, res, pathname); return true; }
     if (method === 'GET' || method === 'OPTIONS') { sandboxes?.overlay(req, res, pathname); return false; }
     if (pathname === '/api/view' || pathname === '/api/view/beat') {
-      watched(req, res, pathname).catch(error => { console.error('Demo view failed', error); if (!res.headersSent) json(res, 500, { ok: false, error: 'Something went wrong.' }); });
+      watched(req, res, pathname).catch(error => { console.error('Demo view failed', error); if (!res.headersSent) sendJson(res, 500, { ok: false, error: 'Something went wrong.' }); });
       return true;
     }
     if (OPEN_WRITES.has(pathname)) {
       if (!limited(req, pathname)) return false;
       req.resume();
-      json(res, 429, { ok: false, error: 'Slow down a little.' });
+      sendJson(res, 429, { ok: false, error: 'Slow down a little.' });
       return true;
     }
     refuse(req, res, pathname);
@@ -461,22 +438,11 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
 
   // Wraps the static sender so every page carries the banner. Only the demo serves these two files'
   // tags; a normal install's pages are exactly as they are on disk.
-  function pages(sendFile, publicDir) {
-    // The same ?v= stamp static.mjs gives (re-read when the file changes), so both are cached like any asset.
-    const stamps = new Map();
-    const stamp = path => {
-      try {
-        const file = join(publicDir, '.' + path), key = String(statSync(file).mtimeMs);
-        if (stamps.get(path)?.key !== key) stamps.set(path, { key, value: `${path}?v=${sha256(readFileSync(file)).slice(0, 12)}` });
-        return stamps.get(path).value;
-      } catch { return path; }
-    };
-    // The make page, branded and stamped the way static.mjs does a page in public/.
-    const makePage = () => readFileSync(MAKE_PAGE, 'utf8')
-      .replace(/\{\{brand\.(\w+)\}\}/g, (token, name) => Object.hasOwn(BRAND_TOKENS, name) ? escapeHtml(BRAND_TOKENS[name]) : token)
-      .replace(ASSET_REFERENCE, (reference, attribute, quote, path) => `${attribute}${quote}${stamp(path)}${quote}`);
+  function pages(sendFile) {
+    // The make page and the banner tags are branded and stamped the way static.mjs does a page in public/.
+    const makePage = () => sendFile.stampHtml(readFileSync(MAKE_PAGE, 'utf8'));
     const served = (req, res, pathname) => {
-      const tags = `<link rel="stylesheet" href="${stamp(BANNER_STYLE)}">\n  <script type="module" src="${stamp(BANNER_SCRIPT)}"></script>\n`;
+      const tags = sendFile.stampHtml(`<link rel="stylesheet" href="${BANNER_STYLE}">\n  <script type="module" src="${BANNER_SCRIPT}"></script>\n`);
       const make = pathname === MAKE_PATH;
       const target = pathname === '/' ? '/index.html' : PRETTY.has(pathname) ? `${pathname}/index.html` : pathname;
       if (!['GET', 'HEAD'].includes(req.method) || (!make && !target.endsWith('.html'))) return sendFile(req, res, pathname);
@@ -492,7 +458,6 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
       res.writeHead(200, { ...headers, 'Content-Length': String(body.length) });
       res.end(req.method === 'HEAD' ? undefined : body);
     };
-    served.pageHtml = sendFile.pageHtml;
     return served;
   }
 

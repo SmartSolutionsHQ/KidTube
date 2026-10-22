@@ -4,7 +4,7 @@ import http from 'node:http';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createStatic, sendFile } from '../server/static.mjs';
+import { createStatic } from '../server/static.mjs';
 import { compressAssets } from '../scripts/compress-assets.mjs';
 import { BRAND_NAME, ENDORSEMENT } from '../server/brand.mjs';
 
@@ -16,7 +16,8 @@ test('static delivery compresses text, revalidates caches, and preserves video b
   writeFileSync(join(directory, 'empty.txt'), '');
   const compression = await compressAssets(directory);
   assert.ok(compression.brotliBytes < compression.rawBytes / 4);
-  const server = http.createServer((req, res) => sendFile(directory, req, res, new URL(req.url, 'http://localhost').pathname));
+  const sendFile = createStatic(directory);
+  const server = http.createServer((req, res) => sendFile(req, res, new URL(req.url, 'http://localhost').pathname));
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   t.after(async () => {
     server.closeAllConnections();

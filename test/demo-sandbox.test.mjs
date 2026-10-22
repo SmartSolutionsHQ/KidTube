@@ -5,8 +5,7 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { DatabaseSync } from 'node:sqlite';
@@ -14,44 +13,12 @@ import { test } from 'node:test';
 import { renderSpec } from '../server/badge.mjs';
 import { CREATED_BASE_ID, SANDBOX_COOKIE, SANDBOX_LIMITS, SANDBOX_NOTE, createSandboxes } from '../server/demo-sandbox.mjs';
 import { migrate } from '../server/schema.mjs';
-import { writeSnapshot } from '../scripts/demo-seed.mjs';
-import { ROOT } from './helpers.mjs';
+import { ROOT, cleanEnv, dump, seededDemo, startServer } from './helpers.mjs';
 import { startFamily } from './family-fixture.mjs';
 
-const scratch = t => {
-  const dir = mkdtempSync(join(tmpdir(), 'kidtube-sandbox-'));
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
-  return dir;
-};
-
-async function seeded(t) {
-  const dir = scratch(t);
-  const dataDir = join(dir, 'data');
-  mkdirSync(dataDir);
-  await writeSnapshot(join(dataDir, 'demo-snapshot'), { render: false });
-  return { dir, dataDir, database: join(dataDir, 'kidtube.sqlite') };
-}
-
-async function startDemo(t, dir, env = {}) {
-  const base = { ...process.env };
-  for (const key of ['DATABASE_PATH', 'DATA_DIR', 'DEMO_MODE', 'DEMO_RESET_MINUTES', 'DEMO_SNAPSHOT_DIR', 'SITE_URL', 'MAIL_MODE']) delete base[key];
-  const child = spawn(process.execPath, [join(ROOT, 'server/index.mjs')], {
-    cwd: dir, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...base, PORT: '0', HOST: '127.0.0.1', PUBLIC_DIR: join(ROOT, 'public'), DATABASE_PATH: join(dir, 'data/kidtube.sqlite'), DEMO_MODE: '1', ...env },
-  });
-  let logs = '';
-  child.stderr.on('data', chunk => { logs += chunk; });
-  t.after(async () => { child.kill(); await once(child, 'exit').catch(() => {}); });
-  const port = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('Startup timeout ' + logs)), 10000);
-    child.stdout.on('data', chunk => {
-      const match = /listening on (\d+)/.exec(String(chunk));
-      if (match) { clearTimeout(timer); resolve(match[1]); }
-    });
-    child.once('exit', () => { clearTimeout(timer); reject(new Error(logs)); });
-  });
-  return `http://127.0.0.1:${port}`;
-}
+// The demo server in a scratch folder, as `DEMO_MODE=1 npm start` runs it; resolves to its origin.
+const startDemo = async (t, dir, env = {}) =>
+  (await startServer(t, { cwd: dir, env: cleanEnv({ DATABASE_PATH: join(dir, 'data/kidtube.sqlite'), DEMO_MODE: '1', ...env }) })).origin;
 
 // One browser: its own cookies, and the session the page keeps in localStorage.
 function visitor(origin) {
@@ -81,14 +48,6 @@ function visitor(origin) {
     return body;
   }
   return { call, enter, jar, get session() { return session; } };
-}
-
-function dump(sqlite) {
-  const out = {};
-  for (const { name } of sqlite.prepare("SELECT name FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all()) {
-    out[name] = sqlite.prepare(`SELECT * FROM "${name}"`).all().map(row => JSON.stringify(row, (key, value) => typeof value === 'bigint' ? String(value) : value)).sort();
-  }
-  return out;
 }
 
 function folderHash(dir) {
@@ -123,7 +82,7 @@ test('without DEMO_MODE there is no sandbox: no routes, no cookie, no overlay', 
 });
 
 test('the make page exists only in demo mode, under the page policy and with the banner', async t => {
-  const { dir } = await seeded(t);
+  const { dir } = await seededDemo(t);
   const origin = await startDemo(t, dir);
   const response = await fetch(origin + '/demo/make');
   assert.equal(response.status, 200);
@@ -136,7 +95,7 @@ test('the make page exists only in demo mode, under the page policy and with the
 });
 
 test('one visitor\'s changes reach only that visitor, and nothing is written to the family\'s tables or files', async t => {
-  const { dir, dataDir, database } = await seeded(t);
+  const { dir, dataDir, database } = await seededDemo(t);
   const origin = await startDemo(t, dir);
   const db = new DatabaseSync(database);
   t.after(() => db.close());
@@ -226,7 +185,7 @@ test('one visitor\'s changes reach only that visitor, and nothing is written to 
 });
 
 test('caps, text rules and rate limits, on the server', async t => {
-  const { dir } = await seeded(t);
+  const { dir } = await seededDemo(t);
   const origin = await startDemo(t, dir);
   const a = visitor(origin);
   await a.enter('parent');
@@ -288,7 +247,7 @@ test('caps, text rules and rate limits, on the server', async t => {
 });
 
 test('badge specs are checked exactly like the real badge route, and free text stays text', async t => {
-  const { dir } = await seeded(t);
+  const { dir } = await seededDemo(t);
   const origin = await startDemo(t, dir);
   const a = visitor(origin);
   await a.enter('parent');
@@ -329,7 +288,7 @@ test('badge specs are checked exactly like the real badge route, and free text s
 });
 
 test('a reset clears every visitor\'s sandbox, even one made by the reset script', async t => {
-  const { dir, database } = await seeded(t);
+  const { dir, database } = await seededDemo(t);
   const origin = await startDemo(t, dir);
   const a = visitor(origin);
   await a.enter('parent');

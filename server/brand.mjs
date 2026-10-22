@@ -9,3 +9,9 @@ export const DEFAULT_ACCENT = '#FF5C2B';
 export const BRAND_TOKENS = Object.freeze({
   name: BRAND_NAME, wordmark: WORDMARK, tagline: TAGLINE, endorsement: ENDORSEMENT, accent: DEFAULT_ACCENT,
 });
+
+export const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Fills the {{brand.<name>}} tokens in a page; an unknown token is left as it is.
+export const fillBrand = html => html.replace(/\{\{brand\.(\w+)\}\}/g,
+  (token, name) => Object.hasOwn(BRAND_TOKENS, name) ? escapeHtml(BRAND_TOKENS[name]) : token);

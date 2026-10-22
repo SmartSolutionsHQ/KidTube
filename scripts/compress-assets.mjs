@@ -1,3 +1,5 @@
+// Writes .br and .gz copies next to public/'s text files so static.mjs can serve them precompressed.
+// The Docker build runs it; `node scripts/compress-assets.mjs [folder]` does the same by hand.
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
