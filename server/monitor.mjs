@@ -667,6 +667,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
     sqlite.exec('BEGIN IMMEDIATE');
     try {
       for (const sql of ['DELETE FROM likes WHERE email=?', 'DELETE FROM comments WHERE email=?', 'DELETE FROM views WHERE viewer=?',
+        'DELETE FROM reactions WHERE email=?', 'DELETE FROM watch_bonus WHERE email=?',
         "DELETE FROM video_notification_deliveries WHERE email=? AND status<>'sent'", 'DELETE FROM video_email_preferences WHERE email=?',
         'DELETE FROM guest_codes WHERE creator=? AND redeemed IS NULL', "DELETE FROM activity WHERE kind='seen' AND subject=?",
         'DELETE FROM accounts WHERE email=?']) sqlite.prepare(sql).run(email);

@@ -4,6 +4,10 @@
 import { ACCENTS, accentCheck, accentName, addressNotes } from '/setup/helpers.js';
 import { loadRegistry } from '/js/shell/themes.js';
 import { el, button, primary, field, check, errorLine, setBusy, uid } from './dom.js';
+import { mountSlot } from './slots.js';
+
+// The family-settings slot mounted by the latest draw; a redraw ends it first.
+let disposeFamily = () => {};
 
 const LOCKED_HINT = 'Set on the server, so it can\'t be changed here.';
 
@@ -18,6 +22,7 @@ function radios(name, legend, options, value, locked) {
 }
 
 export async function render(main, ctx) {
+  disposeFamily();
   const [data, registry] = await Promise.all([ctx.api.get('/api/admin/settings'), loadRegistry().catch(() => ({ themes: [] }))]);
   const entry = key => data.settings.find(item => item.key === key) || { value: '', locked: false };
   const value = key => entry(key).value;
@@ -182,6 +187,7 @@ export async function render(main, ctx) {
     el('div', { class: 'kd-buttons' }, confirm));
   });
 
+  const familySlot = el('div', { class: 'kd-section' });
   main.replaceChildren(
     el('div', { class: 'kd-head' }, el('h1', { class: 'kp-title', tabindex: '-1' }, 'Settings'),
       el('p', { class: 'kp-lead' }, 'How the family\'s site looks and who can use it.')),
@@ -189,5 +195,7 @@ export async function render(main, ctx) {
     el('section', { class: 'kd-section kp-panel kd-upload' }, el('h2', { class: 'kp-heading' }, 'Web address'),
       el('p', { class: 'kp-small' }, `Now: ${current}`),
       locked('site_url') ? el('p', { class: 'kp-note' }, `${LOCKED_HINT} Change SITE_URL where the app is installed.`)
-        : el('div', { class: 'kp-stack-tight' }, field('New address', address, 'The full address people type, like https://videos.example.com.'), el('div', {}, checkAddress), notes, moveError)));
+        : el('div', { class: 'kp-stack-tight' }, field('New address', address, 'The full address people type, like https://videos.example.com.'), el('div', {}, checkAddress), notes, moveError)),
+    familySlot);
+  disposeFamily = mountSlot(familySlot, 'family-settings', { api: ctx.api, say: ctx.say, refresh: () => render(main, ctx), role: ctx.role });
 }

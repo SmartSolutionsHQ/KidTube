@@ -93,7 +93,7 @@ test('every dashboard route is for parents, and some for the owner only', { time
   assert.equal(summary.me.role, 'admin');
   assert.equal(summary.counts.people, null, 'a co-parent does not see sign-up requests');
   assert.deepEqual(summary.kids.map(kid => kid.slug), ['milo', 'juni']);
-  assert.equal(summary.features.views, false, 'the v2 views table has no watch history route yet');
+  assert.equal(summary.features.views, true, 'the launch story\'s views table brings watch history');
 });
 
 test('the dashboard page turns kid and viewer accounts away', { timeout: 60000 }, async t => {
@@ -189,7 +189,9 @@ test('removing a person takes their hearts, comments, history and unused codes w
   const email = VIEWER.email;
   f.db.prepare('INSERT INTO likes (clip_id,email,created) VALUES (?,?,0)').run('live', email);
   f.db.prepare("INSERT INTO comments (id,clip_id,email,name,body,created) VALUES ('c1','live',?,'Gran','Hi',0)").run(email);
-  f.db.prepare('INSERT INTO views (clip_id,viewer,ts) VALUES (?,?,0)').run('live', email);
+  f.db.prepare('INSERT INTO views (clip_id,channel_id,viewer,started,updated) VALUES (?,1,?,0,0)').run('live', email);
+  f.db.prepare("INSERT INTO reactions (clip_id,email,kind,created) VALUES ('live',?,'wow',0)").run(email);
+  f.db.prepare("INSERT INTO watch_bonus (email,day,minutes,actor,created) VALUES (?,'2026-10-22',15,'parent',0)").run(email);
   f.db.prepare('INSERT INTO video_email_preferences (email,unsubscribed) VALUES (?,0)').run(email);
   await fetch(f.origin + '/api/me', { headers: { cookie: f.as.viewer.cookie } });
   assert.equal(f.db.prepare("SELECT COUNT(*) n FROM activity WHERE kind='seen' AND subject=?").get(email).n, 1, 'last seen is noted');
@@ -197,7 +199,7 @@ test('removing a person takes their hearts, comments, history and unused codes w
   assert.ok(people.people.find(person => person.email === email).lastSeen > 0);
   assert.equal((await f.call('parent', '/api/admin/people/delete', { target: PARENT.email })).status, 400, 'not yourself');
   await f.ok('parent', '/api/admin/people/delete', { target: email });
-  for (const [table, column] of [['accounts', 'email'], ['likes', 'email'], ['comments', 'email'], ['views', 'viewer'], ['video_email_preferences', 'email']]) {
+  for (const [table, column] of [['accounts', 'email'], ['likes', 'email'], ['comments', 'email'], ['views', 'viewer'], ['reactions', 'email'], ['watch_bonus', 'email'], ['video_email_preferences', 'email']]) {
     assert.equal(f.db.prepare(`SELECT COUNT(*) n FROM ${table} WHERE ${column}=?`).get(email).n, 0, table);
   }
   assert.equal(f.db.prepare("SELECT COUNT(*) n FROM activity WHERE kind='seen' AND subject=?").get(email).n, 0);

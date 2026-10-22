@@ -2,7 +2,7 @@
 // extension is logged and skipped, so it can never take the dashboard down with it.
 import registered from './extensions.js';
 
-export const SLOTS = ['clip-actions', 'person-settings', 'kid-settings'];
+export const SLOTS = ['clip-actions', 'person-settings', 'kid-settings', 'family-settings'];
 
 export function mountSlot(host, slot, ctx, list = registered) {
   if (!SLOTS.includes(slot)) throw new Error(`Unknown dashboard slot ${slot}`);

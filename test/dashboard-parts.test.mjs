@@ -35,9 +35,10 @@ function fakeHost() {
   return { ownerDocument: doc, children: [], append(node) { this.children.push(node); } };
 }
 
-test('extension slots: empty by default, mounted in order, cleaned up, and a broken one is skipped', () => {
-  assert.deepEqual(extensions, [], 'no extensions ship with M7');
-  assert.deepEqual(SLOTS, ['clip-actions', 'person-settings', 'kid-settings']);
+test('extension slots: the launch story fills each slot once, mounted in order, cleaned up, and a broken one is skipped', () => {
+  assert.deepEqual(SLOTS, ['clip-actions', 'person-settings', 'kid-settings', 'family-settings']);
+  assert.deepEqual(extensions.map(entry => entry.slot), SLOTS, 'one launch-story control per slot');
+  assert.ok(extensions.every(entry => typeof entry.module.mount === 'function'));
   const calls = [];
   const list = [
     { slot: 'clip-actions', module: { mount(host, ctx) { calls.push(['a', ctx.clip.id, host.dataset.slot]); return () => calls.push(['a gone']); } } },
