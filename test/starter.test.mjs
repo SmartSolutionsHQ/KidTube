@@ -122,6 +122,9 @@ test('generator copies a blank installation and refuses an existing destination'
     assert.equal(existsSync(join(target, 'data')), false);
     assert.ok(readFileSync(join(target, '.gitignore'), 'utf8').includes('data/'));
     assert.ok(existsSync(join(target, 'docs/OPERATIONS.md')));
+    // Every page the README links to comes along, so links work in a family's copy too.
+    assert.ok(existsSync(join(target, 'CONTRIBUTING.md')));
+    assert.ok(existsSync(join(target, 'docs/images')));
     assert.equal(existsSync(join(target, 'docs/plan')), false);
     assert.equal(existsSync(join(target, 'docs/superpowers')), false);
     assert.ok(existsSync(join(target, 'scripts/setup.mjs')));

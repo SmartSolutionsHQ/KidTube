@@ -38,7 +38,7 @@ export async function headerStaff(env, req) {
 
 const unb64u = value => { try { return Buffer.from(String(value || ''), 'base64url').toString('utf8'); } catch { return ''; } };
 
-// Parents and Family. POSTs carry the dashboard session in the body like every admin route; reads take
+// Parents and co-parents. POSTs carry the dashboard session in the body like every admin route; reads take
 // X-Kid-Email / X-Kid-Token headers, the older ?e=<base64url email>&t=, or a staff cookie.
 export async function staffFor(env, req, who, body) {
   if (body) return asStaff(env, String(body.email || '').trim().toLowerCase(), String(body.t || ''));

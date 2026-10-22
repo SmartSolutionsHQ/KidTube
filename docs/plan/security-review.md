@@ -23,7 +23,7 @@ about children's data. **Medium** means a privacy promise not kept, or a weaknes
 ## Fix status (second pass, same branch)
 
 All findings were fixed on this branch except where marked open. Each fix has a regression test in
-`test/security-review.test.mjs` that fails on the code before it and passes now. The suite went from 259 to 278
+`test/security.test.mjs` that fails on the code before it and passes now. The suite went from 259 to 278
 tests in the second pass, and from 292 (after merging the install-test and demo-mode work) to 298 in the third
 pass, which fixed L10, L11, L12 and the M2 residual.
 The scratch-install reproductions were re-run against a fresh install outside the repo.
@@ -57,7 +57,7 @@ file caching, address retention, removal).
 
 ### H1. The documented nginx setup lets anyone bypass every rate limit, so guest codes and kid passwords can be brute-forced
 
-**Status:** Fixed in `293641d`. Every limit counts `clientIp()`: the last `X-Forwarded-For` entry, with an IPv6 /64 as one address. Logins pause after 10 wrong passwords per account in 15 minutes. Guest codes are 6 characters from 32 symbols (about 1.07 billion), and 30 wrong codes in 10 minutes pause redeeming for everyone. INSTALL.md needed no change, because the append form is now safe. Test: `test/security-review.test.mjs` (H1, H1/M2). Re-run on a fresh install: the same rotating-prefix tries now give 429, and the right kid password waits too.
+**Status:** Fixed in `293641d`. Every limit counts `clientIp()`: the last `X-Forwarded-For` entry, with an IPv6 /64 as one address. Logins pause after 10 wrong passwords per account in 15 minutes. Guest codes are 6 characters from 32 symbols (about 1.07 billion), and 30 wrong codes in 10 minutes pause redeeming for everyone. INSTALL.md needed no change, because the append form is now safe. Test: `test/security.test.mjs` (H1, H1/M2). Re-run on a fresh install: the same rotating-prefix tries now give 429, and the right kid password waits too.
 
 - **Where:** `server/index.mjs:87` and `server/index.mjs:124` (the limiter key and `CF-Connecting-IP` are the
   whole `X-Forwarded-For` string); `server/api.js:254` (the guest-code limit keys on that header);

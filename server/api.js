@@ -6,7 +6,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { KID_PASSWORD_MIN, PASSWORD_MAX, PASSWORD_MIN, passwordRecord, passwordMatches } from './passwords.mjs';
 import { sendMail } from './mail.mjs';
-import { BRAND_NAME, WORDMARK, escapeHtml } from './brand.mjs';
+import { BRAND_NAME, DEFAULT_ACCENT, WORDMARK, escapeHtml } from './brand.mjs';
 import { KID_DOMAIN, kidEmail } from './family.mjs';
 import { CLIP_ACCESS_SQL, canPlayClip, canViewChannel, isClipId, isStaff } from './channels.mjs';
 import { approveClip, rejectClip } from './publish.mjs';
@@ -138,10 +138,10 @@ async function approvalMail(env, email, first) {
   const who = escapeHtml(first || 'Viewer');
   const site = env.SITE_URL;
   const html = `<div style="font-family:Arial,sans-serif;background:#0B0C10;color:#F7F4EC;padding:26px;border-radius:10px">
-    <p style="color:#3265FF;letter-spacing:.3em;font-size:11px;margin:0 0 10px">${WORDMARK}</p>
+    <p style="color:${DEFAULT_ACCENT};letter-spacing:.3em;font-size:11px;margin:0 0 10px">${WORDMARK}</p>
     <h2 style="margin:0 0 12px">You're in, ${who}!</h2>
     <p style="margin:0 0 16px;line-height:1.5">The channel owner approved your account. Come back and log in with the email and password you picked:</p>
-    <p style="margin:0 0 10px"><a href="${site}" style="background:#3265FF;color:#0B0C10;padding:10px 18px;border-radius:4px;text-decoration:none;font-weight:bold">Enter the tube</a></p>
+    <p style="margin:0 0 10px"><a href="${site}" style="background:${DEFAULT_ACCENT};color:#0B0C10;padding:10px 18px;border-radius:4px;text-decoration:none;font-weight:bold">Enter the tube</a></p>
     <p style="color:#A6A0AE;font-size:11px;margin:14px 0 0">If you did not sign up for ${BRAND_NAME} you can ignore this email.</p></div>`;
   const text = "You're in, " + (first || 'Viewer') + "! The channel owner approved your " + BRAND_NAME + " account. Log in at " + site;
   await sendMail(env, { email: email, name: first || undefined }, "You're approved for " + BRAND_NAME, html, text);
@@ -743,7 +743,7 @@ function PAGE(msg, code) {
   return new Response(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${BRAND_NAME}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#05060A;color:#F7F4EC;
 font-family:'Inter Tight',system-ui,sans-serif}div{max-width:420px;padding:30px;border:1px solid rgba(247,244,236,.25);border-radius:16px;
-background:rgba(255,255,255,.06)}p.k{color:#3265FF;letter-spacing:.3em;font-size:11px;margin:0 0 10px;font-weight:600}</style></head>
+background:rgba(255,255,255,.06)}p.k{color:${DEFAULT_ACCENT};letter-spacing:.3em;font-size:11px;margin:0 0 10px;font-weight:600}</style></head>
 <body><div><p class="k">${WORDMARK}</p><p style="margin:0;line-height:1.5">${escapeHtml(msg)}</p></div></body></html>`,
     { status: code, headers: { 'content-type': 'text/html; charset=utf-8' } });
 }

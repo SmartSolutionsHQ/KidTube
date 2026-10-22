@@ -1875,12 +1875,6 @@ body[data-mode="immersive"][data-sheet-open="1"] .tz-reel {
   text-transform: uppercase;
 }
 
-#tz-guest-prompt a {
-  color: var(--tz-paper);
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-
 #tz-guest-prompt button {
   min-height: 44px;
   padding: 0 16px;
@@ -1891,6 +1885,12 @@ body[data-mode="immersive"][data-sheet-open="1"] .tz-reel {
   letter-spacing: .14em;
   text-transform: uppercase;
   cursor: pointer;
+}
+
+#tz-guest-prompt .tz-guest-signup {
+  border-color: var(--tz-flare);
+  background: var(--tz-flare);
+  color: var(--tz-ink);
 }
 
 /* the upload name card (feed.js askName): the canvas's "What's it called?" screen, with the time

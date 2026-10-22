@@ -47,16 +47,20 @@ try {
   await migrate(sqlite);
   sqlite.prepare('INSERT INTO accounts(email,first,last,salt,hash,status,role,created) VALUES (?,?,?,?,?,?,?,?)')
     .run(email, 'Parent', 'Owner', record.salt, record.hash, 'approved', 'super', Date.now());
-  createSettings(sqlite, {}).set('setup_complete', true, email);
+  const settings = createSettings(sqlite, {});
+  settings.set('setup_complete', true, email);
+  // Saved in the database, not .env: a value in .env locks that setting, and the parent should be able to
+  // turn email on and change this address from the dashboard later.
+  settings.set('notify_email', email, email);
   sqlite.close();
   chmodSync(database, 0o600);
+  // SITE_URL stays in .env because Caddy reads it there for HTTPS.
   const env = [
     '# Private installation settings. Do not commit this file.', `SITE_URL=${site.origin}`, `SIGN_SECRET=${secret}`,
-    'MAIL_MODE=disabled', 'BREVO_API_KEY=', `NOTIFY_EMAIL=${email}`, 'SENDER_EMAIL=', 'PORT=3000', 'HOST=127.0.0.1',
-    'PUID=1000', 'PGID=1000', 'TRUST_PROXY=0', '',
+    'PORT=3000', 'HOST=127.0.0.1', 'PUID=1000', 'PGID=1000', 'TRUST_PROXY=0', '',
   ].join('\n');
   writeFileSync('.env', env, { flag: 'wx', mode: 0o600 });
   if (generated) console.log('\nSave this generated parent password in your password manager:\n' + password + '\n');
   console.log('Setup complete. Run npm start, open ' + site.origin + ', then sign in and visit /parents.');
-  console.log('For Docker/HTTPS and optional email, follow README.md before starting the container.');
+  console.log('For Docker and HTTPS, see docs/INSTALL.md. Email can be turned on later in the dashboard\'s Settings.');
 } finally { rl.close(); }

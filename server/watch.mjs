@@ -1,7 +1,7 @@
 // End of tape: the watch log and honest daily budgets. The feed starts a view after a few seconds of play
 // and reports watched seconds every 15 s (and on pause, swipe and hide); the server never credits more than
 // the wall time since the last report plus a little slack. A budgeted account whose tape for the family's
-// day is spent gets its video refused until local midnight. Parents, Family and guests are never limited.
+// day is spent gets its video refused until local midnight. Parents, co-parents and guests are never limited.
 // The log stores who, what, when and how long: no IP address, no user agent. Rows older than
 // views_retention_days are pruned at boot and daily. GET /api/admin/views reads it for "Who watched".
 import { HttpError, answer, rateLimit, readJson, sendJson, staffFor } from './jsonio.mjs';

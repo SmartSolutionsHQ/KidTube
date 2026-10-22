@@ -8,7 +8,7 @@ import { lockedSlideMarkup, lockedThumbMarkup, runUnlock, wantsUnlock, watchSeal
 import { attachReactions, chipsMarkup, railButtonMarkup } from '/js/shell/reactions.js';
 import { attachWatch } from '/js/shell/watch.js';
 import { DEEP_LINK } from '/js/shell/route.mjs';
-import { readSession, writeSession } from '/js/shell/auth-dialog.js';
+import { openAuth, readSession, writeSession } from '/js/shell/auth-dialog.js';
 var familyZone = () => window.__ktChannel?.timezone || undefined;
 var serverBudget = null;
 // A spent daily tape: the slides carry no video at all, so nothing asks for a file the server will refuse.
@@ -931,12 +931,14 @@ function guestPrompt() {
   wrap.innerHTML = `<div class="tz-guest-card">
     <h2>Guest access is view-only</h2>
     <p>To like or comment, you need to register for an account.</p>
-    <p><a href="/?register=1">Ask for an account</a></p>
+    <p><button type="button" class="tz-guest-signup" data-guest-signup>Ask for an account</button></p>
     <button type="button" data-guest-close>Keep watching</button>
   </div>`;
   const close = () => { wrap.remove(); document.removeEventListener("keydown", escape); };
   const escape = (event) => { if (event.key === "Escape") close(); };
   wrap.querySelector("[data-guest-close]").addEventListener("click", close);
+  // The sign-up form is the same card the front door uses; a parent still approves the request.
+  wrap.querySelector("[data-guest-signup]").addEventListener("click", () => { close(); openAuth({ mode: "signup" }); });
   wrap.addEventListener("click", event => { if (event.target === wrap) close(); });
   document.addEventListener("keydown", escape);
   document.body.appendChild(wrap);
