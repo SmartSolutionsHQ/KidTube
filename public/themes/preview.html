@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Splash themes · {{brand.name}}</title>
+<link rel="stylesheet" href="/css/fonts.css">
+<link rel="stylesheet" href="/themes/preview.css">
+<script type="module" src="/themes/preview.js"></script>
+</head>
+<body>
+<header class="pv-head">
+  <p class="pv-brand"><strong>{{brand.name}}</strong> · Splash themes</p>
+  <p class="pv-sub">Playground for theme makers. Names here are invented.</p>
+</header>
+
+<div class="pv-layout">
+  <form class="pv-controls" id="controls" autocomplete="off">
+    <fieldset>
+      <legend>Theme</legend>
+      <label class="pv-field">Theme
+        <select id="theme" name="theme"></select>
+      </label>
+      <div class="pv-row" role="radiogroup" aria-label="Mode">
+        <label class="pv-chip"><input type="radio" name="mode" value="channel" checked> Kid channel</label>
+        <label class="pv-chip"><input type="radio" name="mode" value="gate"> Family gate</label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Channel</legend>
+      <label class="pv-field">Name
+        <input id="title" name="title" value="Milo Tapes" maxlength="60">
+      </label>
+      <label class="pv-field">Kicker <span class="pv-hint">optional</span>
+        <input id="kicker" name="kicker" maxlength="60" placeholder="Theme default">
+      </label>
+      <label class="pv-field">Line
+        <input id="subtitle" name="subtitle" value="The big build" maxlength="120">
+      </label>
+      <label class="pv-field pv-short">Channel number
+        <input id="number" name="number" type="number" min="1" max="99" value="1">
+      </label>
+      <div class="pv-field">
+        <span>Accent</span>
+        <div class="pv-swatches" id="swatches" role="radiogroup" aria-label="Accent"></div>
+        <label class="pv-row pv-custom">Custom <input id="accent" name="accent" type="color" value="#ff5c2b"></label>
+      </div>
+      <label class="pv-check"><input id="logo" name="logo" type="checkbox"> Use a badge image</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Viewer</legend>
+      <label class="pv-check"><input id="reduced" name="reduced" type="checkbox"> Reduced motion</label>
+      <label class="pv-check"><input id="sound" name="sound" type="checkbox" checked> Sound allowed</label>
+      <label class="pv-check"><input id="lowpower" name="lowpower" type="checkbox"> Pretend this is a low-power phone</label>
+      <label class="pv-check"><input id="force" name="force" type="checkbox"> Force heavy themes anyway</label>
+      <label class="pv-check"><input id="always" name="always" type="checkbox"> Always enter this channel (skip intro)</label>
+    </fieldset>
+
+    <div class="pv-actions">
+      <button type="button" class="pv-primary" id="play">Play full screen</button>
+      <button type="button" id="pause-toggle">Play the test video</button>
+    </div>
+
+    <section class="pv-log" aria-live="polite">
+      <h2>Events</h2>
+      <ol id="log"></ol>
+    </section>
+  </form>
+
+  <main class="pv-main">
+    <div class="pv-tabs" role="tablist" aria-label="View">
+      <button type="button" role="tab" id="tab-stage" aria-selected="true" aria-controls="stage">Stage</button>
+      <button type="button" role="tab" id="tab-gallery" aria-selected="false" aria-controls="gallery">Gallery</button>
+    </div>
+
+    <section id="stage" class="pv-stage" role="tabpanel" aria-labelledby="tab-stage">
+      <figure class="pv-device pv-phone">
+        <div id="frame-phone"></div>
+        <figcaption>Phone · 390 × 844</figcaption>
+      </figure>
+      <figure class="pv-device pv-wide">
+        <div id="frame-wide"></div>
+        <figcaption>Desktop · 1280 × 800</figcaption>
+      </figure>
+      <figure class="pv-device pv-feed">
+        <div class="pv-feed-frame">
+          <section class="tz-slide" data-active="1">
+            <div class="tz-slot"><video id="test-video" playsinline muted></video></div>
+          </section>
+        </div>
+        <figcaption>Pause accent · a feed slide with a test video. Pause it to see the theme's pause screen.</figcaption>
+      </figure>
+    </section>
+
+    <section id="gallery" class="pv-gallery" role="tabpanel" aria-labelledby="tab-gallery" hidden>
+      <p class="pv-note">Every theme, mounted live with ctx.preview set. Click one to pick it.</p>
+      <div id="gallery-root"></div>
+    </section>
+  </main>
+</div>
+</body>
+</html>

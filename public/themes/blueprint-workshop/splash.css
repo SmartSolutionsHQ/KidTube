@@ -1,0 +1,213 @@
+/* Blueprint Workshop: the original starter look (blue grid paper, Arial Black offset title,
+   yellow stamp, block button), scoped to the host. */
+[data-kt-theme="blueprint-workshop"] {
+  --bw-accent: #FFE14F;
+  --bw-ink: #0B0C10;
+  --bw-blue: #2458FF;
+  --bw-deep: #001AB4;
+  color: #FFFFFF;
+  font-family: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+[data-kt-theme="blueprint-workshop"] .bw-root {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #080D1B;
+}
+[data-kt-theme="blueprint-workshop"] .bw-sheet {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background:
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.16) 0, rgba(255, 255, 255, 0.16) 1px, transparent 1px, transparent 36px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.16) 0, rgba(255, 255, 255, 0.16) 1px, transparent 1px, transparent 36px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.06) 0, rgba(255, 255, 255, 0.06) 1px, transparent 1px, transparent 9px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.06) 0, rgba(255, 255, 255, 0.06) 1px, transparent 1px, transparent 9px),
+    radial-gradient(ellipse at 80% 20%, #3A6BFF, var(--bw-blue) 60%);
+}
+[data-kt-theme="blueprint-workshop"] .bw-ruler {
+  position: absolute;
+  background-repeat: repeat;
+  opacity: 0.8;
+}
+[data-kt-theme="blueprint-workshop"] .bw-ruler-top {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 14px;
+  background-image:
+    repeating-linear-gradient(90deg, #FFFFFF 0, #FFFFFF 1px, transparent 1px, transparent 36px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.7) 0, rgba(255, 255, 255, 0.7) 1px, transparent 1px, transparent 9px);
+  background-size: 100% 14px, 100% 6px;
+  background-repeat: no-repeat;
+}
+[data-kt-theme="blueprint-workshop"] .bw-ruler-left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 14px;
+  background-image:
+    repeating-linear-gradient(0deg, #FFFFFF 0, #FFFFFF 1px, transparent 1px, transparent 36px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.7) 0, rgba(255, 255, 255, 0.7) 1px, transparent 1px, transparent 9px);
+  background-size: 14px 100%, 6px 100%;
+  background-repeat: no-repeat;
+}
+[data-kt-theme="blueprint-workshop"] .bw-corner,
+[data-kt-theme="blueprint-workshop"] .bw-fig {
+  position: absolute;
+  margin: 0;
+  font: 500 clamp(9px, 2.2cqmin, 12px) 'DM Mono', ui-monospace, Menlo, monospace;
+  letter-spacing: 0.14em;
+  color: rgba(255, 255, 255, 0.82);
+}
+[data-kt-theme="blueprint-workshop"] .bw-corner {
+  top: clamp(24px, 5cqmin, 40px);
+  right: clamp(20px, 5cqmin, 44px);
+}
+[data-kt-theme="blueprint-workshop"] .bw-fig {
+  bottom: clamp(20px, 4.5cqmin, 36px);
+  left: clamp(28px, 6cqmin, 52px);
+}
+
+[data-kt-theme="blueprint-workshop"] .bw-stage {
+  position: absolute;
+  left: clamp(28px, 8cqw, 140px);
+  right: clamp(24px, 8cqw, 140px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: clamp(14px, 2.4cqmin, 22px);
+  max-width: 720px;
+}
+[data-kt-theme="blueprint-workshop"] .bw-eyebrow {
+  margin: 0;
+  font: 500 clamp(10px, 2.6cqw, 13px)/1.5 'DM Mono', ui-monospace, Menlo, monospace;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--bw-accent);
+  animation: kt-blueprint-workshop-slide 0.6s 0.05s ease-out both;
+}
+[data-kt-theme="blueprint-workshop"] .bw-title {
+  margin: 0;
+  max-width: 100%;
+  font-family: 'Arial Black', 'Arial Bold', 'Inter Tight', 'Helvetica Neue', sans-serif;
+  font-weight: 900;
+  font-size: clamp(40px, min(11.5cqw, 12cqh), 112px);
+  line-height: 0.95;
+  letter-spacing: -0.04em;
+  text-transform: uppercase;
+  overflow-wrap: anywhere;
+  color: #FFFFFF;
+  text-shadow: 5px 5px 0 var(--bw-deep);
+  animation: kt-blueprint-workshop-slide 0.6s 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+}
+[data-kt-theme="blueprint-workshop"] .bw-pencil {
+  width: min(320px, 70%);
+  height: 14px;
+  margin-top: -6px;
+  overflow: visible;
+}
+[data-kt-theme="blueprint-workshop"] .bw-pencil path {
+  fill: none;
+  stroke: var(--bw-accent);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  vector-effect: non-scaling-stroke;
+  animation: kt-blueprint-workshop-draw 0.7s 0.55s ease-out both;
+}
+[data-kt-theme="blueprint-workshop"] .bw-line {
+  margin: 0;
+  max-width: 34ch;
+  font-size: clamp(15px, 3.6cqw, 19px);
+  line-height: 1.45;
+  color: #DCE4F5;
+  animation: kt-blueprint-workshop-slide 0.6s 0.3s ease-out both;
+}
+[data-kt-theme="blueprint-workshop"] .bw-stamp {
+  margin: 4px 0 0 clamp(40px, 18cqw, 160px);
+  padding: 8px 12px;
+  border: 3px solid var(--bw-accent);
+  color: var(--bw-accent);
+  font-family: 'Arial Black', 'Arial Bold', 'Inter Tight', sans-serif;
+  font-weight: 900;
+  font-size: clamp(13px, 3.4cqw, 18px);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  transform: rotate(5deg);
+  box-shadow: 5px 5px 0 color-mix(in srgb, var(--bw-accent) 15%, transparent);
+  animation: kt-blueprint-workshop-stamp 0.45s 0.8s cubic-bezier(0.3, 1.5, 0.6, 1) both;
+}
+[data-kt-theme="blueprint-workshop"] .bw-enter {
+  margin-top: 10px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 26px;
+  min-width: min(255px, 100%);
+  min-height: 50px;
+  padding: 14px 22px;
+  border: 0;
+  border-radius: 0;
+  background: var(--bw-accent);
+  color: var(--bw-ink);
+  font-family: 'Arial Black', 'Arial Bold', 'Inter Tight', sans-serif;
+  font-weight: 900;
+  font-size: clamp(13px, 3.4cqw, 15px);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  box-shadow: 5px 5px 0 var(--bw-deep);
+  cursor: pointer;
+  transition: transform 0.15s, box-shadow 0.15s;
+  animation: kt-blueprint-workshop-slide 0.6s 1s ease-out both;
+}
+[data-kt-theme="blueprint-workshop"] .bw-enter:hover {
+  transform: translate(2px, 2px);
+  box-shadow: 3px 3px 0 var(--bw-deep);
+}
+[data-kt-theme="blueprint-workshop"] .bw-enter:focus-visible {
+  outline: 3px solid #FFFFFF;
+  outline-offset: 5px;
+}
+[data-kt-theme="blueprint-workshop"] .bw-arrow {
+  font-family: 'Inter Tight', system-ui, sans-serif;
+  font-size: 1.2em;
+}
+
+/* Paper tear: two cut copies of the sheet pull apart. */
+[data-kt-theme="blueprint-workshop"] .bw-tearing {
+  background: transparent;
+}
+[data-kt-theme="blueprint-workshop"] .bw-half {
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.35));
+}
+[data-kt-theme="blueprint-workshop"] .bw-half * {
+  animation: none;
+}
+[data-kt-theme="blueprint-workshop"] .bw-half-left {
+  animation: kt-blueprint-workshop-tear-left 0.5s cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+[data-kt-theme="blueprint-workshop"] .bw-half-right {
+  animation: kt-blueprint-workshop-tear-right 0.5s cubic-bezier(0.5, 0, 0.75, 0) forwards;
+}
+
+@keyframes kt-blueprint-workshop-slide {
+  from { opacity: 0; transform: translateX(-24px); }
+}
+@keyframes kt-blueprint-workshop-stamp {
+  from { opacity: 0; transform: rotate(-4deg) scale(1.7); }
+}
+@keyframes kt-blueprint-workshop-draw {
+  from { stroke-dashoffset: 1; }
+}
+@keyframes kt-blueprint-workshop-tear-left {
+  75% { opacity: 1; }
+  to { transform: translate(-62%, 6%) rotate(-7deg); opacity: 0; }
+}
+@keyframes kt-blueprint-workshop-tear-right {
+  75% { opacity: 1; }
+  to { transform: translate(62%, 4%) rotate(6deg); opacity: 0; }
+}

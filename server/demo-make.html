@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Make your own kid's page · {{brand.name}} demo</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#05060A">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/reset.css">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/parent.css">
+  <link rel="stylesheet" href="/setup/setup.css">
+</head>
+<body class="kp su">
+  <div class="su-page">
+    <header class="su-top">
+      <span class="su-top-name">{{brand.name}} demo</span>
+      <a class="su-top-step" href="/">Back to the front door</a>
+    </header>
+
+    <div class="su-layout">
+      <nav class="su-rail" aria-label="Steps">
+        <ol class="su-steps" id="su-steps"></ol>
+      </nav>
+
+      <main class="su-card kp-panel" id="su-main" aria-live="polite">
+        <div class="su-progress" aria-hidden="true"><span id="su-bar"></span></div>
+        <div class="su-body" id="su-body">
+          <p class="kp-lead">Loading.</p>
+        </div>
+      </main>
+    </div>
+
+    <footer class="su-foot">
+      <span class="su-credit">
+        <span class="su-credit-label">{{brand.name}} by</span>
+        <img src="/assets/smart-solutions-logo-white-transparent.png" alt="Smart Solutions" width="150" height="31">
+      </span>
+      <span class="su-foot-note" data-sandbox-note>Your changes are only on this device and disappear at the next reset.</span>
+    </footer>
+  </div>
+
+  <noscript>
+    <p class="su-noscript">This page needs JavaScript turned on.</p>
+  </noscript>
+
+  <script type="module" src="/js/demo/make.js"></script>
+</body>
+</html>

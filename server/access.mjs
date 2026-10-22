@@ -1,3 +1,5 @@
+// The signed kid_access cookie: who a browser is (an approved account or a guest pass). Requests that
+// cannot carry a session token, such as <video> and poster loads, are checked with it.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 const hmac = (env, text) => createHmac('sha256',env.SIGN_SECRET).update(text).digest('hex');
 export function mediaCookie(env, session, maxAge=7*86400) {
@@ -13,8 +15,11 @@ export function viewer(req,sqlite,env) {
     const s=JSON.parse(Buffer.from(body,'base64url'));
     if(s.exp<=Date.now())return null;
     if(s.guest){
-      const row=sqlite.prepare('SELECT session_expires FROM guest_codes WHERE token_hash=?').get(hmac(env,'guest-session|'+s.guest));
-      return row?.session_expires>Date.now()?{role:'guest'}:null;
+      // A pass may be limited to one kid's channel; channelId null means the whole family.
+      // guestId names the pass in the watch log ("guest:<12 hex>") without revealing its token.
+      const tokenHash=hmac(env,'guest-session|'+s.guest);
+      const row=sqlite.prepare('SELECT session_expires,channel_id FROM guest_codes WHERE token_hash=?').get(tokenHash);
+      return row?.session_expires>Date.now()?{role:'guest',channelId:row.channel_id??null,guestId:tokenHash.slice(0,12)}:null;
     }
     const row=sqlite.prepare('SELECT status,role,hash FROM accounts WHERE email=?').get(s.email);
     return row?.status==='approved'&&hmac(env,row.hash)===s.version?{email:s.email,role:row.role}:null;

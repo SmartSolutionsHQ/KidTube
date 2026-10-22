@@ -1,24 +1,148 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src 'none'; img-src 'self' data: https:; media-src 'self' data: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:;">
-  <title>KidTube — A little channel. A big imagination.</title>
-  <link rel="stylesheet" href="/css/reset-c24c98af0f96.css">
-  <link rel="stylesheet" href="/css/framework-0dc1137c1e8d.css">
-  <link rel="stylesheet" href="/css/style-4a90ad5ed053.css">
-  <link rel="stylesheet" href="/css/userStyles-8a661a58ad94.css">
-<meta name="description" content="A family-run video channel. Parent-approved accounts, shared moments, and room to create."><link rel="icon" href="/assets/logo.svg"><link rel="stylesheet" href="/css/kid.css"></head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>{{brand.name}} — {{brand.tagline}}</title>
+  <meta name="description" content="A private family video channel. A parent approves everyone who watches.">
+  <meta name="theme-color" content="#0B0C10">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <link rel="preload" href="/fonts/anton/anton-400.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/dm-mono/dm-mono-500.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/reset.css">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/feed.css">
+  <link rel="stylesheet" href="/css/kid.css">
+  <link rel="stylesheet" href="/css/shell.css">
+</head>
 <body class="channel" data-locked="1">
-<a class="tz-skip" href="#tz-reel" target="_self">Skip to the videos</a><header class="tz-head"><span class="tz-brand"><a class="tz-mark" aria-label="About this channel" href="/about" target="_self"></a><span class="tz-brand-rule" aria-hidden="true"></span><span class="tz-word">KIDTUBE</span></span><nav class="kid-nav"><a href="/about">About the channel ↗</a><a href="/parents">Parent dashboard</a><button type="button" id="account-button">Account</button></nav><button class="tz-shuffle" aria-label="Shuffle off. Clips play newest first. Turn shuffle on." aria-pressed="false" data-act="shuffle" type="button"><span class="tz-ico" aria-hidden="true" data-ico="shuffle"></span></button><button class="tz-pos" aria-label="Open the channel index" data-act="index" type="button"><span class="tz-pos-n" data-bind="pos">01</span><span class="tz-pos-s">/</span><span class="tz-pos-t" data-bind="total">02</span></button><button class="tz-sound" aria-pressed="false" data-act="sound" type="button"><span class="tz-ico" aria-hidden="true" data-ico="muted"></span><span class="tz-sr" data-bind="soundlabel">Sound is off. Turn sound on.</span></button></header><div class="workshop-heading"><div><p class="eyebrow">YOUR FAMILY / YOUR CHANNEL</p><h1>SMALL MOMENTS.<br><span>BIG IMAGINATION.</span></h1></div><div class="build-stamp">MADE BY YOU<br><small>shared with your people</small></div></div><main class="tz-app"><div class="tz-stagewrap"><div class="tz-glow" aria-hidden="true"></div><div class="tz-reel" aria-label="Video channel, newest first" id="tz-reel" tabindex="-1"></div></div><aside class="tz-log" aria-label="Every clip, newest first"><p class="tz-log-head"><span class="tz-label">THE VIDEO SHELF</span> <span class="tz-meta">newest first</span></p><ol class="tz-log-list" data-bind="log"></ol><div class="tz-endplate" data-bind="logend"></div></aside></main><button class="tz-exit" aria-label="Leave full screen" data-act="exit" type="button"><span class="tz-ico" aria-hidden="true" data-ico="close"></span></button><div class="tz-soundpill" data-act="sound" role="status"><span class="tz-ico" aria-hidden="true" data-ico="muted"></span> SOUND OFF — TAP</div><div class="tz-scrimlayer" data-act="closesheet" hidden=""></div><section class="tz-sheet" aria-label="Channel index" aria-modal="true" data-sheet="index" hidden="" role="dialog"><div class="tz-sheet-grip" aria-hidden="true"></div><header class="tz-sheet-head"><h2 class="tz-sheet-title">ALL VIDEOS</h2><span class="tz-meta">newest first</span><button class="tz-x" aria-label="Close the index" data-act="closesheet" type="button"><span class="tz-ico" aria-hidden="true" data-ico="close"></span></button></header><div class="tz-sheet-body"><ol class="tz-log-list" data-bind="log2"></ol><div class="tz-endplate" data-bind="logend2"></div><p class="tz-truth">My personal video channel. Hearts and comments are shared with everyone on it.</p><p class="tz-foot">Videos shared with our approved viewers.</p></div></section><section class="tz-sheet" aria-label="Comments" aria-modal="true" data-sheet="comments" hidden="" role="dialog"><div class="tz-sheet-grip" aria-hidden="true"></div><header class="tz-sheet-head"><h2 class="tz-sheet-title">Comments</h2><button class="tz-x" aria-label="Close comments" data-act="closesheet" type="button"><span class="tz-ico" aria-hidden="true" data-ico="close"></span></button></header><p class="tz-truth">Comments are saved to the channel for everyone to read. Your name shows above what you write.</p><div class="tz-sheet-body" data-bind="comments"></div><form class="tz-composer" data-instatic-form-id="form" data-instatic-form-mode="custom" action="" method="get" data-instatic-success-message="Thanks. Your submission was received." data-bind="composer"><label class="tz-sr" for="tz-name">Your name</label><input class="tz-field" data-instatic-form-control="input" data-instatic-field-id="name" type="text" name="name" id="tz-name" placeholder="Your name" autocomplete="off" maxlength="24"><label class="tz-sr" for="tz-body">Add a comment on this device</label><textarea class="tz-field tz-area" data-instatic-form-control="textarea" data-instatic-field-id="body" name="body" id="tz-body" placeholder="Type a comment..." rows="1" maxlength="500"></textarea><div class="tz-composer-foot"><span class="tz-meta" data-bind="chars"></span><button class="tz-post" type="submit" disabled>Post</button></div></form></section><p class="tz-live tz-sr" aria-live="polite" data-bind="live" role="status"></p>
+  <a class="tz-skip" href="#tz-reel">Skip to the videos</a>
 
+  <header class="tz-head">
+    <span class="tz-brand">
+      <a class="tz-mark" href="/about" aria-label="About this channel">
+        <img src="/assets/logo.svg" alt="" width="32" height="32">
+      </a>
+      <span class="tz-word" data-site="name">{{brand.wordmark}}</span>
+    </span>
+    <nav class="kid-nav" aria-label="Site">
+      <button type="button" id="switch-kid" hidden>Switch kid</button>
+      <a href="/about">About</a>
+      <a href="/parents">Parents</a>
+      <button type="button" id="account-button">Account</button>
+    </nav>
+    <button class="tz-shuffle" type="button" data-act="shuffle" aria-pressed="false"
+            aria-label="Shuffle off. Clips play newest first. Turn shuffle on.">
+      <span class="tz-ico" data-ico="shuffle" aria-hidden="true"></span>
+    </button>
+    <button class="tz-pos" type="button" data-act="index" aria-label="Open the running order">
+      <span class="tz-pos-n" data-bind="pos">01</span>
+      <span class="tz-pos-s">/</span>
+      <span class="tz-pos-t" data-bind="total">00</span>
+    </button>
+    <button class="tz-sound" type="button" data-act="sound" aria-pressed="false">
+      <span class="tz-ico" data-ico="muted" aria-hidden="true"></span>
+      <span class="tz-sr" data-bind="soundlabel">Sound is off. Turn sound on.</span>
+    </button>
+  </header>
 
+  <main class="tz-app">
+    <div class="tz-stagewrap">
+      <div class="tz-glow" aria-hidden="true"></div>
+      <div class="tz-reel" id="tz-reel" tabindex="-1" aria-label="Videos, newest first"></div>
+    </div>
+    <aside class="tz-log" aria-label="Running order, newest first">
+      <p class="tz-log-head">
+        <span class="tz-label">Running order</span>
+        <span class="tz-meta">Newest first</span>
+      </p>
+      <ol class="tz-log-list" data-bind="log"></ol>
+      <div class="tz-endplate" data-bind="logend"></div>
+    </aside>
+  </main>
 
+  <button class="tz-exit" type="button" data-act="exit" aria-label="Leave full screen">
+    <span class="tz-ico" data-ico="close" aria-hidden="true"></span>
+  </button>
 
+  <div class="tz-soundpill" data-act="sound" role="status">
+    <span class="tz-ico" data-ico="muted" aria-hidden="true"></span>
+    Sound off · tap
+  </div>
 
+  <div class="tz-scrimlayer" data-act="closesheet" hidden></div>
 
+  <section class="tz-sheet" data-sheet="index" role="dialog" aria-modal="true" aria-label="Running order" hidden>
+    <div class="tz-sheet-grip" aria-hidden="true"></div>
+    <header class="tz-sheet-head">
+      <h2 class="tz-sheet-title">Running order</h2>
+      <span class="tz-meta">Newest first</span>
+      <button class="tz-x" type="button" data-act="closesheet" aria-label="Close the running order">
+        <span class="tz-ico" data-ico="close" aria-hidden="true"></span>
+      </button>
+    </header>
+    <div class="tz-sheet-body">
+      <ol class="tz-log-list" data-bind="log2"></ol>
+      <div class="tz-endplate" data-bind="logend2"></div>
+      <p class="tz-truth">Hearts and comments are shared with everyone who can watch this channel.</p>
+      <p class="tz-foot">Only people a parent approved can watch these videos.</p>
+    </div>
+  </section>
 
-<section id="tzs-splash" class="entrance" aria-label="Welcome to KidTube"><div class="entrance-top"><a href="/about"><img src="/assets/logo.svg" alt="KidTube" width="66" height="66"></a><span>A FAMILY SPACE TO CREATE</span><a href="/about">About this channel ↗</a></div><div class="entrance-copy"><p class="eyebrow">YOUR STORIES BELONG HERE.</p><h1>KID<span>TUBE</span><b>A LITTLE CHANNEL. A BIG IMAGINATION.</b></h1><p>Make something. Share a moment.<br>Keep your favorite people close.</p><button id="enter-tube" class="block-button" type="button">ENTER THE CHANNEL ↗</button></div><div class="entrance-bottom"><span>HOSTED BY YOUR FAMILY</span><span>NO ADS. NO ALGORITHMIC FEED.</span></div></section><dialog id="account-dialog" class="account-dialog" aria-labelledby="account-title"><div id="account-content"></div></dialog>
-<script type="module" src="/js/entrance.js"></script><script type="module" src="/js/feed.js"></script><script type="module" src="/js/recovery.js"></script></body>
+  <section class="tz-sheet" data-sheet="comments" role="dialog" aria-modal="true" aria-label="Comments" hidden>
+    <div class="tz-sheet-grip" aria-hidden="true"></div>
+    <header class="tz-sheet-head">
+      <h2 class="tz-sheet-title">Comments</h2>
+      <button class="tz-x" type="button" data-act="closesheet" aria-label="Close comments">
+        <span class="tz-ico" data-ico="close" aria-hidden="true"></span>
+      </button>
+    </header>
+    <p class="tz-truth">Everyone who can watch this channel can read comments, with your name above what you write. A parent may check new comments first.</p>
+    <div class="tz-sheet-body" data-bind="comments"></div>
+    <form class="tz-composer" data-bind="composer">
+      <label class="tz-sr" for="tz-body">Write a comment</label>
+      <textarea class="tz-field tz-area" name="body" id="tz-body" placeholder="Write something kind…" rows="1" maxlength="500"></textarea>
+      <div class="tz-composer-foot">
+        <span class="tz-meta" data-bind="chars"></span>
+        <button class="tz-post" type="submit" disabled>Post</button>
+      </div>
+    </form>
+  </section>
+
+  <p class="tz-live tz-sr" data-bind="live" role="status" aria-live="polite"></p>
+
+  <!-- The front door: the kids' badges, the backdrop behind the sign-in card, or a plain note.
+       app.js fills it; each kid's splash is mounted over it by the theme loader. -->
+  <section id="kt-door" class="kt-door" data-mode="boot" aria-labelledby="kt-door-title">
+    <div class="kt-door-in">
+      <p class="kt-door-kicker" data-door="kicker"></p>
+      <span class="kt-door-badge" data-door="badge" hidden></span>
+      <h1 class="kt-door-title" id="kt-door-title" data-door="title" tabindex="-1"></h1>
+      <ul class="kt-kids" data-door="kids" aria-label="Kids"></ul>
+      <p class="kt-door-note" data-door="note"></p>
+      <button class="kt-door-action" type="button" data-door="action"></button>
+      <button class="kt-door-link" type="button" data-door="parent" hidden>Parent? Sign in</button>
+      <button class="kt-door-link" type="button" data-door="account" hidden>Account</button>
+    </div>
+    <div class="kt-door-foot">
+      <span aria-hidden="true"><span class="kt-door-rec"></span>S-VHS ET</span>
+      <a href="/about">About this channel</a>
+    </div>
+  </section>
+
+  <dialog class="account-dialog" id="account-dialog" aria-labelledby="account-title">
+    <div id="account-content"></div>
+  </dialog>
+
+  <!-- app.js imports site.js itself, so the page has one copy of it. -->
+  <script type="module" src="/js/shell/app.js"></script>
+  <script type="module" src="/js/feed.js"></script>
+  <script type="module" src="/js/recovery.js"></script>
+</body>
 </html>

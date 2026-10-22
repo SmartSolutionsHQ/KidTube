@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { createVideoNotifications, videoEmail } from '../server/notifications.mjs';
-import { publishClip } from '../server/publish.mjs';
+import { approveClip, publishClip, rejectClip } from '../server/publish.mjs';
+import { migrate } from '../server/schema.mjs';
 
 const env = {
   SIGN_SECRET: 'test-secret', BREVO_API_KEY: 'fake-key', SENDER_EMAIL: 'tube@example.com',
@@ -13,15 +14,16 @@ const clip = {
   src: '/api/video/test-video', duration: 62.4, kind: 'video', publishedAt: '2026-10-20T18:30:00Z',
 };
 
-function fixture(t, fetchImpl) {
+async function fixture(t, fetchImpl) {
   const sqlite = new DatabaseSync(':memory:');
-  sqlite.exec(`PRAGMA foreign_keys=ON;
-    CREATE TABLE clips (id TEXT PRIMARY KEY, title TEXT NOT NULL, src TEXT NOT NULL,
-      poster TEXT, kind TEXT, blurb TEXT, published TEXT, duration REAL,
-      position INTEGER, created INTEGER, hidden INTEGER NOT NULL DEFAULT 0);
-    CREATE TABLE accounts (email TEXT PRIMARY KEY, status TEXT NOT NULL, role TEXT);
-    INSERT INTO accounts VALUES ('viewer@example.com','approved',''), ('kid@example.com','approved','admin'),
-      ('parent@example.com','approved','super'), ('pending@example.com','pending',''), ('denied@example.com','denied','');`);
+  sqlite.exec('PRAGMA foreign_keys=ON');
+  await migrate(sqlite);
+  const account = sqlite.prepare(`INSERT INTO accounts (email,first,last,salt,hash,status,role,created)
+    VALUES (?,'Test','Account','salt','hash',?,?,0)`);
+  for (const [email, status, role] of [['viewer@example.com', 'approved', ''], ['kid@example.com', 'approved', 'admin'],
+    ['parent@example.com', 'approved', 'super'], ['pending@example.com', 'pending', ''], ['denied@example.com', 'denied', '']]) {
+    account.run(email, status, role);
+  }
   let clock = Date.parse('2026-10-20T18:30:00Z');
   const sent = [];
   const fetcher = fetchImpl || (async (url, options) => {
@@ -50,7 +52,7 @@ function unsubscribeRequest(message, method = 'GET') {
 }
 
 test('announces a published video to approved accounts individually with escaped details and a clip link', async t => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.publish();
   await f.notifications.kick();
   assert.deepEqual(f.sent.map(m => m.to[0].email).sort(), ['kid@example.com', 'parent@example.com', 'viewer@example.com']);
@@ -65,7 +67,7 @@ test('announces a published video to approved accounts individually with escaped
     assert.match(message.textContent, /Oct 20, 2026, 6:30 PM \(UTC\)/);
     assert.match(message.htmlContent, /Family &amp; the &lt;Bean&gt; Brigade/);
     assert.ok(!message.htmlContent.includes('<script>'));
-    assert.match(message.htmlContent, /https:\/\/tube\.example\.com\/#\/v\/new-clip-1/);
+    assert.match(message.htmlContent, /https:\/\/tube\.example\.com\/#\/c\/main\/v\/new-clip-1/, 'the link opens the clip on its channel');
     assert.match(message.htmlContent, /Watch the new vid/);
   }
   assert.equal(new Set(f.sent.map(m => m.headers.idempotencyKey)).size, 3);
@@ -78,7 +80,7 @@ test('announces a published video to approved accounts individually with escaped
 });
 
 test('unsubscribe needs a signed confirmation and stops queued and future video emails only', async t => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.publish();
   await f.notifications.kick();
   const viewer = f.sent.find(m => m.to[0].email === 'viewer@example.com');
@@ -103,7 +105,7 @@ test('unsubscribe needs a signed confirmation and stops queued and future video 
 });
 
 test('resumes persisted deliveries and rechecks account status and clip availability', async t => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.queue();
   f.sqlite.prepare("UPDATE accounts SET status='denied' WHERE email='viewer@example.com'").run();
   f.sqlite.prepare("DELETE FROM accounts WHERE email='parent@example.com'").run();
@@ -119,8 +121,8 @@ test('resumes persisted deliveries and rechecks account status and clip availabi
 });
 
 test('does not backfill old clips or include people approved after publication', async t => {
-  const f = fixture(t);
-  f.sqlite.prepare("INSERT INTO clips (id,title,src) VALUES ('old-clip','Old video','/old.mp4')").run();
+  const f = await fixture(t);
+  f.sqlite.prepare("INSERT INTO clips (id,title,src,position,created) VALUES ('old-clip','Old video','/old.mp4',1,0)").run();
   await f.restart();
   await f.notifications.kick();
   assert.equal(f.sent.length, 0);
@@ -133,7 +135,7 @@ test('does not backfill old clips or include people approved after publication',
 test('retries provider failures across restart with the same delivery key and respects Retry-After', async t => {
   const requests = [];
   let calls = 0;
-  const f = fixture(t, async (url, options) => {
+  const f = await fixture(t, async (url, options) => {
     requests.push(JSON.parse(options.body));
     if (++calls === 1) return Response.json({ code: 'too_many_requests' }, { status: 429, headers: { 'retry-after': '120' } });
     if (calls === 4) return Response.json({ code: 'duplicate_parameter' }, { status: 400 });
@@ -156,7 +158,7 @@ test('retries provider failures across restart with the same delivery key and re
 
 test('records permanent failures and bounds transient retries without undoing publication', async t => {
   let permanent = true;
-  const f = fixture(t, async () => {
+  const f = await fixture(t, async () => {
     if (permanent) return Response.json({ code: 'invalid_parameter' }, { status: 400 });
     throw new Error('Network unavailable');
   });
@@ -175,7 +177,7 @@ test('records permanent failures and bounds transient retries without undoing pu
 });
 
 test('rolls back publication with the outbox if saving recipients fails', async t => {
-  const f = fixture(t);
+  const f = await fixture(t);
   f.sqlite.exec(`CREATE TRIGGER fail_delivery BEFORE INSERT ON video_notification_deliveries
     BEGIN SELECT RAISE(ABORT, 'disk error'); END`);
   assert.throws(() => f.publish(), /disk error/);
@@ -187,4 +189,35 @@ test('rolls back publication with the outbox if saving recipients fails', async 
 test('email links keep working when another newer video exists', () => {
   const message = videoEmail({ ...clip, published: clip.publishedAt }, { siteUrl: env.SITE_URL, unsubscribeUrl: 'https://tube.example.com/unsubscribe' });
   assert.match(message.text, /Watch the new vid: https:\/\/tube\.example\.com\/#\/v\/new-clip-1/);
+});
+
+test('a clip waiting for review is announced only when a parent approves it, with its channel link', async t => {
+  const f = await fixture(t);
+  f.sqlite.exec(`UPDATE channels SET slug='milo', name='Milo' WHERE id=1;
+    INSERT INTO channels (id,slug,name,position,created) VALUES (2,'juni','Juni',2,0)`);
+  f.publish({ ...clip, id: 'older', channelId: 2 });
+  f.publish({ ...clip, id: 'waiting', channelId: 2, review: 'pending' });
+  await f.notifications.kick();
+  assert.equal(f.sent.filter(m => m.htmlContent.includes('waiting')).length, 0, 'nothing goes out while it waits');
+
+  assert.equal(approveClip(f.sqlite, f.notifications, 'nope', 'parent@example.com'), null);
+  assert.equal(approveClip(f.sqlite, f.notifications, 'waiting', 'parent@example.com'), 'juni');
+  await f.notifications.kick();
+  const announced = f.sent.filter(m => m.htmlContent.includes('#/c/juni/v/waiting'));
+  assert.deepEqual(announced.map(m => m.to[0].email).sort(), ['kid@example.com', 'parent@example.com', 'viewer@example.com']);
+  assert.match(announced[0].textContent, /Watch the new vid: https:\/\/tube\.example\.com\/#\/c\/juni\/v\/waiting/);
+  const row = id => ({ ...f.sqlite.prepare('SELECT review, position FROM clips WHERE id=?').get(id) });
+  assert.deepEqual(row('waiting'), { review: 'approved', position: 1 }, 'an approved clip leads its channel');
+  assert.ok(row('older').position > 1, 'the rest of the channel moves down');
+  const log = f.sqlite.prepare("SELECT actor, subject, detail FROM activity WHERE kind='review'").get();
+  assert.deepEqual({ ...log, detail: JSON.parse(log.detail) },
+    { actor: 'parent@example.com', subject: 'waiting', detail: { decision: 'approved', from: 'pending', channel: 'juni' } });
+
+  assert.equal(approveClip(f.sqlite, f.notifications, 'waiting'), null, 'approving twice does nothing');
+  f.publish({ ...clip, id: 'nope-clip', channelId: 2, review: 'pending' });
+  assert.equal(rejectClip(f.sqlite, 'nope-clip', 'parent@example.com'), true);
+  assert.equal(rejectClip(f.sqlite, 'nope-clip'), false);
+  assert.equal(row('nope-clip').review, 'rejected');
+  await f.notifications.kick();
+  assert.equal(f.sent.filter(m => m.htmlContent.includes('nope-clip')).length, 0);
 });

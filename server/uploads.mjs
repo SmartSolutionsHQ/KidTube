@@ -1,30 +1,32 @@
+// Uploads and video files: chunked uploads into DATA_DIR/incoming, one FFmpeg job at a time to a small
+// MP4 and poster in DATA_DIR/videos, and GET /api/video/<id> for viewers who may play the clip.
 import { randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { createReadStream, existsSync, mkdirSync, statSync } from 'node:fs';
-import { open, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { open, readFile, readdir, rename, rm, stat, statfs, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
-import { asStaff } from './api.js';
+import { asCreator } from './api.js';
+import { CLIP_ACCESS_SQL, DEFAULT_CHANNEL_ID, canPlayClip, channelById, channelBySlug, isStaff } from './channels.mjs';
 import { publishClip } from './publish.mjs';
+import { validateSeal } from './capsules.mjs';
+import { HttpError, sendJson } from './jsonio.mjs';
 
 const execFileAsync = promisify(execFile);
 const CHUNK_SIZE = 4 * 1024 * 1024;
 const MAX_SOURCE = 512 * 1024 * 1024;
 const MAX_SECONDS = 305;
 const ID = /^[a-f0-9-]{36}$/;
-
-function json(res, status, value) {
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Cache-Control': 'no-store',
-    'X-KidTube-Origin': 'node',
-  });
-  res.end(JSON.stringify(value));
-}
-
-class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
-}
+const MEDIA = /^([a-f0-9-]{36})(\/poster)?$/;
+const PROBE_TIMEOUT = 30000;
+const POSTER_TIMEOUT = 30000;
+// FFmpeg reports progress twice a second, so minutes of silence mean it is stuck.
+const TRANSCODE_STALL = 2 * 60000;
+const transcodeTimeout = duration => Math.max(10 * 60000, duration * 20 * 1000);
+const SPARE_BYTES = 1024 ** 3;
+// An upload nobody finished still holds the phone's raw file, GPS and all, so it goes after a day.
+export const STALE_UPLOAD_MS = 24 * 60 * 60 * 1000;
+const SWEEP_EVERY = 60 * 60 * 1000;
 
 async function body(req, limit) {
   const chunks = [];
@@ -45,11 +47,41 @@ async function jsonBody(req) {
   }
 }
 
-async function probe(file) {
+// Runs a tool and kills it when it passes its deadline or, with stallMs, goes quiet on stdout.
+export function runProcess(command, args, { timeoutMs, stallMs, onStdout = () => {} }) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let errorText = '', failure = null, stall = null;
+    const stop = reason => { failure ??= new Error(`${command} ${reason}`); child.kill('SIGKILL'); };
+    const deadline = setTimeout(() => stop(`timed out after ${timeoutMs} ms`), timeoutMs);
+    const armStall = () => {
+      clearTimeout(stall);
+      if (stallMs) stall = setTimeout(() => stop(`stalled for ${stallMs} ms`), stallMs);
+    };
+    armStall();
+    child.stdout.on('data', chunk => { armStall(); onStdout(chunk); });
+    child.stderr.on('data', chunk => { errorText = (errorText + chunk.toString()).slice(-2048); });
+    child.once('error', error => { failure ??= error; });
+    child.once('close', code => {
+      clearTimeout(deadline);
+      clearTimeout(stall);
+      if (failure) reject(failure);
+      else if (code === 0) resolve();
+      else reject(new Error(`${command} exited ${code}: ${errorText}`));
+    });
+  });
+}
+
+// Input options for every file FFmpeg opens. An upload is only ever a local file in a container phones make
+// (MP4/MOV/M4V/3GP or WebM/MKV), so playlists, concat lists, other protocols and every other demuxer are
+// refused before FFmpeg follows anything inside them.
+const INPUT_GUARD = ['-protocol_whitelist', 'file', '-format_whitelist', 'mov,mp4,m4a,3gp,3g2,mj2,matroska,webm'];
+
+export async function probe(file) {
   const { stdout } = await execFileAsync('ffprobe', [
-    '-v', 'error', '-show_entries', 'format=duration:stream=codec_type,width,height',
+    '-v', 'error', ...INPUT_GUARD, '-show_entries', 'format=duration:stream=codec_type,width,height',
     '-of', 'json', file,
-  ], { timeout: 30000, maxBuffer: 1024 * 1024 });
+  ], { timeout: PROBE_TIMEOUT, killSignal: 'SIGKILL', maxBuffer: 1024 * 1024 });
   const info = JSON.parse(stdout);
   const video = info.streams?.find(stream => stream.codec_type === 'video' && stream.width > 0 && stream.height > 0);
   const duration = Number(info.format?.duration);
@@ -59,18 +91,19 @@ async function probe(file) {
 }
 
 function transcode(input, output, duration, onProgress) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      '-nostdin', '-y', '-hide_banner', '-loglevel', 'error', '-i', input,
-      '-map', '0:v:0', '-map', '0:a:0?',
-      '-vf', "scale=w='min(854,iw)':h='min(480,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
-      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '25', '-pix_fmt', 'yuv420p',
-      '-c:a', 'aac', '-b:a', '96k', '-ar', '44100',
-      '-threads', '4', '-movflags', '+faststart', '-progress', 'pipe:1', '-f', 'mp4', output,
-    ];
-    const child = spawn('ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    let progress = '', errorText = '';
-    child.stdout.on('data', chunk => {
+  const args = [
+    '-nostdin', '-y', '-hide_banner', '-loglevel', 'error', ...INPUT_GUARD, '-i', input,
+    // Phone videos carry GPS and device details; none of it should reach viewers.
+    '-map', '0:v:0', '-map', '0:a:0?', '-map_metadata', '-1', '-map_chapters', '-1',
+    '-vf', "scale=w='min(854,iw)':h='min(480,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
+    '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '25', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '96k', '-ar', '44100',
+    '-threads', '4', '-movflags', '+faststart', '-progress', 'pipe:1', '-f', 'mp4', output,
+  ];
+  let progress = '';
+  return runProcess('ffmpeg', args, {
+    timeoutMs: transcodeTimeout(duration), stallMs: TRANSCODE_STALL,
+    onStdout(chunk) {
       progress += chunk.toString();
       const lines = progress.split('\n');
       progress = lines.pop();
@@ -80,37 +113,59 @@ function transcode(input, output, duration, onProgress) {
           if (Number.isFinite(seconds)) onProgress(Math.min(99, Math.floor(seconds / duration * 100)));
         }
       }
-    });
-    child.stderr.on('data', chunk => { errorText = (errorText + chunk.toString()).slice(-2048); });
-    child.once('error', reject);
-    child.once('close', code => code === 0 ? resolve() : reject(new Error(`ffmpeg exited ${code}: ${errorText}`)));
+    },
   });
 }
 
-export function createUploadManager({ sqlite, env, databasePath, notifications }) {
+// The chunks and the encoded copy both land on this disk, with room to spare for everything else.
+export const hasRoom = (freeBytes, size) => freeBytes >= 2 * size + SPARE_BYTES;
+
+// One small frame about a second in (the middle of very short clips) so the feed never shows black.
+function grabPoster(video, output, duration) {
+  return runProcess('ffmpeg', [
+    '-nostdin', '-y', '-hide_banner', '-loglevel', 'error',
+    '-ss', Math.min(1, duration / 2).toFixed(2), ...INPUT_GUARD, '-i', video, '-map_metadata', '-1',
+    '-frames:v', '1', '-vf', "scale=w='min(480,iw)':h=-2", '-q:v', '5', '-f', 'image2', '-c:v', 'mjpeg', output,
+  ], { timeoutMs: POSTER_TIMEOUT });
+}
+
+// canWatch(viewer, now, { clipId, poster }) answers true, or the reason a file is closed right now
+// ({ error: 'sealed', opensAt } or { error: 'end-of-tape', resetsAt }); index.mjs supplies it.
+export function createUploadManager({ sqlite, env, databasePath, notifications, canWatch = () => true }) {
   const dataDir = process.env.DATA_DIR || dirname(databasePath);
   const incoming = join(dataDir, 'incoming');
   const videos = join(dataDir, 'videos');
   mkdirSync(incoming, { recursive: true, mode: 0o700 });
   mkdirSync(videos, { recursive: true, mode: 0o700 });
-  sqlite.exec(`CREATE TABLE IF NOT EXISTS upload_jobs (
-    id TEXT PRIMARY KEY, email TEXT NOT NULL, title TEXT NOT NULL, size INTEGER NOT NULL,
-    status TEXT NOT NULL, progress INTEGER NOT NULL DEFAULT 0, clip_id TEXT,
-    error TEXT, created INTEGER NOT NULL, updated INTEGER NOT NULL)`);
   sqlite.prepare("UPDATE upload_jobs SET status='failed', error='Processing was interrupted. Upload again.', updated=? WHERE status='processing'").run(Date.now());
   const getJob = sqlite.prepare('SELECT * FROM upload_jobs WHERE id=?');
   const updateProgress = sqlite.prepare('UPDATE upload_jobs SET progress=?, updated=? WHERE id=?');
+  const clipForMedia = sqlite.prepare(`${CLIP_ACCESS_SQL} WHERE c.src=?`);
   let active = false;
 
-  async function staff(req, payload = {}) {
+  async function creator(req, payload = {}) {
     const email = String(payload.email || req.headers['x-kid-email'] || '').trim().toLowerCase();
     const token = String(payload.t || req.headers['x-kid-token'] || '');
-    return asStaff(env, email, token);
+    return asCreator(env, email, token);
+  }
+
+  // Kids upload only to their own channel; parents pick one or get the default.
+  function targetChannel(user, slug) {
+    if (user.role === 'kid') {
+      const own = channelById(sqlite, user.channelId);
+      if (!own) throw new HttpError(403, 'Ask a parent to connect your account to your channel.');
+      if (slug && slug !== own.slug) throw new HttpError(403, 'You can only upload to your own channel.');
+      return own.id;
+    }
+    if (!slug) return DEFAULT_CHANNEL_ID;
+    const channel = channelBySlug(sqlite, slug);
+    if (!channel) throw new HttpError(400, 'Choose a channel.');
+    return channel.id;
   }
 
   async function owned(req, id, payload) {
     if (!ID.test(id)) throw new HttpError(404, 'Upload not found.');
-    const user = await staff(req, payload);
+    const user = await creator(req, payload);
     if (!user) throw new HttpError(403, 'Not authorized.');
     const job = getJob.get(id);
     if (!job || (job.email !== user.email && user.role !== 'super')) throw new HttpError(404, 'Upload not found.');
@@ -122,6 +177,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
     const source = join(dir, 'source');
     const temporary = join(videos, `${job.id}.tmp`);
     const output = join(videos, `${job.id}.mp4`);
+    const poster = join(videos, `${job.id}.jpg`);
     try {
       const total = Math.ceil(job.size / CHUNK_SIZE);
       const handle = await open(source, 'wx', 0o600);
@@ -135,12 +191,23 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
         if (percent >= old + 5) updateProgress.run(percent, Date.now(), job.id);
       });
       if ((await stat(temporary)).size < 1000) throw new Error('encoded file is empty');
+      // A missing poster only costs a still frame, so it never fails the upload.
+      const posterSrc = await grabPoster(temporary, poster, duration)
+        .then(async () => (await stat(poster)).size > 0 ? `/api/video/${job.id}/poster` : '')
+        .catch(async error => {
+          console.error(`Poster for upload ${job.id} failed:`, error);
+          await rm(poster, { force: true });
+          return '';
+        });
       await rename(temporary, output);
+      const uploader = sqlite.prepare('SELECT role FROM accounts WHERE email=?').get(job.email);
+      const reviewed = channelById(sqlite, job.channel_id)?.review_uploads && !isStaff(uploader);
       const clipId = randomUUID();
       const now = Date.now();
       publishClip(sqlite, notifications, {
-        id: clipId, title: job.title, src: `/api/video/${job.id}`, kind: 'video',
-        publishedAt: new Date(now).toISOString(), duration,
+        id: clipId, title: job.title, src: `/api/video/${job.id}`, poster: posterSrc, kind: 'video',
+        publishedAt: new Date(now).toISOString(), duration, channelId: job.channel_id, review: reviewed ? 'pending' : 'approved',
+        opensAt: job.opens_at, capsuleNote: job.capsule_note, sealedBy: job.email,
       }, job.id);
       await rm(dir, { recursive: true, force: true })
         .catch(error => console.error(`Could not remove completed upload ${job.id}:`, error));
@@ -149,7 +216,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
       const message = error instanceof HttpError ? error.message : 'Server could not convert this video. Try another file.';
       sqlite.prepare("UPDATE upload_jobs SET status='failed', error=?, updated=? WHERE id=?")
         .run(message, Date.now(), job.id);
-      await rm(temporary, { force: true }).catch(() => {});
+      for (const file of [temporary, output, poster]) await rm(file, { force: true }).catch(() => {});
       await rm(dir, { recursive: true, force: true }).catch(() => {});
     }
   }
@@ -164,11 +231,19 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
     finally { active = false; queueMicrotask(() => { pump().catch(error => console.error('Upload queue failed', error)); }); }
   }
 
-  async function video(req, res, pathname) {
+  // Videos and their posters share the cookie-gated /api/video/ routes and never enter a shared cache.
+  // A file plays only through its clip: on a channel the viewer may watch, and, while it waits for
+  // review or is hidden, only for parents and the kid who posted it. Refusals look like a missing file.
+  async function video(req, res, pathname, viewer) {
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed.');
-    const id = pathname.slice('/api/video/'.length);
-    if (!ID.test(id)) throw new HttpError(404, 'Video not found.');
-    const file = join(videos, `${id}.mp4`);
+    const media = MEDIA.exec(pathname.slice('/api/video/'.length));
+    if (!media) throw new HttpError(404, 'Video not found.');
+    const clip = clipForMedia.get(`/api/video/${media[1]}`);
+    if (!canPlayClip(viewer, clip)) throw new HttpError(404, 'Video not found.');
+    // Checked before any byte or Range handling, so a sealed or spent tape never starts streaming.
+    const verdict = canWatch(viewer, Date.now(), { clipId: clip.id, poster: !!media[2] });
+    if (verdict !== true) { sendJson(res, 403, { ok: false, ...verdict }); return; }
+    const file = join(videos, media[1] + (media[2] ? '.jpg' : '.mp4'));
     if (!existsSync(file)) throw new HttpError(404, 'Video not found.');
     const size = statSync(file).size;
     const match = /^bytes=(\d*)-(\d*)$/.exec(req.headers.range || '');
@@ -183,33 +258,38 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
       end = Math.min(end, size - 1);
     }
     const headers = {
-      'Content-Type': 'video/mp4', 'Content-Length': String(end - start + 1),
+      'Content-Type': media[2] ? 'image/jpeg' : 'video/mp4', 'Content-Length': String(end - start + 1),
       'Accept-Ranges': 'bytes', 'Cache-Control': 'private, no-store',
-      'X-KidTube-Origin': 'node',
     };
     if (status === 206) headers['Content-Range'] = `bytes ${start}-${end}/${size}`;
     res.writeHead(status, headers);
     if (req.method === 'HEAD') res.end(); else createReadStream(file, { start, end }).pipe(res);
   }
 
-  async function handle(req, res, pathname) {
+  async function handle(req, res, pathname, viewer = null) {
     try {
-      if (pathname.startsWith('/api/video/')) return await video(req, res, pathname);
+      if (pathname.startsWith('/api/video/')) return await video(req, res, pathname, viewer);
       if (pathname === '/api/upload/raw/start' && req.method === 'POST') {
         const payload = await jsonBody(req);
-        const user = await staff(req, payload);
+        const user = await creator(req, payload);
         if (!user) throw new HttpError(403, 'Not authorized.');
+        const channelId = targetChannel(user, payload.channel ? String(payload.channel) : '');
         const size = Number(payload.size);
         const title = String(payload.title || '').trim().slice(0, 80);
         if (!Number.isSafeInteger(size) || size < 1000 || size > MAX_SOURCE) throw new HttpError(400, 'File must be under 512 MB.');
         if (!title) throw new HttpError(400, 'Name the video.');
+        // Sealing at upload: { opensAt, capsuleNote }. A kid's sealed upload still waits for review.
+        const seal = payload.opensAt ? validateSeal(payload.opensAt, payload.capsuleNote, Date.now()) : { opensAt: 0, note: '' };
+        if (seal.ok === false) throw new HttpError(400, seal.error);
+        const disk = await statfs(dataDir);
+        if (!hasRoom(disk.bavail * disk.bsize, size)) throw new HttpError(507, 'The server is almost out of space. Free some up and try again.');
         const pending = sqlite.prepare("SELECT COUNT(*) n FROM upload_jobs WHERE email=? AND status IN ('receiving','queued','processing') AND created>?").get(user.email, Date.now() - 86400000).n;
         if (pending >= 3) throw new HttpError(429, 'Finish an earlier upload before starting another.');
         const id = randomUUID(), now = Date.now();
         mkdirSync(join(incoming, id), { mode: 0o700 });
-        sqlite.prepare('INSERT INTO upload_jobs (id,email,title,size,status,created,updated) VALUES (?,?,?,?,?,?,?)')
-          .run(id, user.email, title, size, 'receiving', now, now);
-        return json(res, 200, { ok: true, uploadId: id, chunkSize: CHUNK_SIZE });
+        sqlite.prepare('INSERT INTO upload_jobs (id,email,title,size,status,created,updated,channel_id,opens_at,capsule_note) VALUES (?,?,?,?,?,?,?,?,?,?)')
+          .run(id, user.email, title, size, 'receiving', now, now, channelId, seal.opensAt, seal.note);
+        return sendJson(res, 200, { ok: true, uploadId: id, chunkSize: CHUNK_SIZE });
       }
       const chunkMatch = /^\/api\/upload\/raw\/chunk\/([a-f0-9-]{36})\/(\d{1,4})$/.exec(pathname);
       if (chunkMatch && req.method === 'POST') {
@@ -225,7 +305,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
         const temporary = join(dir, `${seq}.${randomUUID()}.tmp`);
         await writeFile(temporary, bytes, { mode: 0o600 });
         await rename(temporary, join(dir, String(seq)));
-        return json(res, 200, { ok: true, seq });
+        return sendJson(res, 200, { ok: true, seq });
       }
       if (pathname === '/api/upload/raw/finish' && req.method === 'POST') {
         const payload = await jsonBody(req);
@@ -242,7 +322,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
           .run(Date.now(), job.id).changes;
         if (!changed) throw new HttpError(409, 'Upload already finished.');
         pump().catch(error => console.error('Upload queue failed', error));
-        return json(res, 202, { ok: true, uploadId: job.id, status: 'queued' });
+        return sendJson(res, 202, { ok: true, uploadId: job.id, status: 'queued' });
       }
       if (pathname === '/api/upload/raw/cancel' && req.method === 'POST') {
         const payload = await jsonBody(req);
@@ -251,30 +331,48 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
         sqlite.prepare("UPDATE upload_jobs SET status='failed', error='Upload cancelled.', updated=? WHERE id=?")
           .run(Date.now(), job.id);
         await rm(join(incoming, job.id), { recursive: true, force: true });
-        return json(res, 200, { ok: true });
+        return sendJson(res, 200, { ok: true });
       }
       const statusMatch = /^\/api\/upload\/raw\/status\/([a-f0-9-]{36})$/.exec(pathname);
       if (statusMatch && req.method === 'GET') {
         const job = await owned(req, statusMatch[1]);
-        const clip = job.clip_id ? sqlite.prepare('SELECT id,title,src,poster,kind,blurb,published,duration,position FROM clips WHERE id=?').get(job.clip_id) : null;
-        return json(res, 200, {
+        const clip = job.clip_id ? sqlite.prepare(`SELECT c.id,c.title,c.src,c.poster,c.kind,c.blurb,c.published,c.duration,c.position,c.review,ch.slug channel
+          FROM clips c LEFT JOIN channels ch ON ch.id=c.channel_id WHERE c.id=?`).get(job.clip_id) : null;
+        return sendJson(res, 200, {
           ok: true, status: job.status, progress: job.progress, error: job.error,
           clip: clip && { id: clip.id, title: clip.title, src: clip.src, poster: clip.poster, kind: clip.kind,
-            blurb: clip.blurb, publishedAt: clip.published, duration: clip.duration, position: clip.position },
+            blurb: clip.blurb, publishedAt: clip.published, duration: clip.duration, position: clip.position,
+            channel: clip.channel || '', review: clip.review },
         });
       }
       throw new HttpError(404, 'Not found.');
     } catch (error) {
       if (!(error instanceof HttpError)) console.error('Upload request failed:', error);
-      if (!res.headersSent) json(res, error.status || 500, { ok: false, error: error.status ? error.message : 'Server error.' });
+      if (!res.headersSent) sendJson(res, error.status || 500, { ok: false, error: error.status ? error.message : 'Server error.' });
       else res.destroy(error);
     }
   }
 
+  async function sweep(at = Date.now()) {
+    const stale = sqlite.prepare("SELECT id FROM upload_jobs WHERE status='receiving' AND created<?").all(at - STALE_UPLOAD_MS);
+    for (const { id } of stale) {
+      sqlite.prepare("UPDATE upload_jobs SET status='failed', error='The upload was not finished.', updated=? WHERE id=? AND status='receiving'").run(at, id);
+    }
+    // Any folder without an upload still on its way, including ones left by a crash.
+    for (const name of await readdir(incoming).catch(() => [])) {
+      const job = ID.test(name) ? getJob.get(name) : null;
+      if (!job || !['receiving', 'queued', 'processing'].includes(job.status)) await rm(join(incoming, name), { recursive: true, force: true });
+    }
+  }
+
   async function deleteVideo(id) {
-    if (ID.test(id)) await rm(join(videos, `${id}.mp4`), { force: true });
+    if (!ID.test(id)) return;
+    for (const file of [`${id}.mp4`, `${id}.jpg`]) await rm(join(videos, file), { force: true });
   }
 
   pump().catch(error => console.error('Upload queue failed', error));
-  return { handle, deleteVideo };
+  const swept = () => sweep().catch(error => console.error('Upload sweep failed', error));
+  swept();
+  setInterval(swept, SWEEP_EVERY).unref();
+  return { handle, deleteVideo, sweep };
 }

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Set up {{brand.name}}</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#05060A">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/css/reset.css">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/parent.css">
+  <link rel="stylesheet" href="/setup/setup.css">
+</head>
+<body class="kp su">
+  <div class="su-page">
+    <header class="su-top">
+      <span class="su-top-name">Set up {{brand.name}}</span>
+      <span class="su-top-step" id="su-count" aria-hidden="true"></span>
+    </header>
+
+    <div class="su-layout">
+      <nav class="su-rail" aria-label="Setup steps">
+        <ol class="su-steps" id="su-steps"></ol>
+      </nav>
+
+      <main class="su-card kp-panel" id="su-main" aria-live="polite">
+        <div class="su-progress" aria-hidden="true"><span id="su-bar"></span></div>
+        <div class="su-body" id="su-body">
+          <p class="kp-lead">Loading setup.</p>
+        </div>
+      </main>
+    </div>
+
+    <footer class="su-foot">
+      <span class="su-credit">
+        <span class="su-credit-label">{{brand.name}} by</span>
+        <img src="/assets/smart-solutions-logo-white-transparent.png" alt="Smart Solutions" width="150" height="31">
+      </span>
+      <span class="su-foot-note">Everything stays on this server.</span>
+    </footer>
+  </div>
+
+  <noscript>
+    <p class="su-noscript">Setup needs JavaScript turned on.</p>
+  </noscript>
+
+  <script type="module" src="/setup/setup.js"></script>
+</body>
+</html>

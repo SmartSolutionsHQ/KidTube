@@ -1,16 +1,22 @@
+// Opens the SQLite database (WAL, foreign keys, mode 0600 for a new file). Everything uses the
+// node:sqlite handle except api.js, which runs its SQL through DB.
 import { DatabaseSync } from 'node:sqlite';
-import { existsSync, mkdirSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export function openDatabase(file, { allowEmpty = false } = {}) {
   if (file !== ':memory:' && !existsSync(file) && !allowEmpty) {
     throw new Error(`Database missing at ${file}; run npm run setup before starting`);
   }
-  if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true });
+  const created = file !== ':memory:' && !existsSync(file);
+  if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
   const sqlite = new DatabaseSync(file, { timeout: 5000 });
+  // A new database holds password hashes, so only this user may read it.
+  if (created) chmodSync(file, 0o600);
   sqlite.exec('PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA foreign_keys=ON;');
 
-  // The former Worker uses D1's prepare().bind().run() interface for all SQL.
+  // api.js was written for a hosted database's prepare().bind().run(); this adapter answers SELECTs with
+  // { results } and writes with { meta: { changes } }, which is all it reads.
   const DB = {
     prepare(sql) {
       return {

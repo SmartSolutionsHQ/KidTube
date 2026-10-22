@@ -1,21 +1,35 @@
-// src/scripts/kidtube-feed.js
+// The feed: one kid's clips as a swipe-first reel (phones) or a stage with a running order (wide
+// screens), with likes, comments, the running-order sheet and the kid's upload button. This is the
+// original player (hence the tz- classes); the shell (js/shell/app.js) picks the channel and unlocks it.
 import { publishVideo } from '/js/server-upload-v1.js';
 import { playClip, retryClip } from '/js/player-media-v1.js';
+// Launch story: time capsules (locked tapes, unlocks), reactions and the daily tape (js/shell/*).
+import { lockedSlideMarkup, lockedThumbMarkup, runUnlock, wantsUnlock, watchSealed, wobble } from '/js/shell/capsules.js';
+import { attachReactions, chipsMarkup, railButtonMarkup } from '/js/shell/reactions.js';
+import { attachWatch } from '/js/shell/watch.js';
+import { DEEP_LINK } from '/js/shell/route.mjs';
+import { openAuth, readSession, writeSession } from '/js/shell/auth-dialog.js';
+var familyZone = () => window.__ktChannel?.timezone || undefined;
+var serverBudget = null;
+// A spent daily tape: the slides carry no video at all, so nothing asks for a file the server will refuse.
+var tapeSpent = () => !!serverBudget && serverBudget.remaining <= 0;
+var reactionsUi = null;
 var CATALOG = [];
-var serverClipsReady = new Promise(resolve => { if(window.kidUnlocked) resolve(); else document.addEventListener("kid:unlocked",resolve,{once:true}); }).then(() => fetch("/api/clips")).then((r) => r.json()).then((j) => {
+// The shell (js/shell/app.js) names the kid's channel in window.__ktChannel before it unlocks the feed.
+var channelSlug = () => window.__ktChannel?.slug || "";
+var clipHash = (id) => (channelSlug() ? "#/c/" + channelSlug() : "#") + "/v/" + id;
+var clipsUrl = () => "/api/clips" + (channelSlug() ? "?channel=" + encodeURIComponent(channelSlug()) : "");
+var serverClipsReady = new Promise(resolve => { if(window.kidUnlocked) resolve(); else document.addEventListener("kid:unlocked",resolve,{once:true}); }).then(() => fetch(clipsUrl())).then((r) => r.json()).then((j) => {
   if (j && j.ok && Array.isArray(j.clips) ) {
     CATALOG.length = 0;
     for (const row of j.clips) CATALOG.push(row);
+    serverBudget = j.budget || null;
   }
 }).catch(() => {
 });
-var clips = [...CATALOG].sort((a, b) => {
-  const sa = Number.isFinite(a.seq) ? a.seq : Infinity;
-  const sb = Number.isFinite(b.seq) ? b.seq : Infinity;
-  if (sa !== sb) return sa - sb;
-  return b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id);
-});
-var order = clips.map((c, i) => i);
+// The clips in channel order (buildReel fills it) and the order they play in (shuffle reorders it).
+var clips = [];
+var order = [];
 var rank = (i) => {
   const n = order.indexOf(i);
   return n < 0 ? 0 : n;
@@ -36,7 +50,6 @@ function syncDomOrder() {
   }
 }
 var MAX_SECONDS = 300;
-var REENCODE_MAX = 48 * 1024 * 1024;
 var LOOP_UNDER = 60;
 var FIT_TOLERANCE = 0.06;
 var DESKTOP = window.matchMedia("(min-width: 900px)");
@@ -72,12 +85,15 @@ function fmtAgo(ts) {
   if (mins < 1440) return `${Math.floor(mins / 60)}h`;
   return `${Math.floor(mins / 1440)}d`;
 }
+// A session rides in headers, never the URL, so proxy and server logs don't keep the token.
+var sessHeaders = (s) => s && s.t ? { "x-kid-email": s.email, "x-kid-token": s.t } : {};
 var esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 var reel = $("#tz-reel");
 function slideMarkup(c, i) {
+  if (c.sealed) return lockedSlideMarkup(c, i, clips.length, familyZone());
   const media = `<video playsinline preload="none" muted
               ${c.duration && c.duration < LOOP_UNDER ? "loop" : ""}
-              ${c.src ? `src="${esc(c.src)}"` : ""} poster="${esc(c.poster || "")}"></video>`;
+              ${c.src && !tapeSpent() ? `src="${esc(c.src)}"` : ""}></video>`;
   return `
   <section class="tz-slide" data-i="${i}" data-id="${esc(c.id)}" data-state="loading"
            tabindex="-1" aria-label="Clip ${i + 1} of ${clips.length}">
@@ -98,6 +114,7 @@ function slideMarkup(c, i) {
       </p>
       <h2 class="tz-cap-title">${esc(c.title)}</h2>
       <p class="tz-cap-blurb">${esc(c.blurb)}</p>
+      ${chipsMarkup()}
     </div>
 
     <div class="tz-rail">
@@ -106,6 +123,7 @@ function slideMarkup(c, i) {
       <button type="button" data-act="like" aria-pressed="false" aria-label="Like. 0 likes.">
         <span class="tz-ico" data-ico="heart" aria-hidden="true"></span>
         <span class="tz-likes" data-bind="likes" aria-hidden="true">0</span></button>
+      ${railButtonMarkup()}
       <button type="button" data-act="comments" aria-label="Comments">
         <span class="tz-ico" data-ico="chat" aria-hidden="true"></span></button>
       <button type="button" data-act="index" aria-label="Open the channel index">
@@ -132,9 +150,10 @@ function slideMarkup(c, i) {
   </section>`;
 }
 var slides = [];
+var reelBuilt = false;
 function buildReel() {
-  if (window.__tzReelBuilt) return;
-  window.__tzReelBuilt = true;
+  if (reelBuilt) return;
+  reelBuilt = true;
   const sorted = [...CATALOG].sort((a, b) => {
     const sa = Number.isFinite(a.seq) ? a.seq : Infinity;
     const sb = Number.isFinite(b.seq) ? b.seq : Infinity;
@@ -144,7 +163,7 @@ function buildReel() {
   clips.length = 0;
   for (const c of sorted) clips.push(c);
   order = clips.map((c, i) => i);
-  reel.innerHTML = clips.length ? clips.map(slideMarkup).join("") : '<section class="tz-slide" data-end="1"><p>The channel is waiting for its first videos.</p></section>';
+  reel.innerHTML = clips.length ? clips.map(slideMarkup).join("") : '<section class="tz-slide" data-end="1">' + (window.__ktShell?.emptyMarkup?.() || "<p>The channel is waiting for its first videos.</p>") + "</section>";
   slides = queryAll(".tz-slide", reel);
   $('[data-bind="total"]').textContent = String(clips.length).padStart(2, "0");
   $('[data-bind="log"]').innerHTML = logMarkup();
@@ -160,7 +179,7 @@ function logMarkup() {
   return clips.map((c, i) => `
     <li><button class="tz-log-row" type="button" data-goto="${i}">
       <span class="tz-log-thumb">
-        ${c.poster ? `<img src="${esc(c.poster)}" alt="" loading="lazy">` : ""}
+        ${c.sealed ? lockedThumbMarkup() : c.poster ? `<img src="${esc(c.poster)}" alt="" loading="lazy">` : ""}
         <span class="tz-log-n">${String(i + 1).padStart(2, "0")}</span>
       </span>
       <span>
@@ -171,12 +190,12 @@ function logMarkup() {
 }
 function endplateMarkup() {
   return `<span class="tz-label">The end</span>
-    <p class="tz-meta">${clips.length} CLIPS \xB7 SINCE ${clips.length ? fmtDate(clips[clips.length - 1].publishedAt) : ""}</p>
+    <p class="tz-meta">${clips.length} ${clips.length === 1 ? "CLIP" : "CLIPS"}${clips.length ? " \xB7 SINCE " + fmtDate(clips[clips.length - 1].publishedAt) : ""}</p>
     <button class="tz-btn" type="button" data-act="top">BACK TO LATEST</button>`;
 }
 function applyFit(slide) {
   const slot = $(".tz-slot", slide);
-  const el = $("video", slide) || $("img.tz-still", slide);
+  const el = $("video", slide);
   if (!el) return;
   const w = el.videoWidth || el.naturalWidth;
   const h = el.videoHeight || el.naturalHeight;
@@ -193,10 +212,6 @@ function ambient(slide, el) {
   const poster = clips[Number(slide.dataset.i)]?.poster;
   if (poster) {
     amb.src = poster;
-    return;
-  }
-  if (el.tagName === "IMG") {
-    amb.src = el.src;
     return;
   }
   try {
@@ -219,11 +234,16 @@ function applyPreloads() {
   const active = state.index;
   const position = rank(active);
   const neighbors = new Set([order[(position + 1) % order.length], order[(position - 1 + order.length) % order.length]]);
+  const ahead = order[(position + 2) % order.length];
   for (let i = 0; i < slides.length; i++) {
     const v = $("video", slides[i]);
     if (!v) continue;
     const want = i === active ? "auto" : neighbors.has(i) ? "metadata" : "none";
     if (v.preload !== want) v.preload = want;
+    // The clip on screen and every clip one or two swipes away carry their poster, so a swipe never lands
+    // on black; posters further out wait, because they are private and never cached.
+    const poster = clips[i]?.poster;
+    if (poster && (i === active || neighbors.has(i) || i === ahead) && !v.getAttribute("poster")) v.setAttribute("poster", poster);
   }
 }
 function playActive() {
@@ -235,6 +255,14 @@ function playActive() {
   }
   const v = $("video", slide);
   pauseAllExcept(v);
+  if (!v || slide.dataset.unlocking) return;
+  // A capsule opened this week plays its theme's unlock first, once, after the splash has lifted.
+  const c = clips[state.index];
+  if (wantsUnlock(c)) {
+    if (window.__tzsplash) document.addEventListener("tz:enter", () => playActive(), { once: true });
+    else runUnlock(slide, c, window.__ktChannel || {}, () => { if (slides[state.index] === slide) playActive(); });
+    return;
+  }
   playClip(slide, { muted: !state.soundOn });
 }
 var io = new IntersectionObserver((entries) => {
@@ -245,7 +273,6 @@ var io = new IntersectionObserver((entries) => {
     if (i !== state.index) setActive(i, { scroll: false });
   }
 }, { root: reel, threshold: [0, 0.6, 1] });
-slides.forEach((s) => io.observe(s));
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) pauseAllExcept(null);
   else if (!state.sheet) playActive();
@@ -268,18 +295,14 @@ function setActive(i, { scroll = true } = {}) {
   body.toggleAttribute("data-end", !c);
   $('[data-bind="pos"]').textContent = c ? String(rank(state.index) + 1).padStart(2, "0") : "END";
   queryAll(".tz-log-row").forEach((r) => r.setAttribute("aria-current", String(Number(r.dataset.goto) === state.index)));
-  slides.forEach((s, n) => {
-    const up = $('[data-act="newer"]', s), dn = $('[data-act="older"]', s);
-    if (up) up.disabled = false;
-    if (dn) dn.disabled = false;
-  });
   const glow = $(".tz-glow");
   const poster = clips[state.index]?.poster;
   if (glow) glow.style.backgroundImage = poster ? `url("${poster}")` : "none";
+  reactionsUi?.close();
   if (c) {
     hydrateReactions(state.index);
     $('[data-bind="live"]').textContent = `${state.shuffle ? "Shuffled. " : ""}Clip ${rank(state.index) + 1} of ${clips.length}. ${c.title}.`;
-    history.replaceState(null, "", `#/v/${c.id}`);
+    history.replaceState(null, "", clipHash(c.id));
   } else {
     $('[data-bind="live"]').textContent = "End of the channel.";
   }
@@ -391,13 +414,14 @@ function paintLike(like, liked, count) {
 }
 function hydrateReactions(i) {
   const slide = slides[i], c = clips[i];
-  if (!slide || !c) return;
+  if (!slide || !c || c.sealed) return;
+  reactionsUi?.paint(slide);
   const st = likeState.get(c.id) || { count: 0, liked: false };
   paintLike($('[data-act="like"]', slide), st.liked, st.count);
 }
 async function toggleLike(i, forceOn) {
   const slide = slides[i], c = clips[i];
-  if (!slide || !c) return;
+  if (!slide || !c || c.sealed) return;
   if (guestSession()) { guestPrompt(); return; }
   const like = $('[data-act="like"]', slide);
   if (like.disabled) return;
@@ -432,19 +456,17 @@ function failNote(slide, msg) {
     n.hidden = true;
   }, 3e3);
 }
-var cSheet = $('[data-sheet="comments"]');
 var cBody = $('[data-bind="comments"]');
 var cForm = $('[data-bind="composer"]');
-var nameF = $("#tz-name");
 var bodyF = $("#tz-body");
 var postBtn = $(".tz-post");
 async function renderComments() {
   const c = clips[state.index];
   if (!c) return;
-  const s = sessRead();
+  const s = readSession();
   let j;
   try {
-    j = await fetch("/api/comments?c=" + encodeURIComponent(c.id) + (s && s.t ? "&e=" + b64uParam(s.email) + "&t=" + encodeURIComponent(s.t) : "")).then((r) => r.json());
+    j = await fetch("/api/comments?c=" + encodeURIComponent(c.id), { headers: sessHeaders(s) }).then((r) => r.json());
   } catch {
     cBody.textContent = "Couldn't load comments.";
     return;
@@ -480,7 +502,7 @@ function syncPost() {
 }
 bodyF.addEventListener("input", syncPost);
 var posting = false;
-var pendingDrafts = /* @__PURE__ */ new Map();
+var pendingDrafts = new Map();
 var postStatus = document.createElement("div");
 postStatus.className = "tz-cmt";
 postStatus.setAttribute("role", "status");
@@ -497,10 +519,12 @@ async function saveDraft(id, draft) {
   pendingDrafts.set(id, draft);
   syncPost();
   showDraft();
+  let held = false;
   try {
-    const s = sessRead();
+    const s = readSession();
     const j = await apiPost("/api/comment", { clipId: id, email: s.email, t: s.t, body: draft.body });
     if (!j || !j.ok) throw new Error("save");
+    held = !!(j.row && j.row.hidden);
     pendingDrafts.delete(id);
     if (clips[state.index]?.id === id) await renderComments();
   } catch {
@@ -509,6 +533,11 @@ async function saveDraft(id, draft) {
     posting = false;
     syncPost();
     showDraft();
+  }
+  // Comments a parent reads first would otherwise just vanish from the sheet.
+  if (held && clips[state.index]?.id === id) {
+    postStatus.innerHTML = '<p class="tz-cmt-body">Sent. A parent reads new comments before they show here.</p>';
+    postStatus.style.opacity = "1";
   }
 }
 cForm.addEventListener("submit", async (e) => {
@@ -649,7 +678,11 @@ document.addEventListener("click", (e) => {
     case "like":
       toggleLike(i);
       break;
+    case "wobble":
+      wobble(slide);
+      break;
     case "comments":
+      if (clips[i]?.sealed) break;
       if (guestSession()) guestPrompt();
       else openSheet("comments");
       break;
@@ -750,82 +783,6 @@ document.addEventListener("pointerdown", (e) => {
   bar.addEventListener("pointercancel", end);
   flush();
 });
-(() => {
-  const st = document.createElement("style");
-  st.id = "tz-scrub-style";
-  st.textContent = `
-.tz-bar{touch-action:none;-webkit-tap-highlight-color:transparent;user-select:none}
-.tz-bar-fill::after{content:'';position:absolute;right:-6px;top:50%;width:11px;height:11px;
-  border-radius:50%;background:var(--tz-paper,#F7F4EC);
-  box-shadow:0 0 0 1px rgba(5,6,10,.55),0 1px 5px rgba(5,6,10,.45);
-  transform:translateY(-50%);opacity:.85;pointer-events:none;
-  transition:transform 140ms cubic-bezier(.2,0,0,1),opacity 140ms linear}
-.tz-slide[data-scrub='1'] .tz-bar-fill::after{transform:translateY(-50%) scale(1.6);opacity:1}
-.tz-slide[data-state='loading'] .tz-bar-fill::after,
-.tz-slide[data-state='error'] .tz-bar-fill::after{opacity:0}
-.tz-bar-tip{position:absolute;bottom:14px;left:16px;transform:translateX(-50%);
-  padding:5px 8px;border-radius:2px;background:rgba(5,6,10,.82);color:var(--tz-paper,#F7F4EC);
-  font:500 11px/1 var(--tz-mono,'DM Mono',monospace);letter-spacing:.1em;
-  opacity:0;pointer-events:none;white-space:nowrap;transition:opacity 120ms linear}
-.tz-slide[data-scrub='1'] .tz-bar-tip{opacity:1}`;
-  document.head.appendChild(st);
-})();
-(() => {
-  const st = document.createElement("style");
-  st.id = "tz-upload-style";
-  st.textContent = `
-.tz-upload-fab{position:absolute;right:12px;z-index:20;bottom:calc(var(--tz-safe-b,0px) + var(--tz-kb,0px) + 52px);
-  display:flex;align-items:center;gap:6px;padding:8px 12px;border:1px solid rgba(247,244,236,.35);
-  background:rgba(5,6,10,.72);color:var(--tz-paper,#F7F4EC);font:500 11px/1 var(--tz-mono,'DM Mono',monospace);
-  letter-spacing:.12em;text-transform:uppercase;border-radius:999px;cursor:pointer}
-.tz-upload-fab:hover{border-color:var(--tz-flare,#3265FF);color:var(--tz-flare,#3265FF)}
-.tz-upload-pill{position:absolute;left:50%;transform:translateX(-50%);top:14px;z-index:40;
-  padding:8px 12px;border-radius:2px;background:rgba(5,6,10,.85);color:var(--tz-paper,#F7F4EC);
-  font:500 11px/1.3 var(--tz-mono,'DM Mono',monospace);letter-spacing:.08em;max-width:80%;text-align:center}`;
-  document.head.appendChild(st);
-})();
-(() => {
-  const st = document.createElement("style");
-  st.id = "tz-namecard-style";
-  st.textContent = `
-.tz-namecard{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
-  padding:20px;background:rgba(5,6,10,.72);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-.tz-namecard-in{width:100%;max-width:360px;background:#0B0D13;border:1px solid rgba(247,244,236,.28);
-  border-radius:4px;padding:18px 18px 14px;color:var(--tz-paper,#F7F4EC);
-  font:500 12px/1.5 var(--tz-mono,'DM Mono',monospace);box-shadow:0 18px 60px rgba(5,6,10,.7)}
-.tz-namecard-kicker{margin:0 0 10px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--tz-flare,#3265FF)}
-.tz-namecard-lbl{display:block;margin:0 0 6px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(247,244,236,.6)}
-.tz-namecard-input{width:100%;box-sizing:border-box;background:rgba(247,244,236,.07);
-  border:1px solid rgba(247,244,236,.3);border-radius:2px;color:var(--tz-paper,#F7F4EC);
-  font:500 14px/1 var(--tz-mono,'DM Mono',monospace);padding:11px 10px}
-.tz-namecard-input:focus{outline:none;border-color:var(--tz-flare,#3265FF)}
-.tz-namecard-meta{margin:8px 0 14px;font-size:10px;letter-spacing:.1em;color:rgba(247,244,236,.5)}
-.tz-namecard-acts{display:flex;gap:8px;justify-content:flex-end}
-.tz-namecard-btn{appearance:none;background:none;border:1px solid rgba(247,244,236,.3);color:var(--tz-paper,#F7F4EC);
-  font:500 10px/1 var(--tz-mono,'DM Mono',monospace);letter-spacing:.14em;text-transform:uppercase;
-  padding:10px 13px;border-radius:2px;cursor:pointer}
-.tz-namecard-btn:hover{border-color:var(--tz-flare,#3265FF);color:var(--tz-flare,#3265FF)}
-.tz-namecard-go{border-color:var(--tz-flare,#3265FF);color:var(--tz-flare,#3265FF)}
-.tz-namecard-go:hover{background:var(--tz-flare,#3265FF);color:#05060A}`;
-  document.head.appendChild(st);
-})();
-(() => {
-  const st = document.createElement("style");
-  st.id = "tz-social-style";
-  st.textContent = `
-.tz-heartburst{position:absolute;z-index:12;width:0;height:0;pointer-events:none}
-.tz-heartburst .tz-ico{position:absolute;left:-26px;top:-26px;width:52px;height:52px;color:var(--tz-flare,#3265FF);
-  filter:drop-shadow(0 2px 10px rgba(5,6,10,.6));
-  animation:tz-heartpop 700ms cubic-bezier(.2,0,0,1) forwards}
-@keyframes tz-heartpop{
-  0%{transform:scale(.2) rotate(-8deg);opacity:0}
-  18%{transform:scale(1.18) rotate(3deg);opacity:1}
-  38%{transform:scale(1) rotate(0)}
-  70%{transform:scale(1.02) translateY(-8px);opacity:1}
-  100%{transform:scale(.9) translateY(-46px);opacity:0}}
-#tz-name,label[for="tz-name"]{display:none}`;
-  document.head.appendChild(st);
-})();
 function retry(slide) {
   retryClip(slide, {
     play: slide?.dataset.active === "1" && !document.hidden && !state.sheet,
@@ -869,7 +826,7 @@ document.addEventListener("keydown", (e) => {
       setShuffle(!state.shuffle);
       break;
     case "c":
-      openSheet("comments");
+      if (!clips[state.index]?.sealed) openSheet("comments");
       break;
     case "i":
       openSheet("index");
@@ -894,14 +851,6 @@ function durOf(slide, v) {
 }
 function wireSlide(slide) {
   const v = $("video", slide);
-  const img = $("img.tz-still", slide);
-  if (img) {
-    img.addEventListener("load", () => {
-      slide.dataset.state = "ready";
-      applyFit(slide);
-    });
-    return;
-  }
   if (!v) {
     slide.dataset.state = "ready";
     return;
@@ -952,7 +901,7 @@ function wireSlide(slide) {
 function setMode(mode) {
   body.dataset.mode = mode;
   if (mode === "immersive") {
-    requestAnimationFrame(() => slides[state.index].scrollIntoView({ behavior: "auto", block: "start" }));
+    requestAnimationFrame(() => slides[state.index]?.scrollIntoView({ behavior: "auto", block: "start" }));
   }
   if (slides[state.index]) applyFit(slides[state.index]);
 }
@@ -968,17 +917,9 @@ window.addEventListener("resize", () => {
     if (slides[state.index]) applyFit(slides[state.index]);
   });
 }, { passive: true });
-var likeState = /* @__PURE__ */ new Map();
-function sessRead() {
-  try {
-    const s = JSON.parse(localStorage.getItem("kid-session") || "null");
-    return s && s.exp && s.exp > Date.now() && (s.guest ? s.guestToken : s.email) ? s : null;
-  } catch (err) {
-    return null;
-  }
-}
+var likeState = new Map();
 function guestSession() {
-  return !!sessRead()?.guest;
+  return !!readSession()?.guest;
 }
 function guestPrompt() {
   if (document.getElementById("tz-guest-prompt")) return;
@@ -987,42 +928,27 @@ function guestPrompt() {
   wrap.setAttribute("role", "dialog");
   wrap.setAttribute("aria-modal", "true");
   wrap.setAttribute("aria-label", "Register to participate");
-  wrap.style.cssText = "position:fixed;inset:0;z-index:500;display:grid;place-items:center;padding:20px;background:rgba(5,6,10,.82);backdrop-filter:blur(7px)";
-  wrap.innerHTML = `<div style="width:min(100%,380px);padding:24px;border:1px solid rgba(247,244,236,.3);border-radius:8px;background:#0B0D13;color:#F7F4EC;font:14px/1.5 system-ui,sans-serif;box-shadow:0 18px 60px #0009">
-    <h2 style="margin:0 0 10px;color:#3265FF;font-size:20px">Guest access is view-only</h2>
+  wrap.innerHTML = `<div class="tz-guest-card">
+    <h2>Guest access is view-only</h2>
     <p>To like or comment, you need to register for an account.</p>
-    <p><a href="/?register=1" style="color:#8BA8FF;text-decoration:underline">Click here to register</a></p>
-    <button type="button" data-guest-close style="padding:9px 14px;border:1px solid #F7F4EC;background:transparent;color:#F7F4EC;cursor:pointer">Keep watching</button>
+    <p><button type="button" class="tz-guest-signup" data-guest-signup>Ask for an account</button></p>
+    <button type="button" data-guest-close>Keep watching</button>
   </div>`;
   const close = () => { wrap.remove(); document.removeEventListener("keydown", escape); };
   const escape = (event) => { if (event.key === "Escape") close(); };
   wrap.querySelector("[data-guest-close]").addEventListener("click", close);
+  // The sign-up form is the same card the front door uses; a parent still approves the request.
+  wrap.querySelector("[data-guest-signup]").addEventListener("click", () => { close(); openAuth({ mode: "signup" }); });
   wrap.addEventListener("click", event => { if (event.target === wrap) close(); });
   document.addEventListener("keydown", escape);
   document.body.appendChild(wrap);
   wrap.querySelector("[data-guest-close]").focus();
 }
-function sessWrite(s) {
-  try {
-    localStorage.setItem("kid-session", JSON.stringify(s));
-  } catch (err) {
-  }
-}
-var b64uParam = (s) => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+// The signed-in session, or null for guests and visitors. /api/check never hands out a token without one,
+// so there is nothing to fetch here; callers already treat a session without `t` as signed out.
 async function sessToken() {
-  const s = sessRead();
-  if (!s) return null;
-  if (s.guest) return null;
-  if (s.t) return s;
-  try {
-    const j = await fetch("/api/check?e=" + b64uParam(s.email)).then((r) => r.json());
-    if (j && j.ok && j.status === "approved" && j.t) {
-      s.t = j.t;
-      sessWrite(s);
-    }
-  } catch (err) {
-  }
-  return sessRead();
+  const s = readSession();
+  return s && !s.guest ? s : null;
 }
 async function apiPost(path, body2) {
   try {
@@ -1043,36 +969,16 @@ function paintAllLikes() {
 async function seedLikes() {
   const s = await sessToken();
   try {
-    const q = s && s.t ? "?e=" + b64uParam(s.email) + "&t=" + encodeURIComponent(s.t) : "";
-    const j = await fetch("/api/likes" + q).then((r) => r.json());
+    const j = await fetch("/api/likes", { headers: sessHeaders(s) }).then((r) => r.json());
     if (!j || !j.ok) return;
     likeState.clear();
     for (const k in j.counts) likeState.set(k, { count: j.counts[k] || 0, liked: !!(j.liked && j.liked[k]) });
-    if (s && s.t) {
-      for (const c of clips) {
-        let v = null;
-        try {
-          v = JSON.parse(localStorage.getItem("tz-r-" + c.id) || "null");
-        } catch (err) {
-        }
-        if (v && v.liked && !(likeState.get(c.id) || { liked: false }).liked) {
-          const r = await apiPost("/api/like", { clipId: c.id, email: s.email, t: s.t, on: true });
-          if (r && r.ok) {
-            likeState.set(c.id, { count: r.count, liked: true });
-            try {
-              localStorage.setItem("tz-r-" + c.id, JSON.stringify({ liked: false, comments: v.comments || [] }));
-            } catch (err) {
-            }
-          }
-        }
-      }
-    }
     paintAllLikes();
   } catch (err) {
   }
 }
 async function serverDeleteComment(id, cid) {
-  const s = sessRead();
+  const s = readSession();
   if (!s || !s.t) throw new Error("log in");
   const j = await apiPost("/api/comment/delete", { id: cid, email: s.email, t: s.t });
   if (!j || !j.ok) throw new Error("delete");
@@ -1116,27 +1022,64 @@ function heartBurst(slide, x, y) {
   slide.appendChild(burst);
   setTimeout(() => burst.remove(), 750);
 }
+// Reactions, the daily tape, and capsules whose date arrives while the feed is open (js/shell/*).
+function bootLaunchStory() {
+  const clipOf = (slide) => clips[Number(slide.dataset.i)];
+  reactionsUi = attachReactions({ session: () => { const s = readSession(); return s && !s.guest ? s : null; }, isGuest: guestSession, guestPrompt, failNote, clipOf });
+  attachWatch({ budget: serverBudget, channel: window.__ktChannel || {}, clipOf });
+  watchSealed(() => clips, familyZone(), openSealed);
+}
+// Swaps a locked tape for the real clip once the server has opened it; its unlock plays when it is on screen.
+async function openSealed(id, tries = 0) {
+  let row = null;
+  try {
+    const j = await fetch(clipsUrl()).then((r) => r.json());
+    row = (j.clips || []).find((c) => c.id === id && !c.sealed && c.src) || null;
+  } catch {
+  }
+  // The server opens capsules on a one-minute tick, so the first look can be early.
+  if (!row) {
+    if (tries < 18) setTimeout(() => openSealed(id, tries + 1), 1e4);
+    return;
+  }
+  const i = clips.findIndex((c) => c.id === id);
+  if (i < 0) return;
+  clips[i] = row;
+  const holder = document.createElement("template");
+  holder.innerHTML = slideMarkup(row, i).trim();
+  const fresh = holder.content.firstElementChild;
+  io.unobserve(slides[i]);
+  slides[i].replaceWith(fresh);
+  slides[i] = fresh;
+  io.observe(fresh);
+  wireSlide(fresh);
+  $('[data-bind="log"]').innerHTML = logMarkup();
+  $('[data-bind="log2"]').innerHTML = logMarkup();
+  if (i === state.index) setActive(i, { scroll: false });
+  else applyPreloads();
+}
 function bootFeed() {
-  const deep = location.hash.match(/^#\/v\/(.+)$/);
+  const deep = location.hash.match(DEEP_LINK);
   const start = deep ? clips.findIndex((c) => c.id === deep[1]) : 0;
   syncMode();
   setSound(false);
   async function seedRole() {
-    const s = sessRead();
+    const s = readSession();
     if (!s) return null;
     if (s.guest) return s;
     if (s.role === "admin" || s.role === "super") return s;
+    // Without a token /api/check answers "none" with an empty role, which says nothing about this
+    // account, so only a confirmed check may change the stored role.
+    if (!s.t) return s;
     try {
-      const q = "?e=" + b64uParam(s.email) + (s.t ? "&t=" + encodeURIComponent(s.t) : "");
-      const j = await fetch("/api/check" + q).then((r) => r.json());
-      if (j && j.ok) {
-        if (j.t && !s.t) s.t = j.t;
+      const j = await fetch("/api/check", { headers: sessHeaders(s) }).then((r) => r.json());
+      if (j && j.ok && j.status === "approved") {
         s.role = j.role || "";
-        sessWrite(s);
+        writeSession(s);
       }
     } catch (err) {
     }
-    return sessRead();
+    return readSession();
   }
   function mountUploadFab() {
     if ($(".tz-upload-fab")) return;
@@ -1177,36 +1120,75 @@ function bootFeed() {
       const card = document.createElement("div");
       card.className = "tz-namecard";
       card.innerHTML = `
-      <div class="tz-namecard-in" role="dialog" aria-modal="true" aria-label="Name this clip">
-        <p class="tz-namecard-kicker">Ready to publish</p>
-        <label class="tz-namecard-lbl" for="tz-clipname">Name this clip</label>
+      <div class="tz-namecard-in" role="dialog" aria-modal="true" aria-labelledby="tz-namecard-title">
+        <p class="tz-namecard-kicker"></p>
+        <h2 class="tz-namecard-title" id="tz-namecard-title">What's it called?</h2>
+        <label class="tz-namecard-lbl" for="tz-clipname">Title</label>
         <input class="tz-namecard-input" id="tz-clipname" type="text" maxlength="80" autocomplete="off" spellcheck="false">
-        <p class="tz-namecard-meta"></p>
+        <div class="tz-namecard-file">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5M5 19h14" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          <span class="tz-namecard-meta"></span>
+        </div>
+        <p class="tz-namecard-note"></p>
+        <label class="tz-namecard-seal"><input type="checkbox" data-seal> Seal it as a time capsule</label>
+        <div class="tz-namecard-capsule" hidden>
+          <label class="tz-namecard-lbl" for="tz-opens">Opens on</label>
+          <input class="tz-namecard-input" id="tz-opens" type="datetime-local">
+          <label class="tz-namecard-lbl" for="tz-capnote">A note for when it opens (optional)</label>
+          <input class="tz-namecard-input" id="tz-capnote" type="text" maxlength="140" autocomplete="off" placeholder="Open on your 10th birthday">
+          <p class="tz-namecard-err" role="alert"></p>
+        </div>
         <div class="tz-namecard-acts">
-          <button class="tz-namecard-btn" type="button" data-name="cancel">Cancel</button>
-          <button class="tz-namecard-btn tz-namecard-go" type="button" data-name="go">Publish</button>
+          <button class="tz-namecard-btn tz-namecard-go" type="button" data-name="go">Record it to tape</button>
+          <button class="tz-namecard-btn tz-namecard-quiet" type="button" data-name="cancel">Cancel</button>
         </div>
       </div>`;
       const input = $(".tz-namecard-input", card);
       const fallback = titleFromName(file && file.name);
       input.value = fallback;
+      const channelName = window.__ktChannel?.name || "";
+      $(".tz-namecard-kicker", card).textContent = channelName ? "New tape \xB7 " + channelName : "New tape";
       $(".tz-namecard-meta", card).textContent = [
+        file && file.name ? file.name : "",
         fmtDur(secs),
-        file && file.size ? (file.size / 1048576).toFixed(1) + " MB" : "",
-        "converted to 480p on the server"
+        file && file.size ? (file.size / 1048576).toFixed(1) + " MB" : ""
       ].filter(Boolean).join(" \xB7 ");
+      // Parents' uploads go live; anyone else's may wait for a parent, depending on the kid's settings.
+      const role = readSession()?.role || "";
+      $(".tz-namecard-note", card).textContent = role === "admin" || role === "super"
+        ? "Up to 5 minutes. It goes on the channel as soon as it's converted."
+        : "Up to 5 minutes. A parent may check it before it goes on your channel.";
       document.body.appendChild(card);
+      // A capsule opens at least an hour from now; the date is read in this device's time zone.
+      const sealBox = $("[data-seal]", card), capsule = $(".tz-namecard-capsule", card), opens = $("#tz-opens", card);
+      const localInput = (ms) => new Date(ms - new Date(ms).getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
+      opens.min = localInput(Date.now() + 36e5 + 6e4);
+      sealBox.addEventListener("change", () => {
+        capsule.hidden = !sealBox.checked;
+        $(".tz-namecard-go", card).textContent = sealBox.checked ? "Seal it to tape" : "Record it to tape";
+        if (sealBox.checked) opens.focus();
+      });
       const done = (val) => {
         card.remove();
         document.removeEventListener("keydown", onKey, true);
         resolve(val);
       };
-      const go = () => done(input.value.trim() || fallback);
+      const go = () => {
+        const title = input.value.trim() || fallback;
+        if (!sealBox.checked) return done({ title });
+        const opensAt = Math.round(new Date(opens.value).getTime() / 6e4) * 6e4;
+        if (!opens.value || !Number.isFinite(opensAt) || opensAt < Date.now() + 36e5) {
+          $(".tz-namecard-err", card).textContent = "Pick a date at least an hour away.";
+          opens.focus();
+          return;
+        }
+        done({ title, seal: { opensAt, capsuleNote: $("#tz-capnote", card).value.trim().slice(0, 140) } });
+      };
       const onKey = (e) => {
         if (e.key === "Escape") {
           e.stopPropagation();
           done(null);
-        } else if (e.key === "Enter") {
+        } else if (e.key === "Enter" && e.target.type !== "checkbox") {
           e.preventDefault();
           go();
         }
@@ -1235,7 +1217,7 @@ function bootFeed() {
     };
     input.click();
   }
-  async function uploadPicked(file, forcedName) {
+  async function uploadPicked(file) {
     try {
       const secs = await readDuration(file);
       if (secs > MAX_SECONDS) {
@@ -1246,12 +1228,12 @@ function bootFeed() {
         fabSay("Over 512 MB. Trim it first.", 7e3);
         return;
       }
-      const name = forcedName === void 0 ? await askName(file, secs) : forcedName;
-      if (name == null) {
+      const picked = await askName(file, secs);
+      if (picked == null) {
         fabSay("Nothing was uploaded.", 2600);
         return;
       }
-      await uploadClip(file, name);
+      await uploadClip(file, picked.title, picked.seal);
     } catch (err) {
       fabSay(err && err.message ? err.message : "Couldn't upload.", 8e3);
     }
@@ -1343,192 +1325,22 @@ function bootFeed() {
       }
     });
   }
-  function ebmlId(u8, at) {
-    if (at >= u8.length) return null;
-    const n = ebmlVintLen(u8[at]);
-    if (!n || at + n > u8.length) return null;
-    let v = 0;
-    for (let k = 0; k < n; k++) v = v * 256 + u8[at + k];
-    return { id: v, len: n };
-  }
-  function ebmlSize(u8, at) {
-    if (at >= u8.length) return null;
-    const n = ebmlVintLen(u8[at]);
-    if (!n || at + n > u8.length) return null;
-    let v = u8[at] & (1 << 8 - n) - 1, unknown = v === (1 << 8 - n) - 1;
-    for (let k = 1; k < n; k++) {
-      v = v * 256 + u8[at + k];
-      if (u8[at + k] !== 255) unknown = false;
-    }
-    return { size: v, len: n, unknown };
-  }
-  function ebmlUint(u8, at, n) {
-    let v = 0;
-    for (let k = 0; k < n; k++) v = v * 256 + u8[at + k];
-    return v;
-  }
-  function eachEbml(u8, start2, end, cb) {
-    let i = start2;
-    while (i < end) {
-      const id = ebmlId(u8, i);
-      if (!id) return;
-      const sz = ebmlSize(u8, i + id.len);
-      if (!sz) return;
-      const body2 = i + id.len + sz.len;
-      cb(id.id, body2, sz.unknown ? end : Math.min(end, body2 + sz.size));
-      const next = sz.unknown ? end : body2 + sz.size;
-      i = next > i ? next : i + 1;
-    }
-  }
-  function webmPicture(u8) {
-    const head = ebmlId(u8, 0);
-    if (!head || head.id !== 440786851) return null;
-    const hs = ebmlSize(u8, head.len);
-    if (!hs) return null;
-    const segAt = head.len + hs.len + hs.size;
-    const seg = ebmlId(u8, segAt);
-    if (!seg || seg.id !== 408125543) return null;
-    const ss = ebmlSize(u8, segAt + seg.len);
-    if (!ss) return null;
-    const segBody = segAt + seg.len + ss.len;
-    const segEnd = ss.unknown ? u8.length : Math.min(u8.length, segBody + ss.size);
-    const tracks = [];
-    eachEbml(u8, segBody, segEnd, (id, b, e) => {
-      if (id !== 374648427) return;
-      eachEbml(u8, b, e, (tid, tb, te) => {
-        if (tid !== 174) return;
-        let num = 0, type = 0;
-        eachEbml(u8, tb, te, (cid, cb, ce) => {
-          if (cid === 215) num = ebmlUint(u8, cb, Math.min(ce - cb, 8));
-          else if (cid === 131) type = ebmlUint(u8, cb, Math.min(ce - cb, 8));
-        });
-        if (type === 1 && num) tracks.push(num);
-      });
-    });
-    if (!tracks.length) return false;
-    let clusters = 0, blocks = 0;
-    for (let i = 0; i <= u8.length - 5; i++) {
-      if (u8[i] !== 31 || u8[i + 1] !== 67 || u8[i + 2] !== 182 || u8[i + 3] !== 117) continue;
-      const cs = ebmlSize(u8, i + 4);
-      if (!cs) continue;
-      clusters += 1;
-      const cb = i + 4 + cs.len;
-      const ce = cs.unknown ? u8.length : Math.min(u8.length, cb + cs.size);
-      eachEbml(u8, cb, ce, (bid, bb, be) => {
-        if (bid !== 160 && bid !== 163 && bid !== 161) return;
-        const blockNum = (at) => {
-          const tt = ebmlVintLen(u8[at]);
-          if (!tt || at + tt > u8.length) return 0;
-          return (u8[at] & (1 << 8 - tt) - 1) * Math.pow(256, tt - 1) + (tt > 1 ? ebmlUint(u8, at + 1, tt - 1) : 0);
-        };
-        if (bid === 160) {
-          eachEbml(u8, bb, be, (gid, gb) => {
-            if (gid === 161 && tracks.indexOf(blockNum(gb)) !== -1) blocks += 1;
-          });
-          return;
-        }
-        if (tracks.indexOf(blockNum(bb)) !== -1) blocks += 1;
-      });
-      if (blocks) return true;
-    }
-    return clusters ? false : null;
-  }
-  function eachBox(u8, start2, end, cb) {
-    let i = start2;
-    while (i + 8 <= end) {
-      let size = u8[i] * 16777216 + u8[i + 1] * 65536 + u8[i + 2] * 256 + u8[i + 3], hdr = 8;
-      if (size === 1) {
-        size = 0;
-        for (let k = 0; k < 8; k++) size = size * 256 + u8[i + 8 + k];
-        hdr = 16;
-      } else if (size === 0) size = end - i;
-      if (size < hdr || i + size > end + 1) return;
-      cb(String.fromCharCode(u8[i + 4], u8[i + 5], u8[i + 6], u8[i + 7]), i + hdr, Math.min(end, i + size));
-      i += size;
-    }
-  }
-  function findBox(u8, start2, end, want, depth) {
-    if (depth > 6) return null;
-    let hit = null;
-    eachBox(u8, start2, end, (type, b, e) => {
-      if (hit) return;
-      if (type === want) {
-        hit = { body: b, end: e };
-        return;
-      }
-      if (type === "moov" || type === "trak" || type === "mdia" || type === "minf" || type === "stbl" || type === "edts" || type === "udta") hit = findBox(u8, b, e, want, depth + 1);
-    });
-    return hit;
-  }
-  function hasFourcc(u8, tag) {
-    const a = tag.charCodeAt(0), b = tag.charCodeAt(1), c = tag.charCodeAt(2), d = tag.charCodeAt(3);
-    for (let i = 0; i <= u8.length - 4; i++) {
-      if (u8[i] === a && u8[i + 1] === b && u8[i + 2] === c && u8[i + 3] === d) return true;
-    }
-    return false;
-  }
-  function mp4Picture(u8) {
-    if (hasFourcc(u8, "moof") || hasFourcc(u8, "mvex")) return null;
-    for (let i = 4; i <= u8.length - 8; i++) {
-      if (!(u8[i] === 109 && u8[i + 1] === 111 && u8[i + 2] === 111 && u8[i + 3] === 118)) continue;
-      let samples = 0, sawVideo = false, blind = false;
-      eachBox(u8, i + 4, u8.length, (type, b, e) => {
-        if (type !== "trak") return;
-        const h = findBox(u8, b, e, "hdlr", 0);
-        if (!h) return;
-        if (String.fromCharCode(u8[h.body + 8], u8[h.body + 9], u8[h.body + 10], u8[h.body + 11]) !== "vide") return;
-        sawVideo = true;
-        const sz = findBox(u8, b, e, "stsz", 0);
-        if (!sz) {
-          blind = true;
-          return;
-        }
-        samples += ebmlUint(u8, sz.body + 8, 4);
-      });
-      if (blind) return null;
-      return sawVideo ? samples > 0 : false;
-    }
-    return null;
-  }
-  function pictureVerdict(file) {
-    return new Promise((resolve) => {
-      const CAP = 8 * 1024 * 1024;
-      const slices = [file.slice(0, Math.min(file.size, CAP))];
-      if (file.size > CAP) slices.push(file.slice(file.size - CAP));
-      Promise.all(slices.map((s) => new Promise((res) => {
-        const fr = new FileReader();
-        fr.onerror = () => res(null);
-        fr.onload = () => res(new Uint8Array(fr.result));
-        fr.readAsArrayBuffer(s);
-      }))).then((bufs) => {
-        for (const u8 of bufs) {
-          if (!u8 || u8.length < 16) continue;
-          const webm = webmPicture(u8);
-          if (webm !== null) {
-            resolve(webm ? "yes" : "no");
-            return;
-          }
-          const mp4 = mp4Picture(u8);
-          if (mp4 !== null) {
-            resolve(mp4 ? "yes" : "no");
-            return;
-          }
-        }
-        resolve("unknown");
-      });
-    });
-  }
-  async function uploadClip(file, name) {
+  async function uploadClip(file, name, seal) {
     const s = await sessToken();
     if (!s || !s.t) {
       fabSay("Log in to upload.", 7e3);
       return;
     }
     const title = (String(name || "").trim() || "New clip").slice(0, 80);
-    const clip = await publishVideo(file, title, s, message => fabSay(message));
-    fabSay("Published! Taking you to it...", 2600);
+    const clip = await publishVideo(file, title, s, message => fabSay(message), channelSlug(), seal || {});
+    if (clip && clip.review === "pending") {
+      fabSay("", 1);
+      window.__ktShell?.sentToParent?.(clip, title);
+      return;
+    }
+    fabSay(seal ? "Sealed! It waits on the shelf until its day." : "Published! Taking you to it...", 3200);
     try {
-      insertClipTop(clip);
+      insertClipTop(seal ? { ...clip, sealed: true, opensAt: seal.opensAt, capsuleNote: seal.capsuleNote, sealedBy: s.first || "" } : clip);
     } catch (err) {
       location.reload();
     }
@@ -1543,10 +1355,11 @@ function bootFeed() {
       title: clip.title || "New clip",
       blurb: clip.blurb || "",
       kind: clip.kind || "video",
-      poster: clip.poster || "",
+      poster: clip.sealed ? "" : clip.poster || "",
       src: clip.src,
-      publishedAt: clip.publishedAt || (/* @__PURE__ */ new Date()).toISOString(),
-      duration: Number(clip.duration) || 0
+      publishedAt: clip.publishedAt || new Date().toISOString(),
+      duration: clip.sealed ? 0 : Number(clip.duration) || 0,
+      ...clip.sealed ? { sealed: true, opensAt: clip.opensAt, capsuleNote: clip.capsuleNote || "", sealedBy: clip.sealedBy || "" } : {}
     };
     clips.unshift(row);
     order = clips.map((c, i) => i);
@@ -1561,30 +1374,21 @@ function bootFeed() {
     for (const s of slides) io.observe(s);
     for (const slide of slides) wireSlide(slide);
     paintAllLikes();
+    reactionsUi?.paintAll();
     setActive(0, { scroll: false });
     if (reel) reel.scrollTop = 0;
     requestAnimationFrame(() => {
       if (slides[0]) slides[0].scrollIntoView({ behavior: "auto", block: "start" });
     });
-    history.replaceState(null, "", "#/v/" + row.id);
+    history.replaceState(null, "", clipHash(row.id));
   }
   setActive(start > -1 ? start : 0, { scroll: false });
   if (start > 0 && body.dataset.mode === "immersive") requestAnimationFrame(() => slides[start]?.scrollIntoView({ behavior: "auto", block: "start" }));
   seedLikes();
+  bootLaunchStory();
   seedRole().then((s) => {
-    if (s && (s.role === "admin" || s.role === "super")) mountUploadFab();
+    if (window.__ktChannel ? window.__ktChannel.canUpload : s && (s.role === "admin" || s.role === "super")) mountUploadFab();
   });
-  window.__tzfeed = {
-    mounted: true,
-    clips: () => clips.map((c) => c.id),
-    order: () => order.slice(),
-    rank: (i) => rank(typeof i === "number" ? i : state.index),
-    active: () => state.index,
-    shuffle: () => state.shuffle,
-    setShuffle,
-    step,
-    durOf: (i) => durOf(slides[i], $("video", slides[i])),
-    pictureVerdict: (file) => pictureVerdict(file),
-    uploadFile: (file, name) => uploadPicked(file, name)
-  };
+  // The empty channel's "Record your first tape" button (js/shell/app.js) opens the file picker here.
+  window.__tzfeed = { pick: () => pickAndUpload() };
 }

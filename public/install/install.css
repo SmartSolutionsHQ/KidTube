@@ -1,0 +1,72 @@
+/* The install page (/install): the parent kit, one card. pwa.js picks which way to show first. */
+.ki-page {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+  min-height: 100dvh;
+  padding: max(24px, env(safe-area-inset-top)) 16px max(32px, env(safe-area-inset-bottom));
+}
+
+.ki-card {
+  width: min(100%, 560px);
+  padding: 24px;
+}
+
+.ki-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.ki-icon {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 14px;
+}
+
+.ki-way {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding-top: 20px;
+  border-top: 1px solid var(--kp-line);
+}
+
+.ki-way[hidden] { display: none; }
+
+/* The way that fits this device comes first; the others stay for helping someone else. */
+.ki[data-platform="ios"] [data-way="ios"],
+.ki[data-platform="android"] [data-way="android"],
+.ki[data-platform="desktop"] [data-way="desktop"] { order: -1; }
+
+.ki-card > .kp-note,
+.ki-card > .ki-head { order: -3; }
+.ki-card > [data-way="prompt"] { order: -2; }
+
+.ki-credit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.ki-credit-label {
+  color: var(--kp-dim);
+  font: 500 10px/1 var(--tz-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.ki-credit img {
+  display: block;
+  width: 150px;
+  height: auto;
+}
+
+@media (max-width: 420px) {
+  .ki-card { padding: 20px 16px; }
+  .ki-icon { width: 52px; height: 52px; border-radius: 12px; }
+}

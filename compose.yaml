@@ -1,18 +1,32 @@
+# docker compose up -d, then open the link and enter the setup code from `docker logs kidtube`.
 services:
   kidtube:
     build: .
+    container_name: kidtube
     user: "${PUID:-1000}:${PGID:-1000}"
-    env_file: .env
+    # Optional: a first install needs no .env. Values here lock the matching settings.
+    env_file:
+      - path: .env
+        required: false
     environment:
       HOST: 0.0.0.0
       PORT: "3000"
+      HOST_PORT: "${HOST_PORT:-3000}"
+      # The host side of /data, so an ownership problem prints a fix for the right folder.
+      HOST_DATA: "${KIDTUBE_DATA:-kidtube-data}"
       DATABASE_PATH: /data/kidtube.sqlite
       PUBLIC_DIR: /app/public
     ports:
-      - "127.0.0.1:${HOST_PORT:-3000}:3000"
+      # Only this computer by default. HOST_BIND=0.0.0.0 opens it to your home network (plain http).
+      - "${HOST_BIND:-127.0.0.1}:${HOST_PORT:-3000}:3000"
     volumes:
-      - ./data:/data:Z
+      # A named volume by default. Installs that keep their data in a folder set KIDTUBE_DATA=./data.
+      - ${KIDTUBE_DATA:-kidtube-data}:/data
     read_only: true
+    # No Linux capabilities and no way to gain any: the app only reads and writes /data as its own user.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     tmpfs:
       - /tmp
     restart: unless-stopped
@@ -22,3 +36,5 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+volumes:
+  kidtube-data:

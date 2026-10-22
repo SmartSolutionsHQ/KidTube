@@ -1,18 +1,58 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src 'none'; img-src 'self' data: https:; media-src 'self' data: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:;">
-  <title>KidTube | Parent dashboard</title>
-  <link rel="stylesheet" href="/css/reset-c24c98af0f96.css">
-  <link rel="stylesheet" href="/css/framework-0dc1137c1e8d.css">
-  <link rel="stylesheet" href="/css/style-4a90ad5ed053.css">
-  <link rel="stylesheet" href="/css/userStyles-8a661a58ad94.css">
-<link rel="icon" href="/assets/logo.svg"><link rel="stylesheet" href="/css/kid.css"></head>
-<body class="hq-page">
-<main class="tza-wrap"><div class="tza-shell"><header class="tza-head"><span class="tza-brand">PARENT DASHBOARD</span><span class="tza-sub">KidTube · Family controls</span></header><div aria-live="polite" id="tza-root"></div><footer class="tza-foot"><a href="/" target="_self">Back to the channel</a></footer></div></main>
-  <script type="module" src="/js/admin.js"></script>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Parent dashboard · {{brand.name}}</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#05060A">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <link rel="stylesheet" href="/css/reset.css">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/parent.css">
+</head>
+<body class="kp kd" data-title="Parent dashboard" data-brand="{{brand.name}}">
+  <a class="kd-skip" href="#kd-main">Skip to the dashboard</a>
+  <div class="kd-app" id="tza-root" data-state="loading">
+    <header class="kd-top">
+      <span class="kd-top-name" data-family-name>Parent dashboard</span>
+      <button class="kp-btn kp-btn-small kd-menu" type="button" aria-expanded="false" aria-controls="kd-nav" hidden>Menu</button>
+    </header>
 
+    <nav class="kd-nav" id="kd-nav" aria-label="Dashboard">
+      <p class="kd-nav-name" data-family-name>Parent dashboard</p>
+      <ul class="kd-nav-list" id="kd-nav-list"></ul>
+      <div class="kd-nav-foot">
+        <p class="kp-small kd-who" id="kd-who"></p>
+        <div class="kd-nav-links">
+          <a href="/">Back to the videos</a>
+          <a href="/install">Add to a home screen</a>
+          <button class="kp-btn kp-btn-quiet" type="button" id="kd-signout" hidden>Sign out</button>
+        </div>
+        <span class="kd-credit">
+          <span class="kd-credit-label">{{brand.name}} by</span>
+          <img src="/assets/smart-solutions-logo-white-transparent.png" alt="Smart Solutions" width="150" height="31">
+        </span>
+      </div>
+    </nav>
+
+    <main class="kd-main" id="kd-main" tabindex="-1">
+      <p class="kp-lead">Loading the parent dashboard.</p>
+    </main>
+  </div>
+  <p class="kd-status" id="kd-status" role="status" aria-live="polite"></p>
+
+  <noscript>
+    <p class="kd-noscript">The parent dashboard needs JavaScript turned on.</p>
+  </noscript>
+
+  <script type="module" src="/js/parent/app.js"></script>
+  <script type="module" src="/js/shell/pwa.js"></script>
 </body>
 </html>

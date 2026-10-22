@@ -1,0 +1,334 @@
+/* The setup wizard's frame: a step rail beside one card on wide screens, a progress line above the
+   card on phones. Everything inside the card comes from /css/parent.css. */
+
+.su-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100dvh;
+}
+
+.su-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+  padding: calc(var(--tz-safe-t) + 8px) 16px 8px;
+  border-bottom: 1px solid var(--kp-line);
+}
+
+.su-top-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.su-top-step {
+  color: var(--kp-dim);
+  font: 400 12px/1 var(--tz-mono);
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+
+.su-layout {
+  flex: 1 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  width: min(1120px, 100%);
+  margin: 0 auto;
+}
+
+.su-rail { display: none; }
+
+.su-card {
+  min-width: 0;
+  border-width: 0 0 1px;
+}
+
+.su-progress {
+  height: 3px;
+  background: var(--kp-line);
+}
+
+.su-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--kp-accent);
+}
+
+.su-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 28px 16px 32px;
+}
+
+.su-body form > div:empty { display: none; }
+
+/* phones: the ember button gets its own full-width row under the quieter ones */
+@media (max-width: 599px) {
+  .su-body .kp-actions > .kp-btn-primary { flex: 1 1 100%; }
+  /* the badge builder needs about 350px for its preview and Shuffle button */
+  .su-editor.kp-box { padding: 16px 12px; }
+  .su-editor .su-builder { margin: 0 -12px; }
+  .su-login { padding-left: 0; }
+  .su-login .kp-input-row { flex-wrap: wrap; }
+  .su-login .kp-input-row > .kp-input { flex-basis: 100%; }
+  .su-body .kp-actions > .kp-actions { flex: 1 1 100%; flex-wrap: nowrap; justify-content: flex-start; }
+}
+
+.su-intro {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.su-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding: 20px 16px calc(var(--tz-safe-b) + 20px);
+  border-top: 1px solid var(--kp-line);
+}
+
+.su-credit {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.su-credit-label {
+  color: var(--kp-dim);
+  font: 500 10px/1 var(--tz-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.su-credit img {
+  display: block;
+  width: 150px;
+  height: auto;
+}
+
+.su-foot-note {
+  color: var(--kp-dim);
+  font-size: 13px;
+}
+
+.su-noscript {
+  padding: 16px;
+}
+
+/* the setup code reads like the terminal it came from */
+.su-code-input {
+  font: 500 18px/1.2 var(--tz-mono);
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+
+.su-terminal {
+  margin: 0;
+  padding: 16px;
+  overflow-x: auto;
+  background: var(--tz-ink);
+  border: 1px solid var(--kp-line);
+  color: var(--kp-soft);
+  font: 400 13px/1.75 var(--tz-mono);
+  white-space: pre;
+}
+
+.su-terminal mark {
+  background: none;
+  color: var(--kp-accent);
+}
+
+.su-where {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.su-where li { overflow-wrap: anywhere; }
+
+/* generated passwords are read and copied, so they get room */
+.su-secret {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 14px;
+  background: var(--kp-raised);
+  font: 500 16px/1.3 var(--tz-mono);
+  overflow-wrap: anywhere;
+}
+
+/* family badge */
+.su-badge {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+
+.su-badge-art {
+  display: grid;
+  place-items: center;
+  width: 96px;
+  height: 96px;
+  background: var(--tz-ink);
+}
+
+.su-badge-art svg,
+.su-badge-art img {
+  display: block;
+  width: 84px;
+  height: 84px;
+}
+
+.su-builder {
+  --kb-gap: 16px;
+  min-width: 0;
+}
+
+/* kids */
+.su-kids {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.su-kid-badge {
+  flex: none;
+  width: 52px;
+  height: 52px;
+}
+
+.su-kid-badge svg,
+.su-kid-badge img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.su-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.su-editor-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.su-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.su-section-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.su-contrast {
+  min-height: 1.5em;
+  font-size: 14px;
+}
+
+.su-gallery {
+  --kt-gal-min: 132px;
+  --kt-gal-gap: 18px 12px;
+}
+
+.su-login {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 4px 0 4px 34px;
+}
+
+/* done */
+.su-phones {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  gap: 16px;
+}
+
+.su-phones > section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 20px;
+  background: var(--kp-raised);
+}
+
+.su-waiting {
+  width: min(560px, calc(100% - 32px));
+  margin: 48px auto;
+  padding: 32px 24px;
+}
+
+@media (min-width: 600px) {
+  .su-body { padding: 32px; }
+  .su-top { padding-left: 32px; padding-right: 32px; }
+  .su-foot { padding-left: 32px; padding-right: 32px; }
+}
+
+/* wide screens: the rail from the design board beside the card */
+@media (min-width: 960px) {
+  .su-layout {
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 40px;
+    padding: 40px 32px 64px;
+  }
+
+  .su-rail { display: block; }
+  .su-progress { display: none; }
+  .su-card { border-width: 1px; align-self: start; }
+  .su-body { padding: 32px 32px 36px; }
+}
+
+.su-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--kp-line);
+}
+
+.su-steps li {
+  border-bottom: 1px solid var(--kp-line);
+}
+
+.su-steps a,
+.su-steps span.su-step {
+  display: flex;
+  gap: 14px;
+  padding: 14px 0;
+  color: var(--kp-dim);
+  font-size: 16px;
+  text-decoration: none;
+}
+
+.su-steps a { color: var(--kp-text); }
+.su-steps a:hover { color: var(--kp-text); text-decoration: underline; text-underline-offset: 3px; }
+
+.su-steps .su-num {
+  flex: none;
+  width: 24px;
+  color: var(--kp-dim);
+}
+
+.su-steps [aria-current="step"] {
+  color: var(--kp-accent);
+  font-weight: 600;
+}
+
+.su-steps [aria-current="step"] .su-num { color: var(--kp-accent); }
+.su-steps .su-done .su-num { color: var(--kp-good); }

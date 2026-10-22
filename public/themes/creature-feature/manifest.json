@@ -1,0 +1,15 @@
+{
+  "contract": 1,
+  "id": "creature-feature",
+  "name": "Creature Feature",
+  "description": "A field file on the kid, a spinning ring and a scratch-off reveal of their badge. Spooky-silly, never scary.",
+  "author": "Smart Solutions",
+  "version": "1.0.0",
+  "tags": ["light", "creepster", "scratch-off", "silly"],
+  "weight": "light",
+  "modes": ["channel"],
+  "sound": true,
+  "defaultAccent": "#C6FF3D",
+  "accents": { "pause": false },
+  "feed": { "--tz-flare": "accent", "--tz-ink": "#07120A", "--tz-surface": "#122016" }
+}

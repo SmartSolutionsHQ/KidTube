@@ -1,19 +1,10 @@
-// src/scripts/kidtube-media-rescue.js
+// Playback recovery for the feed, watching its slides from the outside: a clip that fails to load is
+// retried quietly a few times (its error stays hidden meanwhile, see feed.css), only one video plays at
+// a time, and nothing plays behind a splash until the viewer taps (tz:hold / tz:enter from themes.js).
 (() => {
-  "use strict";
-  if (window.__tzrescueMounted || !document.querySelector(".tz-reel")) return;
-  window.__tzrescueMounted = true;
-  let off = null;
-  try {
-    off = new URLSearchParams(location.search).get("rescue");
-  } catch (err) {
-  }
-  if (off === "0") return;
+  if (!document.querySelector(".tz-reel")) return;
   const DELAYS = [700, 1500, 3e3];
-  const styleEl = document.createElement("style");
-  styleEl.textContent = ".tz-slide[data-tz-rescue='1'] .tz-err{display:none !important}";
-  document.head.appendChild(styleEl);
-  const journal = /* @__PURE__ */ new WeakMap();
+  const journal = new WeakMap();
   const rec = (slide) => {
     let r = journal.get(slide);
     if (!r) {
@@ -181,25 +172,4 @@
   document.addEventListener("tz:enter", holdAll);
   if (!window.__tzsplash) window.setTimeout(nudge, 2600);
   sync();
-  window.__tzrescue = {
-    mounted: true,
-    slides: () => document.querySelectorAll(".tz-slide").length,
-    state: () => {
-      const out = [];
-      document.querySelectorAll(".tz-slide").forEach((s) => {
-        if (s.dataset.end === "1") return;
-        out.push({
-          i: s.dataset.i,
-          state: s.dataset.state,
-          active: s.dataset.active === "1",
-          rescuing: s.dataset.tzRescue === "1",
-          presses: rec(s).presses,
-          released: rec(s).released
-        });
-      });
-      return out;
-    },
-    nudge,
-    sync
-  };
 })();

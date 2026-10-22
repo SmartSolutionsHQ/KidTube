@@ -1,127 +1,110 @@
+<p align="center">
+  <img src="docs/images/splash-ember-tape.jpg" alt="A kid's splash screen: the name WREN in big glitchy letters over orange smoke, with an Enter the tube button" width="800">
+</p>
+
 # KidTube
 
-**A little channel. A big imagination.**
+**Your kid's first video channel, with an audience you choose.**
 
-KidTube is a self-hosted video channel for a family and its invited viewers. Parents manage accounts and choose who can upload. It starts empty: no sample children, family photos, videos, accounts, production credentials, or external analytics.
+KidTube gives each kid in your family their own little video channel. They design the badge, pick the intro and
+post the videos. You run it on a computer at home, decide who can watch, and see every upload before it goes
+live. No ads, no recommendation feed, no strangers.
 
-Built by SmartSolutionsHQ from a family project, with a reusable design and installation process. This is an early community release for one household per installation. Keep backups and review the [security model](SECURITY.md) before exposing it to the internet.
+<p align="center">
+  <img src="docs/images/phone-front-door.jpg" alt="The front door on a phone: Who's on tape today? with two kids' badges, Wren and Bo" width="260">
+  &nbsp;
+  <img src="docs/images/phone-feed.jpg" alt="A kid's feed on a phone: a video called Volcano part 2 with one star sticker" width="260">
+</p>
 
-## What is included
+The families in these pictures are made up, and so are their videos. KidTube is not affiliated with YouTube or
+Google.
 
-- Scrollable video feed with playback recovery, shuffle, likes, and comments.
-- Parent approval for new accounts; a dashboard at `/parents` to manage viewers and videos.
-- Parent owner (`super`), uploader (`admin`), approved viewer, and temporary view-only guest roles.
-- One-use guest codes, valid for 24 hours; redeemed guest access also expires after 24 hours.
-- Chunked uploads up to 512 MB and approximately five minutes. FFmpeg converts video to H.264/AAC MP4, up to 480p, one job at a time.
-- Server-side access checks for the catalog and video URLs. Copying a video URL into an unsigned-in browser does not grant access.
-- Optional Brevo signup, approval, and new-video emails. New-video notifications have persistent retries and an unsubscribe link.
-- SQLite storage, a Docker image definition, optional Caddy HTTPS proxy, setup wizard, backup command, and an npm-compatible starter generator.
+## Install in three lines
 
-No YouTube API, cloud database, paid video service, or separate database server is required. The software is MIT licensed. Hardware, storage, electricity, internet, and a domain can still cost money.
+On a computer that stays on, with [Docker](https://docs.docker.com/get-docker/):
 
-## Requirements
-
-| Requirement | Why |
-| --- | --- |
-| An always-on Linux host, NAS, mini PC, or VPS | Stores the database and video files; runs the server |
-| Docker Engine with Compose v2 | Recommended deployment; includes Node and FFmpeg in the image |
-| Node 24.16+ within the 24.x line | Only needed on the host for the npm route; the Docker route includes it |
-| FFmpeg and FFprobe on PATH | Required for uploads when running directly with Node; included in Docker |
-| Persistent local disk | Allow room for final videos, incoming originals, and backups |
-| A domain/subdomain and HTTPS | Required for an internet-facing installation |
-| A parent email address | Identifies the first parent account; email delivery is optional |
-| Optional Brevo account and verified sender | Sends transactional notifications |
-
-A reasonable starting host has two CPU cores, 2 GB RAM, and at least 10 GB free disk. This is a planning suggestion, not a measured minimum; upload conversion and library size determine actual needs. Keep SQLite on local disk rather than a shared network filesystem. Run one app instance against each database.
-
-## Quick start with npm
-
-Clone this repository, then run setup. There are no third-party Node runtime dependencies to install.
-
-```sh
-git clone https://github.com/SmartSolutionsHQ/KidTube.git
-cd KidTube
-npm run setup
-npm run doctor
-npm start
+```bash
+git clone https://github.com/SmartSolutionsHQ/KidTube.git kidtube && cd kidtube
+docker compose up -d
+docker logs kidtube
 ```
 
-Setup asks for the parent's email and the site's full URL. For a local trial, accept `http://localhost:3000`. It creates a blank database, a unique signing secret in `.env`, and one approved parent owner. A generated parent password is printed once: save it in your password manager. Setup refuses to overwrite an existing `.env` or database.
+The last command shows a setup link and a one-time code. Open the link, type the code, and seven short steps set
+up your parent account, your family, each kid's channel, who can watch, optional email, and the app on your
+phone. [docs/INSTALL.md](docs/INSTALL.md) covers NAS boxes, phones on your Wi-Fi, HTTPS with or without a domain,
+and running it without Docker.
 
-Open the site, select **Enter the channel**, log in, and open the **Parent dashboard**. Upload the first video there. The channel remains empty until you upload something. If `doctor` reports missing FFmpeg/FFprobe, install them or use Docker before testing uploads.
+## What everyone gets
 
-### npm package / one-command generator
+**Kids**
 
-The repository includes a `create-kidtube` executable. You can use it from GitHub without a published npm registry package:
+- A channel of their own: their name, a line about them, a colour, and a badge they design with shapes and
+  stickers. No photo of your child is needed anywhere.
+- An intro that plays when someone opens their channel, from six: a VHS tape, an arcade cabinet, a comic cover,
+  a creature file, a blueprint and a calm glass one.
+- Posting from a phone with their own kid login. If you review uploads, they see "Sent to a parent" and the
+  video goes live when you approve it.
+- Time capsules: a video sealed until a birthday, with a note, that opens on the day.
 
-```sh
-npx --package=github:SmartSolutionsHQ/KidTube create-kidtube my-family-tube
-cd my-family-tube
-npm run setup
-```
+**Parents**
 
-For a reproducible installation, replace the GitHub package reference with `github:SmartSolutionsHQ/KidTube#<commit-sha>` from a version you reviewed. The generator copies only starter files and refuses an existing destination. It does not copy `.env`, databases, or uploads, and it does not start services or send mail.
+- One dashboard at `/parents`: videos waiting for review, comments, who asked to watch, who watched what, guest
+  codes, activity and settings.
+- Nobody watches until you approve them. Kids' uploads and new comments wait for you by default.
+- A daily watch limit for anyone you choose. When it runs out the channel shows "End of tape" and stops.
 
-The package is prepared for the npm registry but **is not published there as part of this release**. `npm pack` produces a distributable archive; publishing `@smartsolutionshq/kidtube` requires access to that npm scope. GitHub installation works without that extra account setup.
+**Family**
 
-## Docker setup (no host Node or FFmpeg needed)
+- Grandparents, cousins and friends ask to watch from the front door, and you let them in by name.
+- Or give someone a guest code that works for 24 hours, for one kid or all of them, with a card to print.
+- Hearts, sticker reactions and comments, and the app on their home screen like any other.
 
-```sh
-git clone https://github.com/SmartSolutionsHQ/KidTube.git
-cd KidTube
-docker build -t kidtube:local .
-docker run --rm -it --user "$(id -u):$(id -g)" \
-  -e DATABASE_PATH=/workspace/data/kidtube.sqlite \
-  -v "$PWD:/workspace:Z" -w /workspace \
-  kidtube:local node /app/scripts/setup.mjs
-docker compose up -d --build
-```
+## Privacy at a glance
 
-These setup commands are for a Linux/macOS shell. For PowerShell with Docker Desktop, use:
+- **It runs on your computer.** Videos, accounts, comments and watch history stay in one folder there. No
+  analytics and no outside requests: fonts and stickers ship with the app.
+- **You choose the audience.** Every viewer is approved by you or holds a guest code you made. Videos, titles and
+  comments always need a sign-in. The front door shows the kids' names and badges unless you switch that off.
+- **You see what was watched.** Who watched which video is kept for 90 days, only you can see it, and viewers are
+  told when they sign up. No IP addresses or device details are stored.
+- **Phone details are stripped.** Uploads are converted on your computer, and the location and device details
+  phones put in videos are removed.
+- **Email is optional.** With it on, Brevo sends approval and new-video emails. With it off, nothing leaves.
 
-```powershell
-docker build -t kidtube:local .
-docker run --rm -it --user 1000:1000 -e DATABASE_PATH=/workspace/data/kidtube.sqlite -v "${PWD}:/workspace" -w /workspace kidtube:local node /app/scripts/setup.mjs
-docker compose up -d --build
-```
+[SECURITY.md](SECURITY.md) has the security model and how to report a problem.
 
-On Linux, set `PUID` and `PGID` in `.env` to your host user's `id -u` and `id -g` values before starting Compose. Those IDs must own `data/`. The default is 1000:1000. The app runs without root privileges, uses a read-only image, and writes only to its data mount and temporary filesystem. On systems without SELinux the `:Z` label is unnecessary and can be removed if unsupported.
+## A look around
 
-Visit `http://localhost:3000` on the Docker host for a local trial. The default port binding accepts connections only from the host. It does not expose an unencrypted app port on your LAN or the internet.
+<p align="center">
+  <img src="docs/images/time-capsule.jpg" alt="A sealed time capsule in the feed: a cassette stamped SEALED, For Wren at 10, opens today at 9:05 AM, Open on your 10th birthday" width="400">
+  <img src="docs/images/end-of-tape.jpg" alt="End of tape: That's the tape for today, more tomorrow at 12:00 AM, Done for today" width="400">
+</p>
+<p align="center">
+  <img src="docs/images/parent-dashboard.jpg" alt="The parent dashboard home: videos to review, comments to review, people asking to watch, recent activity and who watched" width="400">
+  <img src="docs/images/guest-code.jpg" alt="A guest code for Uncle Theo, Bo only, with a QR code and a print button" width="400">
+</p>
 
-## Deploy with a domain and HTTPS
+## Docs
 
-1. Point a domain or subdomain, such as `videos.example.com`, to the server's reachable public IP. If hosting at home, forward ports 80 and 443 to the host. If your provider uses CGNAT, use a VPS or an HTTPS tunnel instead of port forwarding.
-2. Set `SITE_URL=https://videos.example.com` in `.env`. This exact origin is used in email links, cookies, and browser request checks.
-3. Start the included HTTPS proxy:
+| To | Read |
+|---|---|
+| Install it, add HTTPS, put it on phones | [docs/INSTALL.md](docs/INSTALL.md) |
+| Use the dashboard, back up, recover a password, fix a problem | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
+| Update, roll back, or move an older family site onto KidTube | [docs/UPGRADING.md](docs/UPGRADING.md) |
+| Turn on email | [docs/EMAIL.md](docs/EMAIL.md) |
+| Run the public demo | [docs/DEMO.md](docs/DEMO.md) |
+| Make a splash theme | [docs/THEMES.md](docs/THEMES.md) |
+| Rename the product | [docs/RENAMING.md](docs/RENAMING.md) |
+| Check a release before tagging it | [docs/VERIFY.md](docs/VERIFY.md) |
+| Understand the security model, or report a problem | [SECURITY.md](SECURITY.md) |
+| See what changed | [CHANGELOG.md](CHANGELOG.md) |
+| Find your way around the code | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [CONTRIBUTING.md](CONTRIBUTING.md) |
 
-   ```sh
-   docker compose -f compose.yaml -f compose.https.yaml up -d --build
-   ```
+## By Smart Solutions
 
-4. Caddy obtains and renews certificates when DNS and inbound connectivity are correct. Open the HTTPS site, sign in, and upload a short test clip. Check it from another browser without signing in: `/api/clips` and the direct video URL should return 401.
-5. Save a backup before adding real family videos.
+KidTube is made by [Smart Solutions](https://smartsolutions.fyi). It started as one family's channel and grew into
+something any family can run.
 
-Keep Caddy's volumes: they contain certificate state. Another service cannot already own host ports 80/443. See [deployment options](docs/DEPLOYMENT.md) for an existing reverse proxy, tunnels, and multiple family channels.
+![Smart Solutions](public/assets/smart-solutions-logo-white-transparent.png#gh-dark-mode-only)
 
-## Optional free-tier email
-
-KidTube uses **Brevo's hosted transactional email API**, not a bundled mail server. It does not host a mailbox or require opening SMTP ports. Follow [the email setup guide](docs/EMAIL.md) to create a Brevo account, authenticate your sending domain, verify a sender, create an API key, and test delivery.
-
-Email starts disabled. With `MAIL_MODE=disabled`, the parent checks pending requests in the dashboard and approves them manually; viewers return to log in after approval. No messages are sent or queued for videos published while email is disabled.
-
-## Make it your own
-
-Edit `public/index.html` for the channel name and welcome text, `public/about/index.html` for your family's introduction, `public/assets/logo.svg` for the logo, and `public/css/kid.css` for colors and layout. No build framework is needed. Email branding lives in `server/mail.mjs`, `server/api.js`, and `server/notifications.mjs`; timestamps in video emails use UTC. Rebuild the Docker image after source changes so compressed assets are regenerated.
-
-One installation is one channel. For siblings with different channels, create separate directories, secrets, databases, Compose project names, and host ports. See [deployment options](docs/DEPLOYMENT.md).
-
-## Operating and contributing
-
-- [Backups, restores, updates, account recovery, and troubleshooting](docs/OPERATIONS.md)
-- [Security model and responsible reporting](SECURITY.md)
-- Run `npm test` for automated checks. Upload integration tests need FFmpeg and FFprobe.
-- Never attach a real `.env`, family database, backup, or video to a public issue.
-- Keep new changes generic; test against a temporary empty installation, not a family's live site.
-
-KidTube is a family project, not an unattended public social network. A parent remains responsible for inviting people, approving accounts, reviewing comments, and deciding what to share.
+MIT licensed. Hardware, storage, power and a domain, if you want one, are yours to provide.

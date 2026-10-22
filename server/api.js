@@ -1,45 +1,62 @@
-/* KidTube account, moderation, and catalog API. */
-import { passwordRecord, passwordMatches } from './passwords.mjs';
+/* The account, catalog and moderation API: sign-up and sign-in, sessions and staff checks, guest codes, the
+   clip list, likes and comments, the account and clip routes the dashboard (monitor.mjs) calls through, and
+   clips stored as chunks by the original hosted version. It was written for a fetch-style host, so it takes
+   a Request and returns a Response (index.mjs adapts node:http to it) and runs its SQL through db.mjs's
+   prepare().bind().run() interface. */
+import { timingSafeEqual } from 'node:crypto';
+import { KID_PASSWORD_MIN, PASSWORD_MAX, PASSWORD_MIN, passwordRecord, passwordMatches } from './passwords.mjs';
 import { sendMail } from './mail.mjs';
+import { BRAND_NAME, DEFAULT_ACCENT, WORDMARK, escapeHtml } from './brand.mjs';
+import { KID_DOMAIN, kidEmail } from './family.mjs';
+import { CLIP_ACCESS_SQL, canPlayClip, canViewChannel, isClipId, isStaff } from './channels.mjs';
+import { approveClip, rejectClip } from './publish.mjs';
 
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const p = url.pathname.replace(/\/+$/, '');
+    /* who the signed cookie names (access.mjs), or null, and the address the rate limits count by
+       (setup.mjs clientIp); index.mjs passes both in */
+    const viewer = (ctx && ctx.viewer) || null;
+    const ip = (ctx && ctx.ip) || 'unknown';
     try {
+      /* a sealed time capsule's comments, likes and legacy media are closed to all but parents (capsules.mjs) */
+      const sealed = env.capsules && await env.capsules.guard(req, p, viewer);
+      if (sealed) return sealed;
       if (p === '/api/health') return J({ ok: true, mode: 'server' });
-      if (p === '/api/notifications/unsubscribe' && env.handleVideoUnsubscribe) return env.handleVideoUnsubscribe(req);
+      if (p === '/api/site') return J(env.site.info());
+      if (p === '/api/channels') return J(env.site.channels(viewer));
+      if (p === '/api/me') return await me(env, viewer);
+      if (p === '/api/notifications/unsubscribe') return env.notifications.handleUnsubscribe(req);
 
-      if (req.method === 'POST' && p === '/api/signup') return await signup(req, env);
+      if (req.method === 'POST' && p === '/api/signup') return await signup(req, env, ip);
       if (req.method === 'POST' && p === '/api/login') return await login(req, env);
       if (req.method === 'POST' && p === '/api/guest/generate') return await guestGenerate(req, env);
-      if (req.method === 'POST' && p === '/api/guest/redeem') return await guestRedeem(req, env);
+      if (req.method === 'POST' && p === '/api/guest/redeem') return await guestRedeem(req, env, ip);
       if (req.method === 'POST' && p === '/api/guest/validate') return await guestValidate(req, env);
-      if (p === '/api/check') return await check(url, env);
+      if (p === '/api/check') return await check(req, url, env);
+      /* the original admin panel's account-request routes: old links get a pointer to the dashboard */
       if (p === '/api/pending') return DENY403();
       if (p === '/api/decide') return PAGE('Open the parent dashboard to review account requests.', 200);
-      if (req.method === 'POST' && p === '/api/admin') return await adminLogin(req, env);
-      if (req.method === 'POST' && p === '/api/admin/act') return await adminAct(req, env);
-      if (p === '/api/admin/list') return await adminList(url, env);
-      if (p === '/api/clips') return await clipsList(env);
-      if (req.method === 'POST' && p === '/api/clips/reorder') return await clipsReorder(req, env);
-      if (req.method === 'POST' && p === '/api/clips/rename') return await clipsRename(req, env);
-      if (req.method === 'POST' && p === '/api/clips/delete') return await clipsDelete(req, env);
-      if (req.method === 'POST' && p === '/api/upload/init') return await uploadInit(req, env);
-      if (req.method === 'POST' && p.startsWith('/api/upload/chunk/')) return await uploadChunk(req, env, p, url);
-      if (req.method === 'POST' && p === '/api/clips/create') return await clipsCreate(req, env);
-      if (p.startsWith('/api/media/')) return await mediaServe(req, env, p);
-      if (p === '/api/admin/overview') return await adminOverview(url, env);
+      if (p === '/api/clips') return await clipsList(url, env, viewer);
+      if (p === '/api/clips/locate') return await clipsLocate(url, env, viewer);
+      if (req.method === 'POST' && p === '/api/admin/clips/review') return await clipsReview(req, env);
+      if (req.method === 'POST' && p === '/api/clips/reorder') return await clipsReorder(req, env, ctx);
+      if (req.method === 'POST' && p === '/api/clips/rename') return await clipsRename(req, env, ctx);
+      if (req.method === 'POST' && p === '/api/clips/delete') return await clipsDelete(req, env, ctx);
+      if (p.startsWith('/api/media/')) return await mediaServe(req, env, p, viewer);
+      if (p === '/api/admin/overview') return await adminOverview(req, url, env);
       if (req.method === 'POST' && p === '/api/admin/status') return await adminStatus(req, env);
       if (req.method === 'POST' && p === '/api/admin/role') return await adminRole(req, env);
       if (req.method === 'POST' && p === '/api/admin/password') return await adminPassword(req, env);
-      if (p === '/api/likes') return await likesAll(url, env);
+      if (p === '/api/likes') { const r = await likesAll(req, url, env, viewer); return env.capsules ? env.capsules.omitSealed(r) : r; }
       if (req.method === 'POST' && p === '/api/like') return await likeSet(req, env);
-      if (p === '/api/comments') return await commentsList(url, env);
-      if (req.method === 'POST' && p === '/api/comment') return await commentAdd(req, env);
+      if (p === '/api/comments') return await commentsList(req, url, env, viewer);
+      if (req.method === 'POST' && p === '/api/comment') return await commentAdd(req, env, ip);
       if (req.method === 'POST' && p === '/api/comment/delete') return await commentDelete(req, env);
       return J({ ok: false, error: 'not found' }, 404);
     } catch (err) {
+      console.error(`API ${req.method} ${p} failed:`, err);
       return J({ ok: false, error: 'server error' }, 500);
     }
   },
@@ -48,13 +65,10 @@ export default {
 /* ---------- helpers ---------- */
 const J = (o, s) => new Response(JSON.stringify(o), { status: s || 200, headers: { 'content-type': 'application/json' } });
 const enc = new TextEncoder();
-const b64u = (s) => btoa(String.fromCharCode(...enc.encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const unb64u = (s) => atob(s.replace(/-/g, '+').replace(/_/g, '/'));
 const unb64uSafe = (s) => { try { return unb64u(s || ''); } catch (e) { return ''; } };
 const hex = (buf) => [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
-const EMAIL_OK = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s) && s.length < 120;
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const HEXRE = /^[0-9a-f]{8,130}$/;
+export const isEmail = (s) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s) && s.length < 120;
 
 async function hmac(secret, msg) {
   const k = await crypto.subtle.importKey('raw', enc.encode(secret), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
@@ -62,284 +76,238 @@ async function hmac(secret, msg) {
 }
 
 async function db(env, q, params) {
-  const r = await env.DB.prepare(q).bind(...(params || [])).run();
-  return r;
+  return env.DB.prepare(q).bind(...(params || [])).run();
+}
+
+/* Records one use of a route by this address in a table of (ip, ts) rows and returns how many it made
+   within the window. Older rows go first, so the table only ever holds the window. */
+async function usesWithin(env, table, ip, windowMs) {
+  const now = Date.now();
+  await db(env, `DELETE FROM ${table} WHERE ts < ?`, [now - windowMs]);
+  await db(env, `INSERT INTO ${table} (ip, ts) VALUES (?, ?)`, [ip, now]);
+  return (await db(env, `SELECT COUNT(*) AS n FROM ${table} WHERE ip = ? AND ts > ?`, [ip, now - windowMs])).results[0].n;
 }
 
 /* ---------- signup ---------- */
-async function signup(req, env) {
+const CLOSED403 = (what) => J({ ok: false, error: 'This family is not taking new ' + what + ' right now.' }, 403);
+async function signup(req, env, ip) {
+  if (env.settings.get('signup_mode') === 'closed') return CLOSED403('accounts');
   const b = await req.json().catch(() => null);
   if (!b) return J({ ok: false, error: 'bad body' }, 400);
   const first = String(b.first || '').trim().slice(0, 40);
   const last = String(b.last || '').trim().slice(0, 40);
   const email = String(b.email || '').trim().toLowerCase();
-  if (typeof b.pass !== 'string' || b.pass.length < 12 || b.pass.length > 128) return J({ok:false,error:'Use a password of 12–128 characters.'},400);
-  const {salt,hash}=await passwordRecord(b.pass);
+  if (typeof b.pass !== 'string' || b.pass.length < PASSWORD_MIN || b.pass.length > PASSWORD_MAX) return J({ ok: false, error: `Use a password of ${PASSWORD_MIN}–${PASSWORD_MAX} characters.` }, 400);
   if (!first || !last) return J({ ok: false, error: 'name' }, 400);
-  if (!EMAIL_OK(email)) return J({ ok: false, error: 'email' }, 400);
-
+  /* kid logins live on the reserved .invalid domain and are made only by a parent */
+  if (!isEmail(email) || email.endsWith('@' + KID_DOMAIN)) return J({ ok: false, error: 'email' }, 400);
 
   /* light rate limit per IP: max 5 signups per hour */
-  const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
-  await db(env, 'CREATE TABLE IF NOT EXISTS hits (ip TEXT, ts INTEGER)');
-  await db(env, 'DELETE FROM hits WHERE ts < ?', [Date.now() - 3600000]);
-  await db(env, 'INSERT INTO hits (ip, ts) VALUES (?, ?)', [ip, Date.now()]);
-  const c = await db(env, 'SELECT COUNT(*) AS n FROM hits WHERE ip = ? AND ts > ?', [ip, Date.now() - 3600000]);
-  if ((c.results && c.results[0] && c.results[0].n || 0) > 5) return J({ ok: false, error: 'slow down' }, 429);
+  if (await usesWithin(env, 'hits', ip, 60 * 60 * 1000) > 5) return J({ ok: false, error: 'slow down' }, 429);
 
-  await db(env, `CREATE TABLE IF NOT EXISTS accounts (
-    email TEXT PRIMARY KEY, first TEXT NOT NULL, last TEXT NOT NULL,
-    salt TEXT NOT NULL, hash TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending', created INTEGER NOT NULL)`);
+  /* Every request gets the same answer, so signup can't be used to learn who has an account (kid logins
+     included); only a new request emails the parent. */
+  const SENT = () => J({ ok: true, status: 'pending' });
+  /* hashed before the lookup, so a known email answers no faster than a new one */
+  const { salt, hash } = await passwordRecord(b.pass);
   const exists = await db(env, 'SELECT status FROM accounts WHERE email = ?', [email]);
-  if (exists.results && exists.results.length) {
-    const st = exists.results[0].status;
-    if (st === 'pending') { await notify(env, first, last, email); return J({ ok: true, status: 'pending' }); }
-    return J({ ok: false, error: 'exists', status: st }, 409);
-  }
+  if (exists.results && exists.results.length) return SENT();
   await db(env, 'INSERT INTO accounts (email, first, last, salt, hash, status, created) VALUES (?,?,?,?,?,?,?)',
     [email, first, last, salt, hash, 'pending', Date.now()]);
-  let notified = true, notifyErr = '';
-  try { await notify(env, first, last, email); } catch (e) { notified = false; notifyErr = String((e && e.message) || e).slice(0, 180); }
-  return J({ ok: true, status: 'pending', notified: notified, notifyErr: notifyErr || undefined });
+  await notify(env, first, last, email);
+  return SENT();
 }
 
-/* ---------- notify email via Brevo ---------- */
+/* ---------- notify email via Brevo; the request is saved either way ---------- */
 async function notify(env, first, last, email) {
   const link = new URL('/parents',env.SITE_URL).href;
-  const who = esc(first+' '+last+' ('+email+')');
-  return sendMail(env,{email:env.NOTIFY_EMAIL},'KidTube: new account request',
-    '<p>'+who+' requested access.</p><p><a href="'+esc(link)+'">Open the parent dashboard</a> to approve or deny this request.</p>',
-    'New account request. Review it at '+link);
+  const who = escapeHtml(first+' '+last+' ('+email+')');
+  try {
+    await sendMail(env,{email:env.NOTIFY_EMAIL},`${BRAND_NAME}: new account request`,
+      '<p>'+who+' requested access.</p><p><a href="'+escapeHtml(link)+'">Open the parent dashboard</a> to approve or deny this request.</p>',
+      'New account request. Review it at '+link);
+    return true;
+  } catch (error) {
+    console.error('Account request email failed:', error);
+    return false;
+  }
 }
 
 /* ---------- approval email to the approved viewer ---------- */
 async function approvalMail(env, email, first) {
-  const who = esc(first || 'Viewer');
+  const who = escapeHtml(first || 'Viewer');
   const site = env.SITE_URL;
   const html = `<div style="font-family:Arial,sans-serif;background:#0B0C10;color:#F7F4EC;padding:26px;border-radius:10px">
-    <p style="color:#3265FF;letter-spacing:.3em;font-size:11px;margin:0 0 10px">KIDTUBE</p>
+    <p style="color:${DEFAULT_ACCENT};letter-spacing:.3em;font-size:11px;margin:0 0 10px">${WORDMARK}</p>
     <h2 style="margin:0 0 12px">You're in, ${who}!</h2>
     <p style="margin:0 0 16px;line-height:1.5">The channel owner approved your account. Come back and log in with the email and password you picked:</p>
-    <p style="margin:0 0 10px"><a href="${site}" style="background:#3265FF;color:#0B0C10;padding:10px 18px;border-radius:4px;text-decoration:none;font-weight:bold">Enter the tube</a></p>
-    <p style="color:#A6A0AE;font-size:11px;margin:14px 0 0">If you did not sign up for KidTube you can ignore this email.</p></div>`;
-  const text = "You're in, " + (first || 'Viewer') + "! The channel owner approved your KidTube account. Log in at " + site;
-  await sendMail(env, { email: email, name: first || undefined }, "You're approved for KidTube", html, text);
+    <p style="margin:0 0 10px"><a href="${site}" style="background:${DEFAULT_ACCENT};color:#0B0C10;padding:10px 18px;border-radius:4px;text-decoration:none;font-weight:bold">Enter the tube</a></p>
+    <p style="color:#A6A0AE;font-size:11px;margin:14px 0 0">If you did not sign up for ${BRAND_NAME} you can ignore this email.</p></div>`;
+  const text = "You're in, " + (first || 'Viewer') + "! The channel owner approved your " + BRAND_NAME + " account. Log in at " + site;
+  await sendMail(env, { email: email, name: first || undefined }, "You're approved for " + BRAND_NAME, html, text);
 }
 
-/* ---------- login ---------- */
-const djb2 = (s) => {
-  let h1 = 5381, h2 = 52711;
-  for (let i = 0; i < s.length; i++) {
-    const c = s.charCodeAt(i);
-    h1 = ((h1 * 33) ^ c) >>> 0;
-    h2 = ((h2 * 31) ^ c) >>> 0;
-  }
-  return ('0000000' + h1.toString(16)).slice(-8) + ('0000000' + h2.toString(16)).slice(-8) +
-         ('0000000' + (h1 ^ h2).toString(16)).slice(-8) + ('0000000' + s.length.toString(16)).slice(-4);
-};
-const hashPass = (s) => crypto.subtle.digest('SHA-256', enc.encode(s)).then(hex).catch(() => djb2(s));
-
+/* ---------- login: unknown emails and wrong passwords look identical ---------- */
+const DECOY = { salt: '0'.repeat(32), hash: 'scrypt:' + '0'.repeat(128) };
+const BAD_LOGIN = () => J({ ok: false, error: 'Wrong email or password.' }, 401);
+/* Wrong passwords per account, from any address: a kid's short password can't be worked through by many
+   machines at once. Unknown emails count the same, so the pause says nothing about who has an account. */
+const LOGIN_FAILS = 10, LOGIN_WINDOW = 15 * 60 * 1000;
+/* and 50 in a day, so slow guessing spread just under the 15-minute limit still stops; a parent's new
+   password for the account lifts it */
+const DAILY_FAILS = 50, DAY_MS = 24 * 60 * 60 * 1000;
+const loginFails = new Map();
+/* why an account's sign-in is paused, given its wrong-password times; null when it isn't */
+export function loginPause(fails, now) {
+  if (fails.filter((at) => at > now - DAY_MS).length >= DAILY_FAILS) return 'Too many wrong passwords for this account today. A parent can set a new one.';
+  if (fails.filter((at) => at > now - LOGIN_WINDOW).length >= LOGIN_FAILS) return 'Too many wrong passwords for this account. Try again in 15 minutes.';
+  return null;
+}
+function failsFor(email, now) {
+  if (loginFails.size > 10000) for (const [key, list] of loginFails) if (list.at(-1) <= now - DAY_MS) loginFails.delete(key);
+  return (loginFails.get(email) || []).filter((at) => at > now - DAY_MS);
+}
 async function login(req, env) {
   const b = await req.json().catch(() => null);
   if (!b) return J({ ok: false, error: 'bad body' }, 400);
-  const email = String(b.email || '').trim().toLowerCase();
+  let email = String(b.email || '').trim().toLowerCase();
+  /* kids sign in with a bare login name such as "juni" */
+  if (/^[a-z][a-z0-9-]{1,23}$/.test(email)) email = kidEmail(email);
   const pass = String(b.pass || '');
-  if (!EMAIL_OK(email) || !pass) return J({ ok: false, error: 'creds' }, 400);
+  if (!isEmail(email) || !pass) return J({ ok: false, error: 'creds' }, 400);
+  const now = Date.now();
+  const fails = failsFor(email, now);
+  const paused = loginPause(fails, now);
+  if (paused) return J({ ok: false, error: paused }, 429);
   const r = await db(env, 'SELECT salt, hash, status, role FROM accounts WHERE email = ?', [email]);
   const row = r.results && r.results[0];
-  if (!row) return J({ ok: false, error: 'no account' }, 404);
-  if (!await passwordMatches(pass,row)) return J({ ok: false, error: 'wrong password' }, 401);
-  return J({ ok: true, status: row.status, role: String(row.role || ''), t: await sessToken(env, email) });
+  /* hash against a decoy so a missing account takes as long as a wrong password */
+  const matches = await passwordMatches(pass, row || DECOY);
+  if (!row || !matches) { loginFails.set(email, [...fails, now]); return BAD_LOGIN(); }
+  loginFails.delete(email);
+  return J({ ok: true, email, status: row.status, role: String(row.role || ''), t: await sessToken(env, email) });
 }
 
-/* ---------- status check ---------- */
-async function check(url, env) {
-  let email = '';
-  try { email = unb64u(url.searchParams.get('e') || '').trim().toLowerCase(); } catch (e) { /* bad b64 */ }
-  if (!EMAIL_OK(email)) return J({ ok: false, error: 'email' }, 400);
-  const r = await db(env, 'SELECT status, role FROM accounts WHERE email = ?', [email]);
-  const row = r.results && r.results[0];
-  const authenticated = row && await sessOk(env, email, url.searchParams.get('t') || '');
-  return J({ ok: true, status: row ? row.status : 'none',
-    role: authenticated ? String(row.role || '') : '',
-    t: authenticated ? url.searchParams.get('t') : undefined });
+/* ---------- status check: without a valid session it says nothing about the email ---------- */
+/* The session a GET carries: X-Kid-Email and X-Kid-Token headers, which the pages send so tokens stay out
+   of logs, or the older ?e=<base64url email>&t= that a shell cached before the change may still use. */
+function getSession(req, url) {
+  const email = req.headers.get('x-kid-email');
+  if (email) return { email: email.trim().toLowerCase(), t: req.headers.get('x-kid-token') || '' };
+  return { email: unb64uSafe(url.searchParams.get('e')).trim().toLowerCase(), t: url.searchParams.get('t') || '' };
+}
+async function check(req, url, env) {
+  const { email, t } = getSession(req, url);
+  if (!await sessOk(env, email, t)) return J({ ok: true, status: 'none', role: '' });
+  return J({ ok: true, email, status: 'approved', role: await roleOf(env, email), t });
 }
 
-/* ---------- panel list (masked) ---------- */
-async function pending(env) {
-  await db(env, `CREATE TABLE IF NOT EXISTS accounts (
-    email TEXT PRIMARY KEY, first TEXT NOT NULL, last TEXT NOT NULL,
-    salt TEXT NOT NULL, hash TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending', created INTEGER NOT NULL)`);
-  const r = await db(env, 'SELECT first, last, email, status, created FROM accounts ORDER BY created DESC LIMIT 100');
-  const mask = (e) => {
-    const i = e.indexOf('@');
-    if (i < 2) return '***';
-    return e.slice(0, 2) + '***' + e.slice(i);
-  };
-  const rows = (r.results || []).map((a) => ({
-    first: a.first, last: a.last, emailMasked: mask(a.email), status: a.status, created: a.created,
-  }));
-  return J({ ok: true, rows: rows });
+/* ---------- sessions: "<expires ms>.<signature>", the token the pages keep and send back ---------- */
+/* A session lasts seven days. It is signed over the account's password hash, so a new password ends
+   every session made with the old one. */
+const SESSION_MS = 7 * 86400000;
+const sessionSignature = (env, email, expires, hash) => hmac(env.SIGN_SECRET, 'sess|' + email + '|' + expires + '|' + hash);
+/* signatures compare in constant time, like the media cookie's */
+const sameHex = (given, expected) => /^[a-f0-9]{64}$/.test(String(given)) && timingSafeEqual(Buffer.from(given, 'hex'), Buffer.from(expected, 'hex'));
+
+export async function sessToken(env, email) {
+  const row = (await db(env, 'SELECT hash FROM accounts WHERE email = ?', [email])).results[0];
+  const expires = Date.now() + SESSION_MS;
+  return expires + '.' + await sessionSignature(env, email, expires, row.hash);
 }
 
-/* ---------- signed approve/deny links ---------- */
-async function decide(url, env) {
-  let email = '';
-  try { email = unb64u(url.searchParams.get('e') || '').trim().toLowerCase(); } catch (e) { /* bad b64 */ }
-  const action = url.searchParams.get('a') || '';
-  const sig = url.searchParams.get('s') || '';
-  if (!EMAIL_OK(email) || (action !== 'approve' && action !== 'deny')) return PAGE('Bad link', 400);
-  const want = await hmac(env.SIGN_SECRET, email + '|' + action);
-  if (want !== sig) return PAGE('This link is not valid.', 403);
-  const r = await db(env, 'UPDATE accounts SET status = ? WHERE email = ?', [action === 'approve' ? 'approved' : 'denied', email]);
-  if (!r.meta || !r.meta.changes) return PAGE('No account found for that link.', 404);
-  if (action !== 'approve') return PAGE('Denied. That account cannot log in.', 200);
-  const g = await db(env, 'SELECT first FROM accounts WHERE email = ?', [email]);
-  const first = (g.results && g.results[0] && g.results[0].first) || '';
-  let mailed = true;
-  try { await approvalMail(env, email, first); } catch (e) { mailed = false; }
-  return PAGE('Approved. That account can log in to the tube right away.' +
-    (mailed ? ' A welcome email was sent to them.' : ' (The welcome email could not be sent.)'), 200);
+/* the email when t is a live session of an approved account, else null */
+export async function sessOk(env, email, t) {
+  if (!isEmail(email) || !t) return null;
+  const [expires, sig] = String(t).split('.');
+  if (!/^\d{13}$/.test(expires) || Number(expires) <= Date.now() || Number(expires) > Date.now() + SESSION_MS) return null;
+  const row = (await db(env, 'SELECT hash, status FROM accounts WHERE email = ?', [email])).results[0];
+  if (!row || !sameHex(sig, await sessionSignature(env, email, expires, row.hash))) return null;
+  return row.status === 'approved' ? email : null;
 }
 
-/* ---------- parent admin (PIN lives ONLY in the Worker, not settable) ---------- */
-const adminToken = async (env, stamp) => hmac(env.SIGN_SECRET, 'admin|' + stamp);
-async function adminOk(env, t) {
-  const now = Math.floor(Date.now() / 3600000);
-  for (const s of [now, now - 1]) { /* token valid for ~1h */
-    if (t === await adminToken(env, s)) return true;
-  }
-  return false;
-}
-async function adminLogin(req, env) {
-  const b = await req.json().catch(() => null);
-  if (!b || !env.PARENT_PIN) return J({ ok: false, error: 'admin unavailable' }, 404);
-  const pin = String(b.pin || '');
-  if (pin.length !== env.PARENT_PIN.length) return J({ ok: false, error: 'wrong pin' }, 401);
-  const a = await hashPass('tza-pin|' + pin);
-  const c = await hashPass('tza-pin|' + env.PARENT_PIN);
-  if (a !== c) return J({ ok: false, error: 'wrong pin' }, 401);
-  return J({ ok: true, token: await adminToken(env, Math.floor(Date.now() / 3600000)) });
-}
-async function adminList(url, env) {
-  if (!(await adminOk(env, url.searchParams.get('t') || ''))) return J({ ok: false, error: 'forbidden' }, 403);
-  await db(env, `CREATE TABLE IF NOT EXISTS accounts (
-    email TEXT PRIMARY KEY, first TEXT NOT NULL, last TEXT NOT NULL,
-    salt TEXT NOT NULL, hash TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'pending', created INTEGER NOT NULL)`);
-  const r = await db(env, 'SELECT email, first, last, status, created FROM accounts ORDER BY created DESC LIMIT 100');
-  return J({ ok: true, rows: r.results || [] });
-}
-async function adminAct(req, env) {
-  const b = await req.json().catch(() => null);
-  if (!b) return J({ ok: false, error: 'bad body' }, 400);
-  if (!(await adminOk(env, String(b.t || '')))) return J({ ok: false, error: 'forbidden' }, 403);
-  const email = String(b.email || '').trim().toLowerCase();
-  const act = String(b.act || '');
-  if (!EMAIL_OK(email)) return J({ ok: false, error: 'email' }, 400);
-  if (act === 'remove') {
-    const r = await db(env, 'DELETE FROM accounts WHERE email = ?', [email]);
-    return J({ ok: true, act: 'remove', changes: (r.meta && r.meta.changes) || 0 });
-  }
-  if (act !== 'approve' && act !== 'deny' && act !== 'revoke') return J({ ok: false, error: 'act' }, 400);
-  const status = act === 'approve' ? 'approved' : 'denied';
-  const r = await db(env, 'UPDATE accounts SET status = ? WHERE email = ?', [status, email]);
-  if (!r.meta || !r.meta.changes) return J({ ok: false, error: 'no account' }, 404);
-  let mailed = false;
-  if (act === 'approve') {
-    const g = await db(env, 'SELECT first FROM accounts WHERE email = ?', [email]);
-    const first = (g.results && g.results[0] && g.results[0].first) || '';
-    try { await approvalMail(env, email, first); mailed = true; } catch (e) { mailed = false; }
-  }
-  return J({ ok: true, act: act, status: status, mailed: mailed });
-}
-
-/* Sessions expire after seven days and password changes invalidate them. */
-const CLIP_OK = (s) => /^[A-Za-z0-9_-]{1,80}$/.test(String(s || ''));
-async function sessToken(env,email) {
- const r=await db(env,'SELECT hash FROM accounts WHERE email=?',[email]);
- const expires=Date.now()+7*86400000;
- return expires+'.'+await hmac(env.SIGN_SECRET,'sess|'+email+'|'+expires+'|'+r.results[0].hash);
-}
-async function sessOk(env, email, t) {
-  if (!EMAIL_OK(email) || !t) return null;
-  const [expires,sig]=String(t).split('.');
-  if(!/^\d{13}$/.test(expires)||Number(expires)<=Date.now()||Number(expires)>Date.now()+7*86400000)return null;
-  const credential=await db(env,'SELECT hash FROM accounts WHERE email=?',[email]);
-  if(!credential.results[0] || sig!==await hmac(env.SIGN_SECRET,'sess|'+email+'|'+expires+'|'+credential.results[0].hash))return null;
-  const r = await db(env, 'SELECT status FROM accounts WHERE email = ?', [email]);
-  const row = r.results && r.results[0];
-  return row && row.status === 'approved' ? email : null;
-}
-const dispName = (first, last) => (String(first || '').trim() +
+/* "Nana Okafor" -> "Nana O.", as other viewers see a name */
+export const displayName = (first, last) => (String(first || '').trim() +
   (String(last || '').trim() ? ' ' + String(last).trim().charAt(0).toUpperCase() + '.' : '')).trim();
 
-/* ---------- roles: '' kid, 'admin' (Family), 'super' (the owner) ---------- */
+/* ---------- roles: '' viewer, 'kid' (uploads to one channel), 'admin' (Family), 'super' (the owner) ---------- */
 async function roleOf(env, email) {
   const r = await db(env, 'SELECT role, status FROM accounts WHERE email = ?', [email]);
   const row = r.results && r.results[0];
   return row && row.status === 'approved' ? String(row.role || '') : '';
 }
-async function asStaff(env, email, t) {
+/* { email, role } for a parent or co-parent with a live session, else null */
+export async function asStaff(env, email, t) {
   const e = await sessOk(env, email, t);
   if (!e) return null;
   const role = await roleOf(env, e);
-  return (role === 'admin' || role === 'super') ? { email: e, role: role } : null;
+  return isStaff({ role }) ? { email: e, role } : null;
 }
-export { asStaff, sessOk };
+/* staff, plus kid accounts that upload to their own channel */
+export async function asCreator(env, email, t) {
+  const e = await sessOk(env, email, t);
+  if (!e) return null;
+  const r = await db(env, 'SELECT role, channel_id FROM accounts WHERE email = ?', [e]);
+  const row = r.results && r.results[0];
+  return row && ['admin', 'super', 'kid'].includes(row.role) ? { email: e, role: row.role, channelId: row.channel_id } : null;
+}
+/* POSTs carry the parent's session in the JSON body: { staff, body } when it is one, else null */
 async function staffFrom(req, env) {
   const b = await req.json().catch(() => null);
   if (!b) return null;
   const s = await asStaff(env, String(b.email || '').trim().toLowerCase(), String(b.t || ''));
   return s ? { staff: s, body: b } : null;
 }
+async function superFrom(req, env) {
+  const ctx = await staffFrom(req, env);
+  return ctx && ctx.staff.role === 'super' ? ctx : null;
+}
 const DENY403 = () => J({ ok: false, error: 'not authorized' }, 403);
 const SUPER403 = () => J({ ok: false, error: 'super only' }, 403);
 
 /* ---------- one-use guest codes and 24-hour view-only sessions ---------- */
 const GUEST_DAY = 24 * 60 * 60 * 1000;
-const CODE_LETTERS = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
-const CODE_DIGITS = '23456789';
-async function ensureGuestCodes(env) {
-  await db(env, `CREATE TABLE IF NOT EXISTS guest_codes (
-    code_hash TEXT PRIMARY KEY, creator TEXT NOT NULL, created INTEGER NOT NULL,
-    expires INTEGER NOT NULL, redeemed INTEGER, token_hash TEXT, session_expires INTEGER)`);
-  await db(env, 'CREATE TABLE IF NOT EXISTS guest_code_attempts (ip TEXT, ts INTEGER)');
-}
+/* six symbols from 32 that can't be misread (no I, O, 0 or 1): about a billion codes */
+const CODE_SYMBOLS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function freshGuestCode() {
-  const bytes = new Uint8Array(5);
+  const bytes = new Uint8Array(6);
   crypto.getRandomValues(bytes);
-  const code = Array.from(bytes.slice(0, 3), b => CODE_LETTERS[b % CODE_LETTERS.length]);
-  code.splice(bytes[4] % 4, 0, CODE_DIGITS[bytes[3] % CODE_DIGITS.length]);
-  return code.join('');
+  return Array.from(bytes, b => CODE_SYMBOLS[b % CODE_SYMBOLS.length]).join('');
 }
+/* wrong guest codes from every address together; past this, redeeming pauses for everyone */
+const GUEST_FAILS = 30, GUEST_WINDOW = 10 * 60 * 1000;
+let guestFails = [];
+/* a pass may be limited to one kid's channel: { channel: '<slug>' } */
 async function guestGenerate(req, env) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
-  await ensureGuestCodes(env);
+  if (!env.settings.get('guest_passes')) return CLOSED403('guest passes');
+  const slug = String(ctx.body.channel || '');
+  const scope = slug ? ((await db(env, 'SELECT id FROM channels WHERE slug = ?', [slug])).results || [])[0] : null;
+  if (slug && !scope) return J({ ok: false, error: 'Choose a kid for this pass.' }, 400);
   const now = Date.now();
   for (let attempt = 0; attempt < 20; attempt++) {
     const code = freshGuestCode();
     const codeHash = await hmac(env.SIGN_SECRET, 'guest-code|' + code);
     const result = await db(env, `INSERT OR IGNORE INTO guest_codes
-      (code_hash, creator, created, expires) VALUES (?,?,?,?)`,
-      [codeHash, ctx.staff.email, now, now + GUEST_DAY]);
+      (code_hash, creator, created, expires, channel_id) VALUES (?,?,?,?,?)`,
+      [codeHash, ctx.staff.email, now, now + GUEST_DAY, scope ? scope.id : null]);
     if (result.meta && result.meta.changes) {
-      return J({ ok: true, code, expires: now + GUEST_DAY });
+      return J({ ok: true, code, expires: now + GUEST_DAY, scope: scope ? slug : null });
     }
   }
   return J({ ok: false, error: 'Could not create a code. Try again.' }, 503);
 }
-async function guestRedeem(req, env) {
+async function guestRedeem(req, env, ip) {
+  if (!env.settings.get('guest_passes')) return CLOSED403('guest passes');
   const payload = await req.json().catch(() => null);
   if (!payload) return J({ ok: false, error: 'Invalid request.' }, 400);
   const code = String(payload.code || '').trim().toUpperCase();
-  if (!/^[A-Z0-9]{4}$/.test(code)) return J({ ok: false, error: 'Enter the four-character code.' }, 400);
-  await ensureGuestCodes(env);
+  /* four-character codes made before the six-character ones still work for their last day */
+  if (!/^[A-Z0-9]{4}(?:[A-Z0-9]{2})?$/.test(code)) return J({ ok: false, error: 'Enter the six-character code.' }, 400);
   const now = Date.now();
-  const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
+  guestFails = guestFails.filter((at) => at > now - GUEST_WINDOW);
+  if (guestFails.length >= GUEST_FAILS) return J({ ok: false, error: 'Too many wrong codes. Try again in ten minutes.' }, 429);
   await db(env, 'DELETE FROM guest_code_attempts WHERE ts < ?', [now - 10 * 60 * 1000]);
   const recent = await db(env, 'SELECT COUNT(*) AS n FROM guest_code_attempts WHERE ip = ?', [ip]);
   if (((recent.results || [])[0]?.n || 0) >= 5) {
@@ -355,77 +323,145 @@ async function guestRedeem(req, env) {
     WHERE code_hash = ? AND redeemed IS NULL AND expires > ?`,
   [now, tokenHash, expires, codeHash, now]);
   if (!result.meta || !result.meta.changes) {
+    guestFails.push(now);
     return J({ ok: false, error: 'That code is invalid, already used, or expired.' }, 400);
   }
-  return J({ ok: true, token, expires, role: 'guest' });
+  return J({ ok: true, token, expires, role: 'guest', scope: await guestScope(env, tokenHash) });
+}
+async function guestScope(env, tokenHash) {
+  const r = await db(env, 'SELECT ch.slug FROM guest_codes g JOIN channels ch ON ch.id = g.channel_id WHERE g.token_hash = ?', [tokenHash]);
+  return (r.results && r.results[0] && r.results[0].slug) || null;
 }
 async function guestValidate(req, env) {
   const payload = await req.json().catch(() => null);
   const token = String(payload?.token || '');
   if (!/^[a-f0-9]{64}$/.test(token)) return J({ ok: false, error: 'Invalid guest session.' }, 403);
-  await ensureGuestCodes(env);
   const tokenHash = await hmac(env.SIGN_SECRET, 'guest-session|' + token);
   const result = await db(env, 'SELECT session_expires FROM guest_codes WHERE token_hash = ? AND session_expires > ?',
     [tokenHash, Date.now()]);
   const row = result.results && result.results[0];
   if (!row) return J({ ok: false, error: 'Guest access has expired.' }, 403);
-  return J({ ok: true, expires: row.session_expires, role: 'guest' });
-}
-async function superFrom(req, env) {
-  const ctx = await staffFrom(req, env);
-  return ctx && ctx.staff.role === 'super' ? ctx : null;
+  return J({ ok: true, expires: row.session_expires, role: 'guest', scope: await guestScope(env, tokenHash) });
 }
 
 /* ---------- server-owned clip catalog (the admin panel edits it) ---------- */
-const CLIPS_TABLE = `CREATE TABLE IF NOT EXISTS clips (
-  id TEXT PRIMARY KEY, title TEXT NOT NULL, src TEXT NOT NULL,
-  poster TEXT DEFAULT '', kind TEXT DEFAULT 'video', blurb TEXT DEFAULT '',
-  published TEXT DEFAULT '', duration REAL DEFAULT 0,
-  position INTEGER NOT NULL, created INTEGER NOT NULL, hidden INTEGER NOT NULL DEFAULT 0)`;
-async function ensureMediaTables(env) {
-  await db(env, 'CREATE TABLE IF NOT EXISTS media (id TEXT PRIMARY KEY, mime TEXT NOT NULL, size INTEGER NOT NULL, created INTEGER NOT NULL)');
-  await db(env, 'CREATE TABLE IF NOT EXISTS media_chunks (id TEXT, seq INTEGER, bytes BLOB, PRIMARY KEY (id, seq))');
+
+/* viewers only ever see approved, unhidden clips, on channels they may watch */
+/* positions count within a channel, so the reel runs channel by channel; ?channel=<slug> picks one */
+const CHANNEL_ORDER = 'ORDER BY ch.position, c.channel_id, c.position';
+const OUTSIDE_PASS = () => J({ ok: false, error: 'This channel is not part of your guest pass.' }, 403);
+async function clipsList(url, env, viewer) {
+  const slug = url.searchParams.get('channel');
+  if (slug) {
+    const ch = ((await db(env, 'SELECT id FROM channels WHERE slug = ?', [slug])).results || [])[0];
+    if (ch && !canViewChannel(viewer, ch)) return OUTSIDE_PASS();
+  }
+  const r = await db(env, `SELECT c.id, c.title, c.src, c.poster, c.kind, c.blurb, c.published, c.duration, c.channel_id, ch.slug AS channel,
+    c.opens_at, c.opened_at, c.capsule_note, c.sealed_by
+    FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id
+    WHERE c.hidden = 0 AND c.review = 'approved' ${slug ? 'AND ch.slug = ?' : ''} ${CHANNEL_ORDER}`, slug ? [slug] : []);
+  /* seq is the place in this list, which feed.js sorts by. A sealed time capsule keeps its place as a
+     locked tape, with no media, length, blurb or kind; an opened one carries openedAt for its unlock */
+  const now = Date.now();
+  const clips = (r.results || []).filter((c) => canViewChannel(viewer, { id: c.channel_id })).map((c, i) => (c.opens_at > now && env.capsules
+    ? { id: c.id, title: c.title, channel: c.channel || '', publishedAt: c.published || '', seq: i + 1, ...env.capsules.lockedFields(c) }
+    : {
+      id: c.id, title: c.title, src: c.src, poster: c.poster || '', kind: c.kind || 'video',
+      blurb: c.blurb || '', publishedAt: c.published || '', duration: c.duration || 0, seq: i + 1,
+      channel: c.channel || '', ...(c.opened_at ? { openedAt: c.opened_at } : {}),
+    }));
+  /* a budgeted account's daily tape (watch.mjs); null when it has no limit */
+  const budget = env.watch && viewer && viewer.email ? env.watch.budgetFor(viewer.email, now) : null;
+  return J({ ok: true, clips: clips, budget });
 }
 
-async function clipsList(env) {
-  await db(env, CLIPS_TABLE);
-  const r = await db(env, 'SELECT id, title, src, poster, kind, blurb, published, duration, position FROM clips WHERE hidden = 0 ORDER BY position ASC');
-  const clips = (r.results || []).map((c) => ({
-    id: c.id, title: c.title, src: c.src, poster: c.poster || '', kind: c.kind || 'video',
-    blurb: c.blurb || '', publishedAt: c.published || '', duration: c.duration || 0, seq: c.position,
-  }));
-  return J({ ok: true, clips: clips });
+/* where a clip lives, for links made before channels (#/v/<id>) and for a stale channel name;
+   a clip the viewer may not play looks the same as one that does not exist */
+async function clipsLocate(url, env, viewer) {
+  const id = url.searchParams.get('id') || '';
+  if (!isClipId(id)) return J({ ok: false, error: 'not found' }, 404);
+  const clip = ((await db(env, `${CLIP_ACCESS_SQL} WHERE c.id = ?`, [id])).results || [])[0];
+  if (!clip || !clip.channel || !canPlayClip(viewer, clip)) return J({ ok: false, error: 'not found' }, 404);
+  return J({ ok: true, id: clip.id, channel: clip.channel, review: clip.review });
 }
 
-async function clipsReorder(req, env) {
+/* the parent's yes or no on a kid's upload; the dashboard's review queue (monitor.mjs) does the same through publish.mjs */
+async function clipsReview(req, env) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
-  const list = Array.isArray(ctx.body.order) ? ctx.body.order.filter((s) => CLIP_OK(s)) : [];
+  const id = String(ctx.body.id || '');
+  const decision = String(ctx.body.decision || '');
+  if (!isClipId(id) || !['approve', 'reject'].includes(decision)) return J({ ok: false, error: 'bad' }, 400);
+  if (decision === 'reject') return rejectClip(env.sqlite, id, ctx.staff.email) ? J({ ok: true, review: 'rejected' }) : J({ ok: false, error: 'Nothing is waiting with that id.' }, 404);
+  const channel = approveClip(env.sqlite, env.notifications, id, ctx.staff.email);
+  return channel === null ? J({ ok: false, error: 'Nothing is waiting with that id.' }, 404) : J({ ok: true, review: 'approved', channel });
+}
+
+/* who the cookie names, for the viewer shell: never 401, so a signed-out visitor gets { viewer: null } */
+async function me(env, viewer) {
+  if (!viewer) return J({ ok: true, viewer: null });
+  if (viewer.role === 'guest') {
+    const r = viewer.channelId == null ? null : await db(env, 'SELECT slug FROM channels WHERE id = ?', [viewer.channelId]);
+    return J({ ok: true, viewer: { role: 'guest', scope: (r && r.results[0] && r.results[0].slug) || null } });
+  }
+  const r = await db(env, 'SELECT a.first, a.role, ch.slug FROM accounts a LEFT JOIN channels ch ON ch.id = a.channel_id WHERE a.email = ?', [viewer.email]);
+  const row = (r.results || [])[0] || {};
+  return J({ ok: true, viewer: { role: String(row.role || ''), email: viewer.email, first: row.first || '', channel: row.role === 'kid' ? row.slug || null : null } });
+}
+
+/* Called directly, these write the activity row the dashboard's own routes write (monitor.mjs), so no
+   change goes unrecorded; the dashboard passes ctx.internal and records it itself. */
+function audit(env, from, actor, subject, detail) {
+  if ((from && from.internal) || !env.sqlite) return;
+  env.sqlite.prepare("INSERT INTO activity (ts,actor,kind,subject,detail) VALUES (?,?,'clip',?,?)").run(Date.now(), actor, subject, JSON.stringify(detail));
+}
+const clipFacts = async (env, id) => ((await db(env, 'SELECT c.title, c.channel_id, ch.slug FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id WHERE c.id = ?', [id])).results || [])[0];
+
+async function clipsReorder(req, env, from) {
+  const ctx = await staffFrom(req, env);
+  if (!ctx) return DENY403();
+  const list = Array.isArray(ctx.body.order) ? [...new Set(ctx.body.order.filter(isClipId))] : [];
   if (!list.length) return J({ ok: false, error: 'order' }, 400);
-  for (let i = 0; i < list.length; i++) await db(env, 'UPDATE clips SET position = ? WHERE id = ?', [i + 1, list[i]]);
+  /* each clip takes the next position within its own channel, in the order given */
+  const r = await db(env, `SELECT id, channel_id FROM clips WHERE id IN (${list.map(() => '?').join(',')})`, list);
+  const channelOf = new Map((r.results || []).map((c) => [c.id, c.channel_id]));
+  const next = new Map();
+  for (const id of list.filter((id) => channelOf.has(id))) {
+    const position = (next.get(channelOf.get(id)) || 0) + 1;
+    next.set(channelOf.get(id), position);
+    await db(env, 'UPDATE clips SET position = ? WHERE id = ?', [position, id]);
+  }
+  for (const channelId of next.keys()) {
+    const slug = ((await db(env, 'SELECT slug FROM channels WHERE id = ?', [channelId])).results || [])[0]?.slug || '';
+    audit(env, from, ctx.staff.email, `channel:${channelId}`, { action: 'order', channel: slug });
+  }
   return J({ ok: true, count: list.length });
 }
 
-async function clipsRename(req, env) {
+async function clipsRename(req, env, from) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
   const id = String(ctx.body.id || '');
   const title = String(ctx.body.title || '').trim().slice(0, 80);
-  if (!CLIP_OK(id) || !title) return J({ ok: false, error: 'title' }, 400);
+  if (!isClipId(id) || !title) return J({ ok: false, error: 'title' }, 400);
+  const before = await clipFacts(env, id);
   const r = await db(env, 'UPDATE clips SET title = ? WHERE id = ?', [title, id]);
+  if (before) audit(env, from, ctx.staff.email, id, { action: 'rename', from: before.title, title, channel: before.slug || '' });
   return J({ ok: true, changes: (r.meta && r.meta.changes) || 0 });
 }
 
-async function clipsDelete(req, env) {
+async function clipsDelete(req, env, from) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
   const id = String(ctx.body.id || '');
-  if (!CLIP_OK(id)) return J({ ok: false, error: 'id' }, 400);
+  if (!isClipId(id)) return J({ ok: false, error: 'id' }, 400);
   const c = await db(env, 'SELECT src FROM clips WHERE id = ?', [id]);
   const row = c.results && c.results[0];
   if (!row) return J({ ok: false, error: 'no clip' }, 404);
   const m = (row.src || '').match(/^\/api\/media\/([A-Za-z0-9-]{8,80})$/);
+  const facts = await clipFacts(env, id);
   await db(env, 'DELETE FROM clips WHERE id = ?', [id]);
+  audit(env, from, ctx.staff.email, id, { action: 'delete', title: facts.title, channel: facts.slug || '' });
   if (m) {
     await db(env, 'DELETE FROM media WHERE id = ?', [m[1]]);
     await db(env, 'DELETE FROM media_chunks WHERE id = ?', [m[1]]);
@@ -435,72 +471,8 @@ async function clipsDelete(req, env) {
   return J({ ok: true });
 }
 
-/* ---------- uploads: chunked media in D1, Range-streamed back ---------- */
+/* ---------- legacy media: clips the original hosted version stored as chunks in the database ---------- */
 const CHUNK = 700000;                /* bytes per stored chunk */
-const MAX_UPLOAD = 60 * 1024 * 1024; /* 60 MB raw */
-const MAX_SECONDS = 305;             /* 5 minutes + a little grace */
-
-async function uploadInit(req, env) {
-  const ctx = await staffFrom(req, env);
-  if (!ctx) return DENY403();
-  const mime = String(ctx.body.mime || '');
-  if (!/^video\/(mp4|webm|quicktime)$/.test(mime)) return J({ ok: false, error: 'mime' }, 400);
-  const size = Number(ctx.body.size) || 0;
-  const secs = Number(ctx.body.duration) || 0;
-  if (size < 1000 || size > MAX_UPLOAD) return J({ ok: false, error: 'size' }, 400);
-  if (secs <= 0 || secs > MAX_SECONDS) return J({ ok: false, error: 'Keep it under 5 minutes.' }, 400);
-  await ensureMediaTables(env);
-  const id = crypto.randomUUID();
-  await db(env, 'INSERT INTO media (id, mime, size, created) VALUES (?,?,?,?)', [id, mime, size, Date.now()]);
-  return J({ ok: true, uploadId: id, chunkSize: CHUNK });
-}
-
-async function uploadChunk(req, env, p, url) {
-  const s = await asStaff(env, unb64uSafe(url.searchParams.get('e') || ''), url.searchParams.get('t') || '');
-  if (!s) return DENY403();
-  const m = p.match(/^\/api\/upload\/chunk\/([A-Za-z0-9-]{8,80})\/(\d{1,5})$/);
-  if (!m) return J({ ok: false, error: 'bad chunk path' }, 400);
-  const buf = await req.arrayBuffer();
-  if (!buf.byteLength || buf.byteLength > CHUNK) return J({ ok: false, error: 'chunk size' }, 400);
-  await db(env, 'INSERT OR REPLACE INTO media_chunks (id, seq, bytes) VALUES (?,?,?)', [m[1], Number(m[2]), buf]);
-  return J({ ok: true, seq: Number(m[2]) });
-}
-
-async function clipsCreate(req, env) {
-  const ctx = await staffFrom(req, env);
-  if (!ctx) return DENY403();
-  const id = String(ctx.body.uploadId || '');
-  const total = Number(ctx.body.total) || 0;
-  const title = String(ctx.body.title || '').trim().slice(0, 80) || 'Untitled clip';
-  const secs = Number(ctx.body.duration) || 0;
-  if (!/^[A-Za-z0-9-]{8,80}$/.test(id) || total < 1 || total > 200) return J({ ok: false, error: 'upload' }, 400);
-  if (secs <= 0 || secs > MAX_SECONDS) return J({ ok: false, error: 'Keep it under 5 minutes.' }, 400);
-  await ensureMediaTables(env);
-  await db(env, CLIPS_TABLE);
-  const mr = await db(env, 'SELECT mime, size FROM media WHERE id = ?', [id]);
-  const mrow = mr.results && mr.results[0];
-  if (!mrow) return J({ ok: false, error: 'unknown upload' }, 404);
-  const have = await db(env, 'SELECT seq, length(bytes) AS n FROM media_chunks WHERE id = ? ORDER BY seq ASC', [id]);
-  const rows = have.results || [];
-  const gridTotal = Math.ceil(mrow.size / CHUNK);
-  if (rows.length !== total || total !== gridTotal || rows.reduce((a, r) => a + r.n, 0) !== mrow.size) return J({ ok: false, error: 'chunks incomplete' }, 400);
-  for (let i = 0; i < rows.length; i++) {
-    const want = i < rows.length - 1 ? CHUNK : mrow.size - i * CHUNK;
-    if (rows[i].seq !== i || rows[i].n !== want) return J({ ok: false, error: 'bad chunk sizes' }, 400);
-  }
-  const clipId = crypto.randomUUID();
-  const publishedAt = new Date().toISOString();
-  const clip = { id: clipId, title, position: 1, src: '/api/media/' + id, poster: '', kind: 'video', blurb: '', publishedAt, duration: secs };
-  if (env.publishClip) {
-    env.publishClip(clip);
-    return J({ ok: true, clip });
-  }
-  /* new uploads lead the reel: position 1, everyone else shifts down one */
-  await db(env, 'UPDATE clips SET position = position + 1');
-  await db(env, 'INSERT INTO clips (id, title, src, poster, kind, blurb, published, duration, position, created) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    [clipId, title, '/api/media/' + id, '', 'video', '', publishedAt, secs, 1, Date.now()]);
-  return J({ ok: true, clip });
-}
 
 /* stitch the requested byte range out of chunk rows (serve <= ~2MB per reply) */
 function stitchChunks(rows, start, need) {
@@ -522,10 +494,12 @@ function stitchChunks(rows, start, need) {
   return filled === need ? out : null;
 }
 
-async function mediaServe(req, env, p) {
+async function mediaServe(req, env, p, viewer) {
   const id = (p.match(/^\/api\/media\/([A-Za-z0-9-]{8,80})$/) || [])[1];
   if (!id) return new Response('bad id', { status: 404 });
-  await ensureMediaTables(env);
+  /* like /api/video/: only through a clip the viewer may play */
+  const owner = ((await db(env, `${CLIP_ACCESS_SQL} WHERE c.src = ?`, ['/api/media/' + id])).results || [])[0];
+  if (!canPlayClip(viewer, owner)) return new Response('not found', { status: 404 });
   const mr = await db(env, 'SELECT mime, size FROM media WHERE id = ?', [id]);
   const mrow = mr.results && mr.results[0];
   if (!mrow) return new Response('not found', { status: 404 });
@@ -571,7 +545,7 @@ async function mediaServe(req, env, p) {
   return new Response(chunkStream(env, id, start, end, size), { status: ranged ? 206 : 200, headers });
 }
 
-/* streams media bytes [from..to] out of D1 one stored chunk at a time */
+/* streams media bytes [from..to] out of media_chunks one stored chunk at a time */
 function chunkStream(env, id, from, to, size) {
   let pos = from;
   return new ReadableStream({
@@ -591,17 +565,20 @@ function chunkStream(env, id, from, to, size) {
 }
 
 /* ---------- staff analytics + super controls ---------- */
-async function adminOverview(url, env) {
-  const s = await asStaff(env, unb64uSafe(url.searchParams.get('e') || ''), url.searchParams.get('t') || '');
+async function adminOverview(req, url, env) {
+  const session = getSession(req, url);
+  const s = await asStaff(env, session.email, session.t);
   if (!s) return DENY403();
-  await db(env, CLIPS_TABLE);
   const acc = await db(env, 'SELECT email, first, last, status, role, created FROM accounts ORDER BY created ASC');
-  const cpl = await db(env, 'SELECT id, title, position FROM clips ORDER BY position ASC');
+  const cpl = await db(env, `SELECT c.id, c.title, c.position, c.review, c.hidden, ch.slug AS channel,
+    c.opens_at, c.opened_at, c.capsule_note
+    FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id ${CHANNEL_ORDER}`);
+  const reactionTotals = env.reactions ? env.reactions.totals() : {};
   const lk = await db(env, 'SELECT clip_id, email FROM likes');
   const cmAgg = await db(env, 'SELECT clip_id, COUNT(*) AS n FROM comments GROUP BY clip_id');
-  const cm = await db(env, 'SELECT clip_id, name, body, created FROM comments ORDER BY created DESC LIMIT 40');
+  const cm = await db(env, 'SELECT clip_id, name, body, created, hidden FROM comments ORDER BY created DESC LIMIT 40');
   const byName = {};
-  for (const a of (acc.results || [])) byName[a.email] = dispName(a.first, a.last) || a.email;
+  for (const a of (acc.results || [])) byName[a.email] = displayName(a.first, a.last) || a.email;
   const likesByClip = {}, likesByFan = {}, likers = {};
   for (const l of (lk.results || [])) {
     likesByClip[l.clip_id] = (likesByClip[l.clip_id] || 0) + 1;
@@ -612,17 +589,22 @@ async function adminOverview(url, env) {
   for (const c of (cmAgg.results || [])) cmCount[c.clip_id] = c.n;
   const clips = (cpl.results || []).map((c) => ({
     id: c.id, title: c.title, position: c.position,
+    review: c.review, hidden: !!c.hidden, channel: c.channel || '',
     likes: likesByClip[c.id] || 0, comments: cmCount[c.id] || 0,
     likers: (likers[c.id] || []).slice(0, 24),
+    reactions: reactionTotals[c.id] || {},
+    sealed: c.opens_at > Date.now(), opensAt: c.opens_at || 0, openedAt: c.opened_at || 0, capsuleNote: c.capsule_note || '',
   }));
+  /* the people list and their emails stay with the owner, as in /api/admin/people */
+  const owner = s.role === 'super';
   const fans = Object.entries(likesByFan)
-    .map(([email, n]) => ({ name: byName[email] || email, email: email, likes: n }))
+    .map(([email, n]) => ({ name: byName[email] || (owner ? email : 'Someone'), ...(owner ? { email } : {}), likes: n }))
     .sort((x, y) => y.likes - x.likes).slice(0, 12);
   return J({
     ok: true, role: s.role,
-    accounts: acc.results || [],
+    accounts: owner ? acc.results || [] : [],
     clips: clips, topFans: fans,
-    recent: (cm.results || []).map((c) => ({ clip: c.clip_id, name: c.name, body: c.body, at: c.created })),
+    recent: (cm.results || []).map((c) => ({ clip: c.clip_id, name: c.name, body: c.body, at: c.created, hidden: !!c.hidden })),
   });
 }
 
@@ -631,13 +613,14 @@ async function adminStatus(req, env) {
   if (!ctx) return SUPER403();
   const email = String(ctx.body.target || '').trim().toLowerCase();
   const status = String(ctx.body.status || '');
-  if (!EMAIL_OK(email) || ['approved', 'denied', 'pending'].indexOf(status) < 0) return J({ ok: false, error: 'bad' }, 400);
+  if (!isEmail(email) || ['approved', 'denied', 'pending'].indexOf(status) < 0) return J({ ok: false, error: 'bad' }, 400);
   if (email === ctx.staff.email && status !== 'approved') return J({ok:false,error:'You cannot disable your own owner account.'},400);
   const before = await db(env, 'SELECT first,status FROM accounts WHERE email=?', [email]);
   const r = await db(env, 'UPDATE accounts SET status = ? WHERE email = ?', [status, email]);
   let mailed = false;
   if(status==='approved' && before.results[0] && before.results[0].status!=='approved' && env.MAIL_MODE!=='disabled'){
-    try { await approvalMail(env,email,before.results[0].first); mailed=true; } catch { /* Approval remains saved; dashboard works without email. */ }
+    /* the approval stays saved; the dashboard works without email */
+    try { await approvalMail(env,email,before.results[0].first); mailed=true; } catch (error) { console.error('Approval email failed:', error); }
   }
   return J({ ok: true, changes: (r.meta && r.meta.changes) || 0, mailed });
 }
@@ -647,9 +630,12 @@ async function adminRole(req, env) {
   if (!ctx) return SUPER403();
   const email = String(ctx.body.target || '').trim().toLowerCase();
   const role = String(ctx.body.role || '');
-  if (!EMAIL_OK(email) || ['', 'admin'].indexOf(role) < 0) return J({ ok: false, error: 'bad' }, 400);
+  if (!isEmail(email) || ['', 'admin', 'kid'].indexOf(role) < 0) return J({ ok: false, error: 'bad' }, 400);
   if (email === ctx.staff.email) return J({ ok: false, error: 'cannot change your own role' }, 400);
-  const r = await db(env, 'UPDATE accounts SET role = ? WHERE email = ?', [role, email]);
+  /* a kid account belongs to exactly one channel */
+  const ch = role === 'kid' ? await db(env, 'SELECT id FROM channels WHERE slug = ?', [String(ctx.body.channel || '')]) : null;
+  if (ch && !ch.results.length) return J({ ok: false, error: 'Choose the kid\'s channel.' }, 400);
+  const r = await db(env, 'UPDATE accounts SET role = ?, channel_id = ? WHERE email = ?', [role, ch ? ch.results[0].id : null, email]);
   return J({ ok: true, changes: (r.meta && r.meta.changes) || 0 });
 }
 
@@ -658,21 +644,24 @@ async function adminPassword(req, env) {
   if (!ctx) return SUPER403();
   const email = String(ctx.body.target || '').trim().toLowerCase();
   const pass = String(ctx.body.pass || '');
-  if (!EMAIL_OK(email) || pass.length < 12 || pass.length > 128) return J({ ok: false, error: 'password must be at least 12 characters' }, 400);
-  const record=await passwordRecord(pass);
+  const min = (await roleOf(env, email)) === 'kid' ? KID_PASSWORD_MIN : PASSWORD_MIN;
+  if (!isEmail(email) || pass.length < min || pass.length > PASSWORD_MAX) return J({ ok: false, error: 'password must be at least ' + min + ' characters' }, 400);
+  const record=await passwordRecord(pass, { min });
   const r = await db(env, 'UPDATE accounts SET salt = ?, hash = ? WHERE email = ?', [record.salt, record.hash, email]);
+  loginFails.delete(email);
   return J({ ok: true, changes: (r.meta && r.meta.changes) || 0 });
 }
 
-async function likesAll(url, env) {
-  await db(env, 'CREATE TABLE IF NOT EXISTS likes (clip_id TEXT NOT NULL, email TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY (clip_id, email))');
-  const cr = await db(env, 'SELECT clip_id AS c, COUNT(*) AS n FROM likes GROUP BY clip_id');
+async function likesAll(req, url, env, viewer) {
+  /* counts only for clips this viewer may play: a guest pass limited to one kid sees that kid's, and
+     clips waiting for review or hidden never show up for viewers */
+  const cr = await db(env, `SELECT l.clip_id AS c, COUNT(*) AS n, k.channel_id, k.review, k.hidden FROM likes l
+    JOIN clips k ON k.id = l.clip_id GROUP BY l.clip_id`);
   const counts = {};
-  for (const row of (cr.results || [])) counts[row.c] = row.n;
-  let email = '';
-  try { email = unb64u(url.searchParams.get('e') || '').trim().toLowerCase(); } catch (e) { /* bad b64 */ }
+  for (const row of (cr.results || [])) if (canPlayClip(viewer, row)) counts[row.c] = row.n;
+  const { email, t } = getSession(req, url);
   const liked = {};
-  if (EMAIL_OK(email) && await sessOk(env, email, url.searchParams.get('t') || '')) {
+  if (isEmail(email) && await sessOk(env, email, t)) {
     const lr = await db(env, 'SELECT clip_id AS c FROM likes WHERE email = ?', [email]);
     for (const row of (lr.results || [])) liked[row.c] = true;
   }
@@ -682,10 +671,10 @@ async function likesAll(url, env) {
 async function likeSet(req, env) {
   const b = await req.json().catch(() => null);
   if (!b) return J({ ok: false, error: 'bad body' }, 400);
-  if (!CLIP_OK(b.clipId)) return J({ ok: false, error: 'clip' }, 400);
+  if (!isClipId(b.clipId)) return J({ ok: false, error: 'clip' }, 400);
   const email = await sessOk(env, String(b.email || '').trim().toLowerCase(), String(b.t || ''));
   if (!email) return J({ ok: false, error: 'log in to like' }, 401);
-  await db(env, 'CREATE TABLE IF NOT EXISTS likes (clip_id TEXT NOT NULL, email TEXT NOT NULL, created INTEGER NOT NULL, PRIMARY KEY (clip_id, email))');
+  if (!await playable(env, email, b.clipId)) return GONE404();
   if (b.on) await db(env, 'INSERT OR IGNORE INTO likes (clip_id, email, created) VALUES (?,?,?)', [b.clipId, email, Date.now()]);
   else await db(env, 'DELETE FROM likes WHERE clip_id = ? AND email = ?', [b.clipId, email]);
   const c = await db(env, 'SELECT COUNT(*) AS n FROM likes WHERE clip_id = ?', [b.clipId]);
@@ -693,16 +682,20 @@ async function likeSet(req, env) {
   return J({ ok: true, liked: !!b.on, count: count });
 }
 
-async function commentsList(url, env) {
-  await db(env, `CREATE TABLE IF NOT EXISTS comments (
-    id TEXT PRIMARY KEY, clip_id TEXT NOT NULL, email TEXT NOT NULL,
-    name TEXT NOT NULL, body TEXT NOT NULL, created INTEGER NOT NULL)`);
+/* likes and comments only for a clip the account may play, like reactions and the watch log */
+const GONE404 = () => J({ ok: false, error: 'That video is gone.' }, 404);
+async function playable(env, email, clipId) {
+  const clip = ((await db(env, `${CLIP_ACCESS_SQL} WHERE c.id = ?`, [clipId])).results || [])[0];
+  return canPlayClip({ email, role: await roleOf(env, email) }, clip);
+}
+async function commentsList(req, url, env, viewer) {
   const clip = url.searchParams.get('c') || '';
-  if (!CLIP_OK(clip)) return J({ ok: false, error: 'clip' }, 400);
-  let email = '';
-  try { email = unb64u(url.searchParams.get('e') || '').trim().toLowerCase(); } catch (e) { /* bad b64 */ }
-  const known = EMAIL_OK(email) && !!(await sessOk(env, email, url.searchParams.get('t') || ''));
-  const r = await db(env, 'SELECT id, email, name, body, created FROM comments WHERE clip_id = ? ORDER BY created ASC LIMIT 500', [clip]);
+  if (!isClipId(clip)) return J({ ok: false, error: 'clip' }, 400);
+  const owner = ((await db(env, `${CLIP_ACCESS_SQL} WHERE c.id = ?`, [clip])).results || [])[0];
+  if (!canPlayClip(viewer, owner)) return J({ ok: true, rows: [] });
+  const { email, t } = getSession(req, url);
+  const known = isEmail(email) && !!(await sessOk(env, email, t));
+  const r = await db(env, 'SELECT id, email, name, body, created FROM comments WHERE clip_id = ? AND hidden = 0 ORDER BY created ASC LIMIT 500', [clip]);
   const rows = (r.results || []).map((m) => ({
     id: m.id, name: m.name, body: m.body, at: m.created,
     mine: !!(known && m.email === email),
@@ -710,29 +703,29 @@ async function commentsList(url, env) {
   return J({ ok: true, rows: rows });
 }
 
-async function commentAdd(req, env) {
+async function commentAdd(req, env, ip) {
   const b = await req.json().catch(() => null);
   if (!b) return J({ ok: false, error: 'bad body' }, 400);
-  if (!CLIP_OK(b.clipId)) return J({ ok: false, error: 'clip' }, 400);
+  if (!isClipId(b.clipId)) return J({ ok: false, error: 'clip' }, 400);
   const body = String(b.body || '').trim();
   if (!body || body.length > 500) return J({ ok: false, error: 'body' }, 400);
   const email = await sessOk(env, String(b.email || '').trim().toLowerCase(), String(b.t || ''));
   if (!email) return J({ ok: false, error: 'log in to comment' }, 401);
+  if (!await playable(env, email, b.clipId)) return GONE404();
+  const mode = env.settings.get('comments_default');
+  if (mode === 'off') return J({ ok: false, error: 'Comments are turned off.' }, 403);
   /* light rate limit per IP: max 10 comments per 10 minutes */
-  const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
-  await db(env, 'CREATE TABLE IF NOT EXISTS chits (ip TEXT, ts INTEGER)');
-  await db(env, 'DELETE FROM chits WHERE ts < ?', [Date.now() - 600000]);
-  await db(env, 'INSERT INTO chits (ip, ts) VALUES (?, ?)', [ip, Date.now()]);
-  const c = await db(env, 'SELECT COUNT(*) AS n FROM chits WHERE ip = ? AND ts > ?', [ip, Date.now() - 600000]);
-  if ((c.results && c.results[0] && c.results[0].n || 0) > 10) return J({ ok: false, error: 'slow down' }, 429);
+  if (await usesWithin(env, 'chits', ip, 10 * 60 * 1000) > 10) return J({ ok: false, error: 'slow down' }, 429);
   const a = await db(env, 'SELECT first, last FROM accounts WHERE email = ?', [email]);
   const acc = a.results && a.results[0];
-  const name = dispName(acc && acc.first, acc && acc.last) || 'A viewer';
+  const name = displayName(acc && acc.first, acc && acc.last) || 'A viewer';
   const id = crypto.randomUUID();
   const created = Date.now();
-  await db(env, 'INSERT INTO comments (id, clip_id, email, name, body, created) VALUES (?,?,?,?,?,?)',
-    [id, b.clipId, email, name, body, created]);
-  return J({ ok: true, row: { id: id, name: name, body: body, at: created, mine: true } });
+  /* under review, a parent unhides each comment before others see it */
+  const held = mode === 'review';
+  await db(env, 'INSERT INTO comments (id, clip_id, email, name, body, created, hidden) VALUES (?,?,?,?,?,?,?)',
+    [id, b.clipId, email, name, body, created, held ? 1 : 0]);
+  return J({ ok: true, row: { id: id, name: name, body: body, at: created, mine: true, ...(held ? { hidden: true } : {}) } });
 }
 
 async function commentDelete(req, env) {
@@ -748,9 +741,9 @@ async function commentDelete(req, env) {
 
 function PAGE(msg, code) {
   return new Response(`<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>KidTube</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#05060A;color:#F7F4EC;
+<title>${BRAND_NAME}</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#05060A;color:#F7F4EC;
 font-family:'Inter Tight',system-ui,sans-serif}div{max-width:420px;padding:30px;border:1px solid rgba(247,244,236,.25);border-radius:16px;
-background:rgba(255,255,255,.06)}p.k{color:#3265FF;letter-spacing:.3em;font-size:11px;margin:0 0 10px;font-weight:600}</style></head>
-<body><div><p class="k">KIDTUBE</p><p style="margin:0;line-height:1.5">${esc(msg)}</p></div></body></html>`,
+background:rgba(255,255,255,.06)}p.k{color:${DEFAULT_ACCENT};letter-spacing:.3em;font-size:11px;margin:0 0 10px;font-weight:600}</style></head>
+<body><div><p class="k">${WORDMARK}</p><p style="margin:0;line-height:1.5">${escapeHtml(msg)}</p></div></body></html>`,
     { status: code, headers: { 'content-type': 'text/html; charset=utf-8' } });
 }

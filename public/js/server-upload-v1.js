@@ -1,3 +1,6 @@
+// Sending a video to the server, for the feed's upload button and the dashboard's Videos tab: start the
+// upload, send its chunks (three at a time, each retried), finish, then poll until the server has converted it.
+
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 async function post(path, payload) {
@@ -10,11 +13,14 @@ async function post(path, payload) {
   return result;
 }
 
-export async function publishVideo(file, title, session, onProgress = () => {}) {
+// channel is the kid's slug; the server refuses a kid's upload to any channel but their own.
+// seal ({ opensAt, capsuleNote }) publishes it as a time capsule.
+export async function publishVideo(file, title, session, onProgress = () => {}, channel = '', seal = {}) {
   if (!file || file.size < 1000 || file.size > 512 * 1024 * 1024) throw new Error('Choose a video under 512 MB.');
   if (!session?.email || !session?.t) throw new Error('Log in to upload.');
   const upload = await post('/api/upload/raw/start', {
-    email: session.email, t: session.t, title, size: file.size,
+    email: session.email, t: session.t, title, size: file.size, ...(channel ? { channel } : {}),
+    ...(seal.opensAt ? { opensAt: seal.opensAt, capsuleNote: seal.capsuleNote || '' } : {}),
   });
   const total = Math.ceil(file.size / upload.chunkSize);
   const headers = {

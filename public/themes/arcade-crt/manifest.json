@@ -1,0 +1,16 @@
+{
+  "contract": 1,
+  "id": "arcade-crt",
+  "name": "Arcade",
+  "description": "An 8-bit attract screen on a curved CRT. Pixel title, high score, a blinking PRESS START and a coin blip when you enter.",
+  "author": "Smart Solutions",
+  "version": "1.0.0",
+  "tags": ["light", "press start 2p", "synth blip", "pixel pause"],
+  "weight": "light",
+  "modes": ["gate", "channel"],
+  "sound": true,
+  "defaultAccent": "#3DFFB0",
+  "accents": { "pause": true, "unlock": true, "ending": true },
+  "endingCopy": { "warn5": "5 MINUTES OF CREDIT LEFT", "warn1": "LAST LIFE: 1 MINUTE" },
+  "feed": { "--tz-flare": "accent", "--tz-ink": "#04040A", "--tz-rad-frame": "0px", "--tz-rad-sheet": "0px" }
+}

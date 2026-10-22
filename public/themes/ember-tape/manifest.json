@@ -1,0 +1,16 @@
+{
+  "contract": 1,
+  "id": "ember-tape",
+  "name": "Ember Tape",
+  "description": "Living smoke in the kid's colour, a glitching name that scrambles into place, a tape sting on tap and a VHS pause screen.",
+  "author": "Smart Solutions",
+  "version": "1.0.0",
+  "tags": ["heavy", "webgl", "tape sting", "vhs pause"],
+  "weight": "heavy",
+  "modes": ["gate", "channel"],
+  "sound": true,
+  "defaultAccent": "#FF5C2B",
+  "accents": { "pause": true, "unlock": true, "ending": true },
+  "endingCopy": { "warn5": "5:00 OF TAPE LEFT", "warn1": "1:00 OF TAPE LEFT" },
+  "feed": { "--tz-flare": "accent", "--tz-ink": "#05060A", "--tz-paper": "#F7F4EC", "--tz-dim": "#A6A0AE" }
+}

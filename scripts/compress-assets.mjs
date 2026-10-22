@@ -1,3 +1,5 @@
+// Writes .br and .gz copies next to public/'s text files so static.mjs can serve them precompressed.
+// The Docker build runs it; `node scripts/compress-assets.mjs [folder]` does the same by hand.
 import { readdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -10,7 +12,7 @@ export async function compressAssets(directory) {
     if (entry.isDirectory()) {
       const nested = await compressAssets(file);
       rawBytes += nested.rawBytes; brotliBytes += nested.brotliBytes; gzipBytes += nested.gzipBytes; files += nested.files;
-    } else if (entry.isFile() && ['.html', '.js', '.css', '.json', '.svg'].includes(extname(file))) {
+    } else if (entry.isFile() && ['.html', '.js', '.mjs', '.css', '.json', '.svg'].includes(extname(file))) {
       const data = await readFile(file);
       const br = brotliCompressSync(data, { params: { [constants.BROTLI_PARAM_QUALITY]: 9 } });
       const gz = gzipSync(data, { level: 9 });

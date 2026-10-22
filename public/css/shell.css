@@ -1,0 +1,523 @@
+/* The viewer shell, kid side: the front door with every kid's badge, the backdrop behind the sign-in
+   card, the "Switch kid" sheet, the empty channel and "Sent to a parent". Loud like the splash themes:
+   Anton with an RGB split, DM Mono labels, scanlines, each kid's own accent (--kid). */
+
+/* the front door --------------------------------------------------------------------------- */
+
+.kt-door {
+  --kid: var(--tz-flare);
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  overflow: auto;
+  overscroll-behavior: contain;
+  isolation: isolate;
+  background:
+    radial-gradient(ellipse 90% 50% at 50% 28%, color-mix(in srgb, var(--kid) 30%, transparent), transparent 70%),
+    radial-gradient(ellipse 50% 40% at 80% 85%, rgba(77, 91, 255, .14), transparent 70%),
+    var(--tz-void);
+  color: var(--tz-paper);
+  text-align: center;
+}
+
+.kt-door[hidden] {
+  display: none;
+}
+
+/* the accent line along the top and the scanlines */
+.kt-door::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  border-top: 2px solid var(--kid);
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, .3) 0 2px, transparent 2px 4px);
+  pointer-events: none;
+}
+
+.kt-door-in {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  width: min(100%, 1040px);
+  margin: 0 auto;
+  padding: calc(var(--tz-safe-t) + 48px) 16px 24px;
+}
+
+.kt-door-kicker {
+  margin: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font: 500 12px/1.4 var(--tz-mono);
+  letter-spacing: .24em;
+  text-transform: uppercase;
+  color: var(--kid);
+}
+
+.kt-door-kicker:empty {
+  display: none;
+}
+
+.kt-door-title {
+  margin: 0;
+  max-width: 14ch;
+  overflow-wrap: anywhere;
+  font: 400 clamp(34px, 9vw, 84px)/.95 var(--tz-display);
+  letter-spacing: .01em;
+  text-transform: uppercase;
+  text-shadow: .05em 0 0 var(--tz-hot), -.05em 0 0 var(--tz-cyan);
+  outline: none;
+}
+
+.kt-door-note {
+  max-width: 36ch;
+  margin: 0;
+  color: var(--tz-dim);
+  font: 400 16px/1.5 var(--tz-ui);
+}
+
+.kt-door-action {
+  min-height: 48px;
+  padding: 12px 22px;
+  border: 1px solid color-mix(in srgb, var(--kid) 60%, transparent);
+  background: color-mix(in srgb, var(--kid) 14%, transparent);
+  color: var(--tz-paper);
+  font: 500 13px/1 var(--tz-mono);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.kt-door-link {
+  min-height: 44px;
+  margin-top: 8px;
+  padding: 0 12px;
+  color: var(--tz-dim);
+  font: 500 12px/1 var(--tz-mono);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--tz-dim) 40%, transparent);
+  text-underline-offset: 6px;
+}
+
+.kt-door-link:hover {
+  color: var(--tz-paper);
+}
+
+.kt-door-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 16px calc(var(--tz-safe-b) + 8px);
+  font: 500 10px/1 var(--tz-mono);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--tz-dim);
+}
+
+.kt-door-foot > span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.kt-door-foot a {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.kt-door-foot a:hover {
+  color: var(--tz-paper);
+}
+
+.kt-door-rec {
+  width: 8px;
+  height: 8px;
+  background: var(--kid);
+}
+
+/* what each face shows */
+.kt-door[data-mode="boot"] .kt-door-in > *,
+.kt-door:not([data-mode="door"]) .kt-kids,
+.kt-door:not([data-mode="note"]) .kt-door-note,
+.kt-door:not([data-mode="note"]) .kt-door-action,
+.kt-door:not([data-mode="door"]) .kt-door-link,
+.kt-door:not([data-mode="lobby"]) .kt-door-badge {
+  display: none;
+}
+
+/* the lobby: a still title card behind the sign-in card */
+.kt-door[data-mode="lobby"] .kt-door-in {
+  justify-content: flex-start;
+  padding-top: calc(var(--tz-safe-t) + 9vh);
+  opacity: .55;
+}
+
+.kt-door[data-mode="lobby"] .kt-door-title {
+  font-size: clamp(44px, 13vw, 140px);
+}
+
+.kt-door-badge {
+  display: block;
+  width: clamp(72px, 16vw, 120px);
+  aspect-ratio: 1;
+}
+
+.kt-door-badge > * {
+  width: 100%;
+  height: 100%;
+}
+
+/* the kids: big badges in their accent ring -------------------------------------------------- */
+
+.kt-kids {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px 18px;
+  width: min(100%, 360px);
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.kt-kids[data-count="1"] {
+  grid-template-columns: minmax(0, 1fr);
+  width: min(100%, 200px);
+}
+
+.kt-kid {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 4px;
+  border-radius: 12px;
+  color: var(--tz-paper);
+  text-align: center;
+}
+
+.kt-kid-badge {
+  display: grid;
+  place-items: center;
+  width: clamp(88px, 26vw, 128px);
+  aspect-ratio: 1;
+  padding: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--kid) 12%, transparent);
+  box-shadow: 0 0 0 3px var(--kid), 0 0 28px -4px color-mix(in srgb, var(--kid) 70%, transparent);
+  transition: transform var(--tz-t2) var(--tz-ease), box-shadow var(--tz-t2) var(--tz-ease);
+}
+
+.kt-kid-badge > img,
+.kt-kid-badge > svg {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.kt-kid-name {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font: 500 13px/1.2 var(--tz-mono);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.kt-kid-kicker {
+  margin-top: -6px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font: 400 12px/1.3 var(--tz-ui);
+  color: var(--tz-dim);
+}
+
+.kt-kid:hover .kt-kid-badge,
+.kt-kid:focus-visible .kt-kid-badge {
+  transform: translateY(-3px) rotate(-3deg);
+  box-shadow: 0 0 0 4px var(--kid), 0 0 40px -2px color-mix(in srgb, var(--kid) 85%, transparent);
+}
+
+.kt-kid:focus-visible {
+  outline: 2px solid var(--kid);
+  outline-offset: 2px;
+}
+
+.kt-kid[aria-current="true"] .kt-kid-name::before {
+  content: "■ " / "";
+  color: var(--kid);
+}
+
+@media (min-width: 700px) {
+  .kt-kids {
+    grid-template-columns: repeat(var(--cols, 3), minmax(0, 1fr));
+    width: min(100%, 720px);
+    gap: 28px;
+  }
+
+  .kt-kids[data-count="2"],
+  .kt-kids[data-count="4"] {
+    --cols: 2;
+    width: min(100%, 480px);
+  }
+
+  .kt-door-in {
+    gap: 22px;
+  }
+}
+
+@media (min-width: 1100px) {
+  .kt-kids[data-count="4"] {
+    --cols: 4;
+    width: min(100%, 860px);
+  }
+}
+
+/* the "Switch kid" sheet ---------------------------------------------------------------------- */
+
+.kt-switch {
+  width: min(560px, calc(100vw - 32px));
+  margin: auto;
+  max-height: min(88dvh, 720px);
+  padding: 20px 20px 28px;
+  border: 1px solid var(--tz-line);
+  border-radius: 16px;
+  background: var(--tz-surface);
+  color: var(--tz-paper);
+}
+
+.kt-switch::backdrop {
+  background: rgba(5, 6, 10, .78);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
+
+.kt-switch-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.kt-switch-head h2 {
+  margin: 0;
+  font: 400 30px/1 var(--tz-display);
+  text-transform: uppercase;
+}
+
+.kt-switch-x {
+  min-height: 44px;
+  padding: 0 10px;
+  color: var(--tz-dim);
+  font: 500 12px/1 var(--tz-mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+.kt-switch .kt-kids {
+  width: 100%;
+  margin: 8px auto 0;
+}
+
+/* an empty channel ---------------------------------------------------------------------------- */
+
+.kt-empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  max-width: 340px;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.kt-empty-badge {
+  width: 96px;
+  aspect-ratio: 1;
+  margin-bottom: 6px;
+}
+
+.kt-empty-badge > * {
+  width: 100%;
+  height: 100%;
+}
+
+.kt-empty-kicker {
+  margin: 0;
+  font: 500 12px/1.3 var(--tz-mono);
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: var(--tz-flare);
+}
+
+.kt-empty-title {
+  margin: 0;
+  font: 400 clamp(40px, 11vw, 64px)/.95 var(--tz-display);
+  text-transform: uppercase;
+  color: var(--tz-paper);
+  text-shadow: .04em 0 0 var(--tz-hot), -.04em 0 0 var(--tz-cyan);
+}
+
+.kt-empty-line {
+  margin: 0;
+  font: 400 15px/1.5 var(--tz-ui);
+  color: var(--tz-dim);
+}
+
+.kt-record {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 56px;
+  margin-top: 10px;
+  padding: 14px 26px;
+  background: var(--tz-flare);
+  color: var(--tz-flare-ink);
+  font: 500 14px/1 var(--tz-mono);
+  letter-spacing: .16em;
+  text-transform: uppercase;
+}
+
+.kt-record:hover {
+  filter: brightness(1.08);
+}
+
+.kt-record-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--tz-hot);
+  box-shadow: 0 0 0 2px var(--tz-flare-ink);
+  animation: kt-rec-blink 1.2s steps(1) infinite;
+}
+
+@keyframes kt-rec-blink {
+  50% { opacity: .25; }
+}
+
+/* the laptop stage is a short 16:9 box: the empty channel shrinks to fit it */
+@media (min-width: 900px) {
+  body[data-mode="stage"] .tz-slide[data-end] {
+    padding: 12px;
+  }
+
+  body[data-mode="stage"] .kt-empty {
+    gap: 8px;
+  }
+
+  body[data-mode="stage"] .kt-empty-badge {
+    width: clamp(44px, 9vh, 96px);
+    margin-bottom: 0;
+  }
+
+  body[data-mode="stage"] .kt-empty-title {
+    font-size: clamp(28px, 6vh, 64px);
+  }
+
+  body[data-mode="stage"] .kt-record {
+    min-height: 48px;
+    margin-top: 4px;
+  }
+}
+
+/* sent to a parent ----------------------------------------------------------------------------- */
+
+.kt-sent {
+  width: min(380px, calc(100vw - 32px));
+  margin: auto;
+  padding: 34px 24px 26px;
+  border: 1px solid var(--tz-line);
+  border-radius: 16px;
+  background: var(--tz-ink);
+  color: var(--tz-paper);
+  text-align: center;
+}
+
+.kt-sent::backdrop {
+  background: rgba(5, 6, 10, .82);
+}
+
+.kt-sent-rec {
+  margin: 0 0 16px;
+  font: 500 12px/1 var(--tz-mono);
+  letter-spacing: .18em;
+  text-transform: uppercase;
+}
+
+.kt-sent-rec span {
+  color: var(--tz-hot);
+}
+
+.kt-sent-title {
+  margin: 0 0 14px;
+  font: 400 40px/.95 var(--tz-display);
+  text-transform: uppercase;
+}
+
+.kt-sent-line {
+  margin: 0 0 20px;
+  color: var(--tz-dim);
+  font: 400 15px/1.45 var(--tz-ui);
+}
+
+.kt-sent-bar {
+  height: 4px;
+  margin-bottom: 22px;
+  background: rgba(247, 244, 236, .15);
+}
+
+.kt-sent-bar span {
+  display: block;
+  height: 100%;
+  background: var(--tz-flare);
+  animation: kt-sent-fill 900ms var(--tz-ease) both;
+}
+
+@keyframes kt-sent-fill {
+  from { width: 0; }
+  to { width: 100%; }
+}
+
+.kt-sent .block-button {
+  width: 100%;
+}
+
+/* On a phone the video runs under the top bar and the sound pill, so a theme's pause screen starts below them. (The loader's
+   host rule has zero specificity on purpose, so the shell can place it.) */
+body[data-mode="immersive"] .kt-pause-host {
+  top: calc(var(--tz-safe-t) + var(--tz-head-h) + 44px);
+}
+
+/* One play mark at a time: the theme's pause screen brings its own. */
+.tz-slide:has(.kt-pause-host[data-kt-shown]) .tz-glyph {
+  opacity: 0;
+}
+
+/* the switch-kid button in the header */
+#switch-kid[hidden] {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kt-kid-badge,
+  .kt-kid:hover .kt-kid-badge,
+  .kt-kid:focus-visible .kt-kid-badge {
+    transform: none;
+    transition: none;
+  }
+
+  .kt-record-dot,
+  .kt-sent-bar span {
+    animation: none;
+  }
+}

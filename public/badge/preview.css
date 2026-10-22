@@ -1,0 +1,55 @@
+/* The badge playground (/badge/preview.html): a dev page for the badge builder, not linked from the app. */
+:root { color-scheme: dark; }
+html, body { margin: 0; background: #05060A; color: #F7F4EC; }
+body { font-family: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+a { color: #FF8B6A; }
+.pg-top, .pg-foot {
+  display: flex; flex-wrap: wrap; gap: 8px 24px; justify-content: space-between; align-items: center;
+  padding: 16px; font-family: 'DM Mono', ui-monospace, Menlo, monospace; font-size: 12px; letter-spacing: 0.14em;
+  text-transform: uppercase; color: #A6A0AE; border-bottom: 1px solid rgba(247,244,236,0.12);
+}
+.pg-foot { border-bottom: 0; border-top: 1px solid rgba(247,244,236,0.12); margin-top: 40px; }
+.pg-top strong { color: #F7F4EC; font-weight: 500; }
+.pg-main { max-width: 1240px; margin: 0 auto; padding: 0 16px; display: flex; flex-direction: column; gap: 32px; }
+.pg-intro { padding-top: 32px; display: grid; gap: 16px; }
+.pg-intro h1 {
+  margin: 0; font-family: Anton, Impact, 'Arial Narrow', sans-serif; font-weight: 400; font-size: clamp(48px, 9vw, 96px);
+  line-height: 0.95; text-transform: uppercase;
+}
+.pg-intro p { margin: 0; max-width: 60ch; font-size: 18px; line-height: 1.5; color: #D9D4CB; }
+.pg-accent { color: #FF5C2B; }
+.pg-dim { color: #A6A0AE; }
+.pg-panel { background: #0B0C10; border: 1px solid rgba(247,244,236,0.1); padding: 20px 16px; }
+.pg-panel h2 { margin: 0 0 8px; font-family: Anton, Impact, sans-serif; font-weight: 400; font-size: 32px; text-transform: uppercase; }
+.pg-panel p { margin: 0 0 16px; line-height: 1.5; }
+.pg-panel summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; font-family: 'DM Mono', ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase; font-size: 13px; }
+.pg-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.pg-field { display: grid; gap: 6px; font-family: 'DM Mono', ui-monospace, monospace; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: #A6A0AE; }
+.pg-field input[type="file"] { width: auto; max-width: 100%; padding: 10px 0; border: 0; background: none; font-size: 14px; }
+.pg-field input { width: 120px; min-height: 44px; box-sizing: border-box; padding: 0 12px; border: 1px solid rgba(247,244,236,0.28); background: #05060A; color: #F7F4EC; font: 600 16px system-ui, sans-serif; }
+.pg-button { min-height: 44px; padding: 0 16px; border: 1px solid rgba(247,244,236,0.28); background: transparent; color: #F7F4EC; font: 600 15px 'Inter Tight', system-ui, sans-serif; cursor: pointer; }
+.pg-button:hover { border-color: #F7F4EC; }
+.pg-button:disabled { opacity: 0.45; cursor: not-allowed; }
+.pg-button:focus-visible, .pg-field input:focus-visible, .pg-example:focus-visible, .pg-panel summary:focus-visible { outline: 3px solid #4DF6FF; outline-offset: 2px; }
+.pg-result { min-height: 1.5em; font-weight: 600; }
+.pg-result[data-state="match"] { color: #3DFFB0; }
+.pg-result[data-state="error"] { color: #FF6FB5; }
+.pg-icons { display: flex; flex-wrap: wrap; gap: 16px; align-items: end; }
+.pg-icons figure { margin: 0; display: grid; gap: 6px; justify-items: center; font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px; color: #A6A0AE; }
+.pg-icons img { width: 96px; height: 96px; image-rendering: auto; background: repeating-conic-gradient(#1a1b22 0 25%, #111218 0 50%) 0 0 / 16px 16px; }
+.pg-examples { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; }
+.pg-example {
+  display: grid; justify-items: center; gap: 8px; padding: 14px 8px 12px; border: 1px solid rgba(247,244,236,0.08);
+  background: #05060A; color: #A6A0AE; cursor: pointer; font-family: 'DM Mono', ui-monospace, monospace; font-size: 11px;
+  letter-spacing: 0.14em; text-transform: uppercase;
+}
+.pg-example:hover { border-color: rgba(247,244,236,0.3); }
+.pg-example svg { width: 100%; max-width: 140px; height: auto; }
+.pg-spec { margin: 12px 0 0; overflow-x: auto; font-size: 12px; line-height: 1.5; color: #D9D4CB; }
+@media (min-width: 720px) {
+  .pg-top, .pg-foot { padding: 16px 40px; }
+  .pg-main { padding: 0 40px; }
+  .pg-panel { padding: 24px 28px; }
+}
+.pg-icons img { object-fit: contain; }
+.pg-actions + .pg-actions { margin-top: 16px; }

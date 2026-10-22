@@ -1,0 +1,118 @@
+/* House tokens, shared by every page and by splash themes.
+   The look is the family-tape VHS style: near-black grounds, warm paper text, one hot accent.
+
+   Class prefixes say which part of the app a class belongs to:
+     tz-      the feed (feed.css; the original player) and these tokens
+     kt-      the viewer shell around the feed: front door, picker, splash and pause hosts, theme gallery,
+              unlocks and the end of tape (shell.css, feed.css, and the shell's own injected styles)
+     kid-, account-, block-, join-   the header nav and the account card (kid.css)
+     page-    the about page (page.css)
+     kp-      the calm parent kit (parent.css): setup, dashboard, install and offline pages
+     kd-      the parent dashboard, on top of kp-
+     su- / ki- / kb- / ktd-          the setup wizard, the install page, the badge builder, the public demo
+     pv- / pg-                       the theme and badge playgrounds
+   Each splash theme keeps its own classes under [data-kt-theme="<id>"]. */
+
+:root {
+  /* grounds */
+  --tz-void: #05060A;        /* behind footage, splash ground */
+  --tz-ink: #0B0C10;         /* app ground, text on the accent */
+  --tz-surface: #141419;     /* sheets, panels, fields */
+  --tz-surface-2: #1E1E25;   /* raised rows, pressed fields */
+  --tz-line: rgba(247, 244, 236, .14);
+  --tz-line-soft: rgba(247, 244, 236, .07);
+
+  /* type colour */
+  --tz-paper: #F7F4EC;       /* 18:1 on ink */
+  --tz-dim: #A6A0AE;         /* 7.9:1 on ink; metadata only, never over footage */
+
+  /* the one hot accent: the family's accent, set by /js/shell/site.js from /api/site */
+  --tz-flare: #FF5C2B;
+  --tz-flare-ink: #0B0C10;   /* text on an accent button is always ink */
+
+  /* glitch only: the RGB split on display type and the mark */
+  --tz-cyan: #4DF6FF;
+  --tz-hot: #FF3D55;
+
+  /* type: Anton for names and titles, DM Mono for labels and counters, Inter Tight for everything else */
+  --tz-display: 'Anton', 'Arial Narrow', Impact, sans-serif;
+  --tz-ui: 'Inter Tight', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --tz-mono: 'DM Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  --tz-horror: 'Creepster', var(--tz-display);
+
+  /* motion: one curve, three durations */
+  --tz-ease: cubic-bezier(.2, 0, 0, 1);
+  --tz-t1: 140ms;
+  --tz-t2: 220ms;
+  --tz-t3: 320ms;
+
+  /* safe areas and the on-screen keyboard (feed.js keeps --tz-kb current) */
+  --tz-safe-t: env(safe-area-inset-top, 0px);
+  --tz-safe-b: env(safe-area-inset-bottom, 0px);
+  --tz-kb: 0px;
+
+  color-scheme: dark;
+}
+
+html {
+  background: var(--tz-ink);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--tz-ink);
+  color: var(--tz-paper);
+  font: 400 15px/1.45 var(--tz-ui);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+a {
+  -webkit-tap-highlight-color: transparent;
+}
+
+button:disabled {
+  cursor: default;
+}
+
+[hidden] {
+  display: none !important;
+}
+
+:where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+  outline: 2px solid var(--tz-flare);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: var(--tz-flare);
+  color: var(--tz-flare-ink);
+}
+
+/* visually hidden, still read aloud */
+.tz-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
