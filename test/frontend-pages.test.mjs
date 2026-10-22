@@ -10,24 +10,30 @@ const PAGES = ['index.html', 'about/index.html', 'parents/index.html'];
 
 // Every id, class and data-* hook the page scripts look up. Renaming one breaks the feed silently.
 const INDEX_HOOKS = [
-  'id="tz-reel"', 'id="tzs-splash"', 'id="enter-tube"', 'id="account-dialog"', 'id="account-content"',
+  'id="tz-reel"', 'id="kt-door"', 'id="switch-kid"', 'id="account-dialog"', 'id="account-content"',
   'id="account-button"', 'id="tz-name"', 'id="tz-body"', 'class="tz-head"', 'class="tz-brand"', 'class="tz-mark"',
   'class="tz-word"', 'class="tz-app"', 'class="tz-glow"', 'class="tz-scrimlayer"', 'class="tz-sound"', 'class="tz-shuffle"',
   'class="tz-pos"', 'class="tz-log"', 'class="tz-post"', 'class="tz-x"', 'class="tz-exit"', 'class="tz-soundpill"',
-  'data-sheet="index"', 'data-sheet="comments"', 'data-locked="1"', 'data-site="name"', 'data-site="tagline"',
+  'data-sheet="index"', 'data-sheet="comments"', 'data-locked="1"', 'data-site="name"',
   ...['pos', 'total', 'soundlabel', 'log', 'log2', 'logend', 'logend2', 'comments', 'composer', 'chars', 'live']
     .map(name => `data-bind="${name}"`),
   ...['shuffle', 'index', 'sound', 'exit', 'closesheet'].map(name => `data-act="${name}"`),
 ];
 
-test('the channel page keeps every hook feed.js, entrance.js and recovery.js rely on', () => {
+test('the channel page keeps every hook the shell, feed.js and recovery.js rely on', () => {
   const html = read('index.html');
   for (const hook of INDEX_HOOKS) assert.ok(html.includes(hook), `index.html has ${hook}`);
-  for (const script of ['/js/shell/site.js', '/js/entrance.js', '/js/feed.js', '/js/recovery.js']) {
+  for (const script of ['/js/shell/app.js', '/js/feed.js', '/js/recovery.js']) {
     assert.ok(html.includes(`<script type="module" src="${script}"></script>`), `index.html loads ${script}`);
   }
-  // site.js must run first so the name and accent are in place before the front door unlocks.
-  assert.ok(html.indexOf('/js/shell/site.js') < html.indexOf('/js/entrance.js'));
+  // The shell runs first: it marks the splash as coming before recovery.js boots, and it imports
+  // site.js itself, so a second <script> for it would make two copies of the module.
+  assert.ok(html.indexOf('/js/shell/app.js') < html.indexOf('/js/feed.js'));
+  assert.ok(html.indexOf('/js/feed.js') < html.indexOf('/js/recovery.js'));
+  assert.ok(!html.includes('src="/js/shell/site.js"'), 'site.js comes in through app.js only');
+  // The theme loader's full-screen host takes the id tzs-splash; a static one would clash with it.
+  assert.ok(!html.includes('id="tzs-splash"'));
+  assert.ok(!existsSync(join(PUBLIC, 'js/entrance.js')), 'the old static front door is gone');
   assert.ok(read('parents/index.html').includes('id="tza-root"'));
 });
 

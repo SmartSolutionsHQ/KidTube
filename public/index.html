@@ -14,6 +14,7 @@
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/feed.css">
   <link rel="stylesheet" href="/css/kid.css">
+  <link rel="stylesheet" href="/css/shell.css">
 </head>
 <body class="channel" data-locked="1">
   <a class="tz-skip" href="#tz-reel">Skip to the videos</a>
@@ -26,6 +27,7 @@
       <span class="tz-word" data-site="name">{{brand.wordmark}}</span>
     </span>
     <nav class="kid-nav" aria-label="Site">
+      <button type="button" id="switch-kid" hidden>Switch kid</button>
       <a href="/about">About</a>
       <a href="/parents">Parents</a>
       <button type="button" id="account-button">Account</button>
@@ -112,20 +114,22 @@
 
   <p class="tz-live tz-sr" data-bind="live" role="status" aria-live="polite"></p>
 
-  <!-- The static front door. M6 replaces it with the kid picker and each kid's splash theme. -->
-  <section id="tzs-splash" class="entrance" aria-labelledby="entrance-title">
-    <div class="entrance-top">
-      <a class="entrance-about" href="/about">About this channel</a>
+  <!-- The front door: the kids' badges, the backdrop behind the sign-in card, or a plain note.
+       app.js fills it; each kid's splash is mounted over it by the theme loader. -->
+  <section id="kt-door" class="kt-door" data-mode="boot" aria-labelledby="kt-door-title">
+    <div class="kt-door-in">
+      <p class="kt-door-kicker" data-door="kicker"></p>
+      <span class="kt-door-badge" data-door="badge" hidden></span>
+      <h1 class="kt-door-title" id="kt-door-title" data-door="title" tabindex="-1"></h1>
+      <ul class="kt-kids" data-door="kids" aria-label="Kids"></ul>
+      <p class="kt-door-note" data-door="note"></p>
+      <button class="kt-door-action" type="button" data-door="action"></button>
+      <button class="kt-door-link" type="button" data-door="parent" hidden>Parent? Sign in</button>
+      <button class="kt-door-link" type="button" data-door="account" hidden>Account</button>
     </div>
-    <div class="entrance-copy">
-      <p class="entrance-kicker">You are now entering</p>
-      <h1 class="entrance-title" id="entrance-title" data-site="name">{{brand.wordmark}}</h1>
-      <p class="entrance-tagline"><span data-site="tagline">{{brand.tagline}}</span></p>
-      <button class="entrance-enter" id="enter-tube" type="button" aria-label="Enter the tube">Enter_the_tube</button>
-    </div>
-    <div class="entrance-bottom" aria-hidden="true">
-      <span><span class="entrance-rec"></span>S-VHS ET</span>
-      <span>Tape 01 · SP</span>
+    <div class="kt-door-foot">
+      <span aria-hidden="true"><span class="kt-door-rec"></span>S-VHS ET</span>
+      <a href="/about">About this channel</a>
     </div>
   </section>
 
@@ -133,8 +137,8 @@
     <div id="account-content"></div>
   </dialog>
 
-  <script type="module" src="/js/shell/site.js"></script>
-  <script type="module" src="/js/entrance.js"></script>
+  <!-- app.js imports site.js itself, so the page has one copy of it. -->
+  <script type="module" src="/js/shell/app.js"></script>
   <script type="module" src="/js/feed.js"></script>
   <script type="module" src="/js/recovery.js"></script>
 </body>
