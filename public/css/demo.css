@@ -1,0 +1,202 @@
+/* The public demo's banner and notes (public/js/shell/demo-banner.js). Loaded only in demo mode.
+   Calm and small: one pill out of the feed's way, a card when asked, the house tokens throughout. */
+
+/* Above the front door (1000), under a kid's splash (2000). */
+.ktd {
+  position: fixed;
+  z-index: 1500;
+  left: 12px;
+  bottom: calc(var(--tz-safe-b, 0px) + 12px);
+  max-width: calc(100vw - 24px);
+  font: 500 13px/1.35 var(--tz-ui, system-ui, sans-serif);
+  color: var(--tz-paper, #F7F4EC);
+}
+
+.ktd-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 12px 6px 6px;
+  border: 1px solid var(--tz-line, rgba(247, 244, 236, .14));
+  border-radius: 999px;
+  background: rgba(11, 12, 16, .82);
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
+}
+.ktd-pill:hover { border-color: rgba(247, 244, 236, .4); }
+.ktd-pill:focus-visible, .ktd-role:focus-visible, .ktd-close:focus-visible, .ktd-ok:focus-visible, .ktd-install:focus-visible {
+  outline: 2px solid var(--tz-paper, #F7F4EC);
+  outline-offset: 2px;
+}
+
+.ktd-pill-tag {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #FFD23F;
+  color: #0B0C10;
+  font: 500 11px/1.2 var(--tz-mono, ui-monospace, monospace);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.ktd-pill-as:empty { display: none; }
+.ktd-pill-as { color: var(--tz-paper, #F7F4EC); }
+.ktd-pill-time { color: var(--tz-dim, #A6A0AE); font-family: var(--tz-mono, ui-monospace, monospace); font-size: 12px; }
+.ktd-pill-fresh .ktd-pill-time, .ktd-pill-fresh .ktd-pill-short { color: #FFD23F; }
+.ktd-pill-short { display: none; color: var(--tz-dim, #A6A0AE); font-family: var(--tz-mono, ui-monospace, monospace); font-size: 12px; }
+
+.ktd-panel {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 10px);
+  width: min(380px, calc(100vw - 24px));
+  max-height: calc(100dvh - 90px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--tz-line, rgba(247, 244, 236, .14));
+  border-radius: 16px;
+  background: var(--tz-surface, #141419);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .55);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.ktd-panel[hidden] { display: none; }
+.ktd-panel p { margin: 0 0 10px; }
+.ktd-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+
+.ktd-title {
+  margin: 0;
+  font: 400 24px/1.1 var(--tz-display, Impact, sans-serif);
+  letter-spacing: .01em;
+  text-transform: uppercase;
+}
+.ktd-close {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--tz-line, rgba(247, 244, 236, .14));
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ktd-when { color: var(--tz-dim, #A6A0AE); font-family: var(--tz-mono, ui-monospace, monospace); font-size: 12px; }
+
+/* "Try it as": on the front door, in the card and above the sign-in forms. */
+.ktd-try { margin: 14px 0; text-align: left; }
+.ktd-try-head {
+  margin: 0 0 8px;
+  color: var(--tz-dim, #A6A0AE);
+  font: 500 11px/1.2 var(--tz-mono, ui-monospace, monospace);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+.ktd-roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.ktd-role {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: 52px;
+  padding: 9px 11px;
+  border: 1px solid var(--tz-line, rgba(247, 244, 236, .14));
+  border-radius: 12px;
+  background: var(--tz-surface-2, #1E1E25);
+  color: var(--tz-paper, #F7F4EC);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ktd-role:hover:not(:disabled) { border-color: #FFD23F; }
+.ktd-role:disabled { cursor: default; opacity: .55; }
+.ktd-role[aria-busy="true"] { opacity: 1; border-color: #FFD23F; }
+.ktd-role-name { font-weight: 600; font-size: 14px; }
+.ktd-role-who { color: var(--tz-dim, #A6A0AE); font-size: 12px; }
+.ktd-try-note { margin: 8px 0 0; color: var(--tz-dim, #A6A0AE); font-size: 12px; }
+.ktd-error { margin: 6px 0 0; color: #FFD23F; font-size: 13px; }
+.ktd-error:empty { display: none; }
+
+/* On the front door the block sits under the kids' badges, centred like the rest of the door. */
+.kt-door .ktd-try { width: min(420px, 100%); margin: 18px auto 4px; }
+.kt-door .ktd-try-head, .kt-door .ktd-try-note { text-align: center; }
+.ktd-try-compact { margin: 14px 0; }
+
+.ktd-install {
+  display: inline-block;
+  margin-top: 4px;
+  color: #FFD23F;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Comments are read-only: the composer and the delete buttons go, a note says why. */
+html[data-kt-demo] .tz-composer,
+html[data-kt-demo] .tz-cmt-acts { display: none !important; }
+.ktd-readonly {
+  margin: 0;
+  padding: 12px 16px calc(12px + var(--tz-safe-b, 0px));
+  border-top: 1px solid var(--tz-line, rgba(247, 244, 236, .14));
+  color: var(--tz-dim, #A6A0AE);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.ktd-notice {
+  position: fixed;
+  inset: 0;
+  width: min(380px, calc(100vw - 32px));
+  height: fit-content;
+  margin: auto;
+  padding: 20px;
+  border: 1px solid var(--tz-line, rgba(247, 244, 236, .14));
+  border-radius: 16px;
+  background: var(--tz-surface, #141419);
+  color: var(--tz-paper, #F7F4EC);
+  font: 400 14px/1.5 var(--tz-ui, system-ui, sans-serif);
+}
+.ktd-notice::backdrop { background: rgba(5, 6, 10, .6); }
+.ktd-notice-text { margin: 10px 0 16px; }
+.ktd-notice-acts { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ktd-ok {
+  min-width: 88px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--tz-paper, #F7F4EC);
+  color: var(--tz-ink, #0B0C10);
+  font: 600 14px/1 var(--tz-ui, system-ui, sans-serif);
+  cursor: pointer;
+}
+
+/* Elsewhere (dashboard, about, install) bottom right, clear of the dashboard's side menu. */
+body:not(.channel) .ktd { left: auto; right: 12px; }
+body:not(.channel) .ktd-panel { left: auto; right: 0; }
+
+/* The feed owns the bottom (caption, reactions, progress) and the front door its footer, so on the kids'
+   page the pill sits top left under the header and its card opens downwards. On a phone it is short. */
+body.channel .ktd { top: calc(var(--tz-safe-t, 0px) + var(--tz-head-h, 52px) + 10px); bottom: auto; }
+body.channel[data-locked] .ktd { top: calc(var(--tz-safe-t, 0px) + 12px); }
+body.channel .ktd-panel { top: calc(100% + 8px); bottom: auto; max-height: calc(100dvh - 140px); }
+@media (max-width: 767px) {
+  body.channel .ktd-pill { min-height: 30px; padding: 4px 10px 4px 4px; gap: 6px; }
+  body.channel .ktd-pill-as, body.channel .ktd-pill-time { display: none; }
+  body.channel .ktd-pill-short { display: inline; }
+}
+
+/* The dashboard: its status line and its last rows clear the pill, and a refusal from the demo reads
+   as a note, not an error (demo-banner.js marks it). */
+html[data-kt-demo] .kd-status { bottom: calc(var(--tz-safe-b, 0px) + 62px); }
+html[data-kt-demo] .kd-status[data-ktd-calm] { border-left-color: #FFD23F; }
+html[data-kt-demo] .kp-error[data-ktd-calm] { color: #FFD23F; }
+html[data-kt-demo] .kd-main { padding-bottom: 110px; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .ktd-pill { transition: border-color var(--tz-t1, 140ms) var(--tz-ease, ease); }
+}

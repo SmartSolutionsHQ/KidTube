@@ -13,7 +13,9 @@
     "test": "node --test test/*.test.mjs",
     "doctor": "node --env-file-if-exists=.env scripts/doctor.mjs",
     "backup": "node --env-file-if-exists=.env scripts/backup.mjs",
-    "email:test": "node --env-file-if-exists=.env scripts/test-email.mjs"
+    "email:test": "node --env-file-if-exists=.env scripts/test-email.mjs",
+    "demo:seed": "node --env-file-if-exists=.env scripts/demo-seed.mjs",
+    "demo:reset": "node --env-file-if-exists=.env scripts/demo-reset.mjs"
   },
   "repository": { "type": "git", "url": "https://github.com/SmartSolutionsHQ/KidTube.git" }
 }
