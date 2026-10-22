@@ -5,6 +5,8 @@ services:
     environment:
       NODE_ENV: production
       TRUST_PROXY: "1"
+      # Passed on so the app and Caddy agree even when SITE_URL comes from the shell instead of .env.
+      SITE_URL: ${SITE_URL}
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped

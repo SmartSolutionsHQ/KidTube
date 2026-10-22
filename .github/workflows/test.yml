@@ -28,3 +28,11 @@ jobs:
       - run: docker build -t kidtube:check .
       - name: No maintainer folders in the image
         run: docker run --rm --entrypoint sh kidtube:check -c 'test ! -e /app/scripts/dev && test ! -e /app/docs && test ! -e /app/test && test ! -e /app/.github'
+      # A parent's first install: no .env, then docker compose up -d and the setup code in the log.
+      - name: compose.yaml starts healthy, read-only and non-root, with no .env
+        run: |
+          docker compose up -d --wait --wait-timeout 120
+          docker compose logs kidtube | grep -q 'Setup code: KT-'
+          test "$(docker compose exec -T kidtube id -u)" = 1000
+          test "$(docker inspect kidtube --format '{{.HostConfig.ReadonlyRootfs}}')" = true
+          docker compose down -v

@@ -22,7 +22,24 @@ should see. You can stop after any part and come back later.
 - **Disk space for videos.** Each kid video is converted to 480p and is usually 5 to 30 MB. Start with 10 GB free
   and keep an eye on the dashboard's storage card.
 - **Docker.** On a NAS this is often an app called Container Manager, Docker or Container Station. On a computer,
-  install [Docker Desktop](https://docs.docker.com/get-docker/) or Docker Engine with Compose.
+  install [Docker Desktop](https://docs.docker.com/get-docker/) or Docker Engine with Compose. Compose must be
+  version 2.24 or later (`docker compose version` shows it); older versions stop at the optional `.env` line.
+- **On a Mac without Docker Desktop**, the free [Colima](https://github.com/abiosoft/colima) works. With
+  [Homebrew](https://brew.sh):
+
+  ```bash
+  brew install colima docker docker-compose
+  ```
+
+  Homebrew then asks you to tell Docker where Compose lives. Create `~/.docker/config.json` with exactly this
+  (or add the line to the file if it already exists), or `docker compose` answers "unknown command":
+
+  ```json
+  { "cliPluginsExtraDirs": ["/opt/homebrew/lib/docker/cli-plugins"] }
+  ```
+
+  Then start it with `colima start` (again after each restart of the Mac, or `brew services start colima` to
+  start it at login). Colima only shares your home folder, so keep the `kidtube` folder inside it.
 - **About fifteen minutes**, and a parent email address. Email delivery itself is optional.
 
 Nothing else is needed: no database to set up, no cloud account, no domain to start with.
@@ -68,7 +85,9 @@ to back up; [OPERATIONS.md](OPERATIONS.md) shows how.
 - **Unraid, TrueNAS SCALE, QNAP and others:** use their Docker Compose support with the same `compose.yaml`.
 - **If your NAS wants files in a shared folder** instead of a Docker volume, put `KIDTUBE_DATA=./data` in a file
   called `.env` next to `compose.yaml`. That folder must belong to the user the app runs as, which is 1000:1000
-  unless you set `PUID` and `PGID` in `.env`. If it doesn't, the log prints the exact command to fix it.
+  unless you set `PUID` and `PGID` in `.env`. If it doesn't, the log prints the exact command to fix it, naming
+  your folder (for example `sudo chown -R 1000:1000 "./data"`). Run it next to `compose.yaml`; KidTube keeps
+  retrying and starts on its own once the folder is fixed.
 
 ## The setup page
 
@@ -133,27 +152,53 @@ Keep `HOST_BIND` at its default: Tailscale reaches the app on the computer itsel
 ## Your own domain
 
 For family outside your home who shouldn't need Tailscale, use a domain or subdomain you own, such as
-`videos.example.com`. KidTube includes Caddy, which gets and renews HTTPS certificates on its own.
+`videos.example.com`. KidTube includes Caddy, which gets and renews HTTPS certificates from Let's Encrypt on its
+own.
 
-1. Point the domain at your home's public IP address (or a small cloud server's). At home, forward ports 80 and
-   443 on your router to the KidTube computer. If your internet provider doesn't give you a public address
-   (CGNAT), use a cloud server or Tailscale instead.
+What you supply, before step 3:
+
+- **A domain or subdomain you control**, bought from any registrar. Nothing else is needed from a certificate
+  company.
+- **A DNS record** at your registrar: an `A` record from that name to your home's public IP address (and an
+  `AAAA` record if you use IPv6). If your home address changes now and then, use your router's or registrar's
+  dynamic DNS.
+- **Ports 80 and 443 forwarded** on your router to the KidTube computer, and nothing else on that computer using
+  them. Let's Encrypt checks the name over those ports from the internet. If your internet provider doesn't give
+  you a public address (CGNAT), use a small cloud server or Tailscale instead.
+
+Then:
+
+1. Check the DNS record has arrived: `nslookup videos.example.com` should answer with your public IP address
+   (a "what is my IP" website shows it). New records can take an hour.
 2. Create `.env` next to `compose.yaml` with:
 
    ```text
    SITE_URL=https://videos.example.com
+   COMPOSE_FILE=compose.yaml:compose.https.yaml
    ```
 
+   The second line makes every `docker compose` command include Caddy, so `up`, `logs`, `pull` and `down` work
+   as written everywhere in these guides.
 3. Start KidTube with Caddy:
 
    ```bash
-   docker compose -f compose.yaml -f compose.https.yaml up -d
+   docker compose up -d
    ```
 
-4. Open `https://videos.example.com/setup` and enter the code from `docker logs kidtube`.
-5. Check it from a browser that isn't signed in: the front door opens, and videos ask you to sign in.
+4. Watch Caddy fetch the certificate (Ctrl+C stops watching):
 
-Keep Caddy's volumes; they hold its certificates. Nothing else on the computer can be using ports 80 and 443.
+   ```bash
+   docker compose logs -f caddy
+   ```
+
+   "certificate obtained successfully" means it worked. "could not get certificate" means Let's Encrypt couldn't
+   reach this computer as that name: check the DNS record and the port forwarding. Caddy keeps retrying on its
+   own.
+5. Open `https://videos.example.com/setup` and enter the code from `docker logs kidtube`.
+6. Check it from a browser that isn't signed in: the front door opens, and videos ask you to sign in.
+
+Keep Caddy's volumes; they hold its certificates. If you already finished setup on another address, `SITE_URL`
+in `.env` takes over the web address in Settings.
 
 ## An existing reverse proxy
 
@@ -187,9 +232,12 @@ On any phone, open the family's address followed by `/install` (for example
 
 - **Android (Chrome):** an "Install the app" button when Chrome offers one; otherwise the menu (three dots), then
   Install app or Add to Home screen.
-- **iPhone and iPad (Safari):** the Share button, then Add to Home Screen, then Add.
+- **iPhone and iPad (Safari):** the Share button, then Add to Home Screen, then Add. On newer iPhones the Share
+  button sits in the menu button beside the address bar, and Add to Home Screen may be under View More. Leave
+  "Open as Web App" switched on.
 
-The icon is the family badge you made in setup, and the app opens full screen.
+The icon is the family badge you made in setup, and the app opens full screen. iPhone suggests a short name
+under the icon; you can change it in the same sheet before tapping Add.
 
 **On iPhone and iPad, the home-screen app keeps its own sign-in**, separate from Safari. Kids and family sign in
 once more the first time they open it from the home screen. That is how iOS works for every home-screen app.

@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { ROOT } from './helpers.mjs';
 import { CODE_ALPHABET, newCode, normalizeCode } from '../server/setup.mjs';
 import { slugFrom } from '../server/family.mjs';
+import { ownershipFix } from '../server/config.mjs';
 import { accentCheck, addressNotes, formatCode, initials, kidPassword } from '../public/setup/helpers.js';
 
 const OWNER = { first: 'Ada', last: 'Okafor', email: 'ada@example.com', pass: 'A-test-only-owner-password!' };
@@ -328,7 +329,17 @@ test('the command-line setup still works and refuses an install the server alrea
   assert.equal((await booted.call('/api/site').then(r => r.json())).setup, 'complete');
 });
 
-test('a data folder the app cannot write stops it with the exact ownership fix', { skip: process.getuid?.() === 0 }, async t => {
+test('in Docker the ownership fix names the folder on the computer, not the path inside the container', () => {
+  const user = `${process.getuid()}:${process.getgid()}`;
+  assert.equal(ownershipFix('/srv/kidtube/data', {}), `sudo chown -R ${user} "/srv/kidtube/data"`);
+  // compose.yaml passes the host side of the /data mount as HOST_DATA.
+  assert.equal(ownershipFix('/data', { HOST_DATA: './data' }), `sudo chown -R ${user} "./data" (in the folder with compose.yaml)`);
+  assert.equal(ownershipFix('/data', { HOST_DATA: '/volume1/kidtube' }), `sudo chown -R ${user} "/volume1/kidtube"`);
+  // A named volume has no folder to chown on the computer, so the fix runs inside a one-off container.
+  assert.equal(ownershipFix('/data', { HOST_DATA: 'kidtube-data' }), `docker compose run --rm --user root --entrypoint chown kidtube -R ${user} /data`);
+});
+
+test('a data folder the app cannot write stops it with the exact ownership fix',{ skip: process.getuid?.() === 0 }, async t => {
   const dir = mkdtempSync(join(tmpdir(), 'kidtube-locked-'));
   t.after(() => { chmodSync(join(dir, 'data'), 0o700); rmSync(dir, { recursive: true, force: true }); });
   mkdirSync(join(dir, 'data'));
