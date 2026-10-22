@@ -25,7 +25,8 @@ export function ownershipFix(dir, env = process.env) {
   if (!host) return `sudo chown -R ${user} "${dir}"`;
   if (host.startsWith('.')) return `sudo chown -R ${user} "${host}" (in the folder with compose.yaml)`;
   if (/[/\\]/.test(host)) return `sudo chown -R ${user} "${host}"`;
-  return `docker compose run --rm --user root --entrypoint chown kidtube -R ${user} ${dir}`;
+  // compose.yaml drops every capability, so the one-off root container takes back just what chown needs.
+  return `docker compose run --rm --user root --cap-add CHOWN --cap-add DAC_OVERRIDE --entrypoint chown kidtube -R ${user} ${dir}`;
 }
 
 export function ensureDataDir(dir) {

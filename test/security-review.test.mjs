@@ -428,3 +428,18 @@ test('M2: a parent setting a new password lifts the pause on that account', { ti
   assert.equal(reset.status, 200);
   assert.equal((await family.call('/api/login', { body: { email: KID.email, pass: 'a-new-kid-pass' } })).status, 200);
 });
+
+test('L12: actions are pinned to commits, the base image to a digest, and the containers keep no capabilities', () => {
+  for (const name of readdirSync(join(ROOT, '.github/workflows'))) {
+    const workflow = readFileSync(join(ROOT, '.github/workflows', name), 'utf8');
+    for (const [line] of workflow.matchAll(/uses:.*$/gm)) assert.match(line, /uses: [\w.-]+\/[\w.-]+@[0-9a-f]{40} # v\d+\.\d+\.\d+$/, `${name}: ${line}`);
+  }
+  assert.match(readFileSync(join(ROOT, 'Dockerfile'), 'utf8'), /^FROM node:[\d.]+-alpine@sha256:[0-9a-f]{64}$/m);
+  const compose = readFileSync(join(ROOT, 'compose.yaml'), 'utf8');
+  assert.match(compose, /cap_drop: \[ALL\]/);
+  assert.match(compose, /no-new-privileges:true/);
+  const https = readFileSync(join(ROOT, 'compose.https.yaml'), 'utf8');
+  assert.match(https, /kidtube:[\s\S]*ports: !reset \[\][\s\S]*caddy:/, 'behind Caddy the app port is not published');
+  assert.match(https, /caddy:[\s\S]*cap_drop: \[ALL\][\s\S]*cap_add: \[NET_BIND_SERVICE\]/);
+  assert.ok(existsSync(join(ROOT, '.github/dependabot.yml')), 'something proposes updates for the pins');
+});

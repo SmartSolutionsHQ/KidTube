@@ -336,7 +336,7 @@ test('in Docker the ownership fix names the folder on the computer, not the path
   assert.equal(ownershipFix('/data', { HOST_DATA: './data' }), `sudo chown -R ${user} "./data" (in the folder with compose.yaml)`);
   assert.equal(ownershipFix('/data', { HOST_DATA: '/volume1/kidtube' }), `sudo chown -R ${user} "/volume1/kidtube"`);
   // A named volume has no folder to chown on the computer, so the fix runs inside a one-off container.
-  assert.equal(ownershipFix('/data', { HOST_DATA: 'kidtube-data' }), `docker compose run --rm --user root --entrypoint chown kidtube -R ${user} /data`);
+  assert.equal(ownershipFix('/data', { HOST_DATA: 'kidtube-data' }), `docker compose run --rm --user root --cap-add CHOWN --cap-add DAC_OVERRIDE --entrypoint chown kidtube -R ${user} /data`);
 });
 
 test('a data folder the app cannot write stops it with the exact ownership fix',{ skip: process.getuid?.() === 0 }, async t => {

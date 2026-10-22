@@ -23,6 +23,10 @@ services:
       # A named volume by default. Installs that keep their data in a folder set KIDTUBE_DATA=./data.
       - ${KIDTUBE_DATA:-kidtube-data}:/data
     read_only: true
+    # No Linux capabilities and no way to gain any: the app only reads and writes /data as its own user.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
     tmpfs:
       - /tmp
     restart: unless-stopped
