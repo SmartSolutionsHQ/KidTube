@@ -15,4 +15,16 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: npm test
       - run: npm pack --dry-run
+      # docs/plan, docs/superpowers, scripts/dev and .github are for maintainers, never for families.
+      - name: No maintainer folders in the package
+        run: |
+          npm pack --dry-run --json --ignore-scripts > "$RUNNER_TEMP/pack.json"
+          node -e '
+            const files = require(process.argv[1])[0].files.map(file => file.path);
+            const leaked = files.filter(path => /^(?:docs\/(?:plan|superpowers)|scripts\/dev|\.github)\//.test(path) || /(?:^|\/)\.env$|\.sqlite$/.test(path));
+            if (leaked.length) { console.error("Maintainer files in the package:\n" + leaked.join("\n")); process.exit(1); }
+            console.log(files.length + " files, none for maintainers");
+          ' "$RUNNER_TEMP/pack.json"
       - run: docker build -t kidtube:check .
+      - name: No maintainer folders in the image
+        run: docker run --rm --entrypoint sh kidtube:check -c 'test ! -e /app/scripts/dev && test ! -e /app/docs && test ! -e /app/test && test ! -e /app/.github'
