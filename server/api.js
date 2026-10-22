@@ -558,8 +558,10 @@ async function adminPassword(req, env) {
   if (!ctx) return SUPER403();
   const email = String(ctx.body.target || '').trim().toLowerCase();
   const pass = String(ctx.body.pass || '');
-  if (!EMAIL_OK(email) || pass.length < 12 || pass.length > 128) return J({ ok: false, error: 'password must be at least 12 characters' }, 400);
-  const record=await passwordRecord(pass);
+  /* kid logins may use 8 characters (family.mjs); everyone else keeps 12 */
+  const min = (await roleOf(env, email)) === 'kid' ? 8 : 12;
+  if (!EMAIL_OK(email) || pass.length < min || pass.length > 128) return J({ ok: false, error: 'password must be at least ' + min + ' characters' }, 400);
+  const record=await passwordRecord(pass, { min });
   const r = await db(env, 'UPDATE accounts SET salt = ?, hash = ? WHERE email = ?', [record.salt, record.hash, email]);
   return J({ ok: true, changes: (r.meta && r.meta.changes) || 0 });
 }
