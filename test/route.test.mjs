@@ -31,7 +31,7 @@ test('the feed deep-link pattern reads both link forms', () => {
   assert.equal('#/c/milo/v/abc-1'.match(DEEP_LINK)[1], 'abc-1');
   assert.equal('#/v/abc-1'.match(DEEP_LINK)[1], 'abc-1');
   assert.equal('#/c/milo'.match(DEEP_LINK), null);
-  // feed.js carries the same pattern inline; keep the two in step.
   const feed = readFileSync(new URL('../public/js/feed.js', import.meta.url), 'utf8');
-  assert.ok(feed.includes(DEEP_LINK.source), 'feed.js uses the shared deep-link pattern');
+  assert.match(feed, /import \{ DEEP_LINK \} from '\/js\/shell\/route\.mjs'/, 'feed.js uses the shared deep-link pattern');
+  assert.match(feed, /location\.hash\.match\(DEEP_LINK\)/);
 });

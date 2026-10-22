@@ -1,10 +1,13 @@
-// src/scripts/kidtube-feed.js
+// The feed: one kid's clips as a swipe-first reel (phones) or a stage with a running order (wide
+// screens), with likes, comments, the running-order sheet and the kid's upload button. This is the
+// original player (hence the tz- classes); the shell (js/shell/app.js) picks the channel and unlocks it.
 import { publishVideo } from '/js/server-upload-v1.js';
 import { playClip, retryClip } from '/js/player-media-v1.js';
 // Launch story: time capsules (locked tapes, unlocks), reactions and the daily tape (js/shell/*).
 import { lockedSlideMarkup, lockedThumbMarkup, runUnlock, wantsUnlock, watchSealed, wobble } from '/js/shell/capsules.js';
 import { attachReactions, chipsMarkup, railButtonMarkup } from '/js/shell/reactions.js';
 import { attachWatch } from '/js/shell/watch.js';
+import { DEEP_LINK } from '/js/shell/route.mjs';
 var familyZone = () => window.__ktChannel?.timezone || undefined;
 var serverBudget = null;
 // A spent daily tape: the slides carry no video at all, so nothing asks for a file the server will refuse.
@@ -22,13 +25,9 @@ var serverClipsReady = new Promise(resolve => { if(window.kidUnlocked) resolve()
   }
 }).catch(() => {
 });
-var clips = [...CATALOG].sort((a, b) => {
-  const sa = Number.isFinite(a.seq) ? a.seq : Infinity;
-  const sb = Number.isFinite(b.seq) ? b.seq : Infinity;
-  if (sa !== sb) return sa - sb;
-  return b.publishedAt.localeCompare(a.publishedAt) || a.id.localeCompare(b.id);
-});
-var order = clips.map((c, i) => i);
+// The clips in channel order (buildReel fills it) and the order they play in (shuffle reorders it).
+var clips = [];
+var order = [];
 var rank = (i) => {
   const n = order.indexOf(i);
   return n < 0 ? 0 : n;
@@ -49,7 +48,6 @@ function syncDomOrder() {
   }
 }
 var MAX_SECONDS = 300;
-var REENCODE_MAX = 48 * 1024 * 1024;
 var LOOP_UNDER = 60;
 var FIT_TOLERANCE = 0.06;
 var DESKTOP = window.matchMedia("(min-width: 900px)");
@@ -150,9 +148,10 @@ function slideMarkup(c, i) {
   </section>`;
 }
 var slides = [];
+var reelBuilt = false;
 function buildReel() {
-  if (window.__tzReelBuilt) return;
-  window.__tzReelBuilt = true;
+  if (reelBuilt) return;
+  reelBuilt = true;
   const sorted = [...CATALOG].sort((a, b) => {
     const sa = Number.isFinite(a.seq) ? a.seq : Infinity;
     const sb = Number.isFinite(b.seq) ? b.seq : Infinity;
@@ -194,7 +193,7 @@ function endplateMarkup() {
 }
 function applyFit(slide) {
   const slot = $(".tz-slot", slide);
-  const el = $("video", slide) || $("img.tz-still", slide);
+  const el = $("video", slide);
   if (!el) return;
   const w = el.videoWidth || el.naturalWidth;
   const h = el.videoHeight || el.naturalHeight;
@@ -211,10 +210,6 @@ function ambient(slide, el) {
   const poster = clips[Number(slide.dataset.i)]?.poster;
   if (poster) {
     amb.src = poster;
-    return;
-  }
-  if (el.tagName === "IMG") {
-    amb.src = el.src;
     return;
   }
   try {
@@ -276,7 +271,6 @@ var io = new IntersectionObserver((entries) => {
     if (i !== state.index) setActive(i, { scroll: false });
   }
 }, { root: reel, threshold: [0, 0.6, 1] });
-slides.forEach((s) => io.observe(s));
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) pauseAllExcept(null);
   else if (!state.sheet) playActive();
@@ -299,11 +293,6 @@ function setActive(i, { scroll = true } = {}) {
   body.toggleAttribute("data-end", !c);
   $('[data-bind="pos"]').textContent = c ? String(rank(state.index) + 1).padStart(2, "0") : "END";
   queryAll(".tz-log-row").forEach((r) => r.setAttribute("aria-current", String(Number(r.dataset.goto) === state.index)));
-  slides.forEach((s, n) => {
-    const up = $('[data-act="newer"]', s), dn = $('[data-act="older"]', s);
-    if (up) up.disabled = false;
-    if (dn) dn.disabled = false;
-  });
   const glow = $(".tz-glow");
   const poster = clips[state.index]?.poster;
   if (glow) glow.style.backgroundImage = poster ? `url("${poster}")` : "none";
@@ -465,10 +454,8 @@ function failNote(slide, msg) {
     n.hidden = true;
   }, 3e3);
 }
-var cSheet = $('[data-sheet="comments"]');
 var cBody = $('[data-bind="comments"]');
 var cForm = $('[data-bind="composer"]');
-var nameF = $("#tz-name");
 var bodyF = $("#tz-body");
 var postBtn = $(".tz-post");
 async function renderComments() {
@@ -841,8 +828,7 @@ document.addEventListener("pointerdown", (e) => {
   18%{transform:scale(1.18) rotate(3deg);opacity:1}
   38%{transform:scale(1) rotate(0)}
   70%{transform:scale(1.02) translateY(-8px);opacity:1}
-  100%{transform:scale(.9) translateY(-46px);opacity:0}}
-#tz-name,label[for="tz-name"]{display:none}`;
+  100%{transform:scale(.9) translateY(-46px);opacity:0}}`;
   document.head.appendChild(st);
 })();
 function retry(slide) {
@@ -913,14 +899,6 @@ function durOf(slide, v) {
 }
 function wireSlide(slide) {
   const v = $("video", slide);
-  const img = $("img.tz-still", slide);
-  if (img) {
-    img.addEventListener("load", () => {
-      slide.dataset.state = "ready";
-      applyFit(slide);
-    });
-    return;
-  }
   if (!v) {
     slide.dataset.state = "ready";
     return;
@@ -1056,25 +1034,6 @@ async function seedLikes() {
     if (!j || !j.ok) return;
     likeState.clear();
     for (const k in j.counts) likeState.set(k, { count: j.counts[k] || 0, liked: !!(j.liked && j.liked[k]) });
-    if (s && s.t) {
-      for (const c of clips) {
-        let v = null;
-        try {
-          v = JSON.parse(localStorage.getItem("tz-r-" + c.id) || "null");
-        } catch (err) {
-        }
-        if (v && v.liked && !(likeState.get(c.id) || { liked: false }).liked) {
-          const r = await apiPost("/api/like", { clipId: c.id, email: s.email, t: s.t, on: true });
-          if (r && r.ok) {
-            likeState.set(c.id, { count: r.count, liked: true });
-            try {
-              localStorage.setItem("tz-r-" + c.id, JSON.stringify({ liked: false, comments: v.comments || [] }));
-            } catch (err) {
-            }
-          }
-        }
-      }
-    }
     paintAllLikes();
   } catch (err) {
   }
@@ -1161,7 +1120,7 @@ async function openSealed(id, tries = 0) {
   else applyPreloads();
 }
 function bootFeed() {
-  const deep = location.hash.match(/^#\/(?:c\/[^/]+\/)?v\/(.+)$/);
+  const deep = location.hash.match(DEEP_LINK);
   const start = deep ? clips.findIndex((c) => c.id === deep[1]) : 0;
   syncMode();
   setSound(false);
@@ -1319,7 +1278,7 @@ function bootFeed() {
     };
     input.click();
   }
-  async function uploadPicked(file, forcedName) {
+  async function uploadPicked(file) {
     try {
       const secs = await readDuration(file);
       if (secs > MAX_SECONDS) {
@@ -1330,7 +1289,7 @@ function bootFeed() {
         fabSay("Over 512 MB. Trim it first.", 7e3);
         return;
       }
-      const picked = forcedName === void 0 ? await askName(file, secs) : { title: forcedName };
+      const picked = await askName(file, secs);
       if (picked == null) {
         fabSay("Nothing was uploaded.", 2600);
         return;
@@ -1427,181 +1386,6 @@ function bootFeed() {
       }
     });
   }
-  function ebmlId(u8, at) {
-    if (at >= u8.length) return null;
-    const n = ebmlVintLen(u8[at]);
-    if (!n || at + n > u8.length) return null;
-    let v = 0;
-    for (let k = 0; k < n; k++) v = v * 256 + u8[at + k];
-    return { id: v, len: n };
-  }
-  function ebmlSize(u8, at) {
-    if (at >= u8.length) return null;
-    const n = ebmlVintLen(u8[at]);
-    if (!n || at + n > u8.length) return null;
-    let v = u8[at] & (1 << 8 - n) - 1, unknown = v === (1 << 8 - n) - 1;
-    for (let k = 1; k < n; k++) {
-      v = v * 256 + u8[at + k];
-      if (u8[at + k] !== 255) unknown = false;
-    }
-    return { size: v, len: n, unknown };
-  }
-  function ebmlUint(u8, at, n) {
-    let v = 0;
-    for (let k = 0; k < n; k++) v = v * 256 + u8[at + k];
-    return v;
-  }
-  function eachEbml(u8, start2, end, cb) {
-    let i = start2;
-    while (i < end) {
-      const id = ebmlId(u8, i);
-      if (!id) return;
-      const sz = ebmlSize(u8, i + id.len);
-      if (!sz) return;
-      const body2 = i + id.len + sz.len;
-      cb(id.id, body2, sz.unknown ? end : Math.min(end, body2 + sz.size));
-      const next = sz.unknown ? end : body2 + sz.size;
-      i = next > i ? next : i + 1;
-    }
-  }
-  function webmPicture(u8) {
-    const head = ebmlId(u8, 0);
-    if (!head || head.id !== 440786851) return null;
-    const hs = ebmlSize(u8, head.len);
-    if (!hs) return null;
-    const segAt = head.len + hs.len + hs.size;
-    const seg = ebmlId(u8, segAt);
-    if (!seg || seg.id !== 408125543) return null;
-    const ss = ebmlSize(u8, segAt + seg.len);
-    if (!ss) return null;
-    const segBody = segAt + seg.len + ss.len;
-    const segEnd = ss.unknown ? u8.length : Math.min(u8.length, segBody + ss.size);
-    const tracks = [];
-    eachEbml(u8, segBody, segEnd, (id, b, e) => {
-      if (id !== 374648427) return;
-      eachEbml(u8, b, e, (tid, tb, te) => {
-        if (tid !== 174) return;
-        let num = 0, type = 0;
-        eachEbml(u8, tb, te, (cid, cb, ce) => {
-          if (cid === 215) num = ebmlUint(u8, cb, Math.min(ce - cb, 8));
-          else if (cid === 131) type = ebmlUint(u8, cb, Math.min(ce - cb, 8));
-        });
-        if (type === 1 && num) tracks.push(num);
-      });
-    });
-    if (!tracks.length) return false;
-    let clusters = 0, blocks = 0;
-    for (let i = 0; i <= u8.length - 5; i++) {
-      if (u8[i] !== 31 || u8[i + 1] !== 67 || u8[i + 2] !== 182 || u8[i + 3] !== 117) continue;
-      const cs = ebmlSize(u8, i + 4);
-      if (!cs) continue;
-      clusters += 1;
-      const cb = i + 4 + cs.len;
-      const ce = cs.unknown ? u8.length : Math.min(u8.length, cb + cs.size);
-      eachEbml(u8, cb, ce, (bid, bb, be) => {
-        if (bid !== 160 && bid !== 163 && bid !== 161) return;
-        const blockNum = (at) => {
-          const tt = ebmlVintLen(u8[at]);
-          if (!tt || at + tt > u8.length) return 0;
-          return (u8[at] & (1 << 8 - tt) - 1) * Math.pow(256, tt - 1) + (tt > 1 ? ebmlUint(u8, at + 1, tt - 1) : 0);
-        };
-        if (bid === 160) {
-          eachEbml(u8, bb, be, (gid, gb) => {
-            if (gid === 161 && tracks.indexOf(blockNum(gb)) !== -1) blocks += 1;
-          });
-          return;
-        }
-        if (tracks.indexOf(blockNum(bb)) !== -1) blocks += 1;
-      });
-      if (blocks) return true;
-    }
-    return clusters ? false : null;
-  }
-  function eachBox(u8, start2, end, cb) {
-    let i = start2;
-    while (i + 8 <= end) {
-      let size = u8[i] * 16777216 + u8[i + 1] * 65536 + u8[i + 2] * 256 + u8[i + 3], hdr = 8;
-      if (size === 1) {
-        size = 0;
-        for (let k = 0; k < 8; k++) size = size * 256 + u8[i + 8 + k];
-        hdr = 16;
-      } else if (size === 0) size = end - i;
-      if (size < hdr || i + size > end + 1) return;
-      cb(String.fromCharCode(u8[i + 4], u8[i + 5], u8[i + 6], u8[i + 7]), i + hdr, Math.min(end, i + size));
-      i += size;
-    }
-  }
-  function findBox(u8, start2, end, want, depth) {
-    if (depth > 6) return null;
-    let hit = null;
-    eachBox(u8, start2, end, (type, b, e) => {
-      if (hit) return;
-      if (type === want) {
-        hit = { body: b, end: e };
-        return;
-      }
-      if (type === "moov" || type === "trak" || type === "mdia" || type === "minf" || type === "stbl" || type === "edts" || type === "udta") hit = findBox(u8, b, e, want, depth + 1);
-    });
-    return hit;
-  }
-  function hasFourcc(u8, tag) {
-    const a = tag.charCodeAt(0), b = tag.charCodeAt(1), c = tag.charCodeAt(2), d = tag.charCodeAt(3);
-    for (let i = 0; i <= u8.length - 4; i++) {
-      if (u8[i] === a && u8[i + 1] === b && u8[i + 2] === c && u8[i + 3] === d) return true;
-    }
-    return false;
-  }
-  function mp4Picture(u8) {
-    if (hasFourcc(u8, "moof") || hasFourcc(u8, "mvex")) return null;
-    for (let i = 4; i <= u8.length - 8; i++) {
-      if (!(u8[i] === 109 && u8[i + 1] === 111 && u8[i + 2] === 111 && u8[i + 3] === 118)) continue;
-      let samples = 0, sawVideo = false, blind = false;
-      eachBox(u8, i + 4, u8.length, (type, b, e) => {
-        if (type !== "trak") return;
-        const h = findBox(u8, b, e, "hdlr", 0);
-        if (!h) return;
-        if (String.fromCharCode(u8[h.body + 8], u8[h.body + 9], u8[h.body + 10], u8[h.body + 11]) !== "vide") return;
-        sawVideo = true;
-        const sz = findBox(u8, b, e, "stsz", 0);
-        if (!sz) {
-          blind = true;
-          return;
-        }
-        samples += ebmlUint(u8, sz.body + 8, 4);
-      });
-      if (blind) return null;
-      return sawVideo ? samples > 0 : false;
-    }
-    return null;
-  }
-  function pictureVerdict(file) {
-    return new Promise((resolve) => {
-      const CAP = 8 * 1024 * 1024;
-      const slices = [file.slice(0, Math.min(file.size, CAP))];
-      if (file.size > CAP) slices.push(file.slice(file.size - CAP));
-      Promise.all(slices.map((s) => new Promise((res) => {
-        const fr = new FileReader();
-        fr.onerror = () => res(null);
-        fr.onload = () => res(new Uint8Array(fr.result));
-        fr.readAsArrayBuffer(s);
-      }))).then((bufs) => {
-        for (const u8 of bufs) {
-          if (!u8 || u8.length < 16) continue;
-          const webm = webmPicture(u8);
-          if (webm !== null) {
-            resolve(webm ? "yes" : "no");
-            return;
-          }
-          const mp4 = mp4Picture(u8);
-          if (mp4 !== null) {
-            resolve(mp4 ? "yes" : "no");
-            return;
-          }
-        }
-        resolve("unknown");
-      });
-    });
-  }
   async function uploadClip(file, name, seal) {
     const s = await sessToken();
     if (!s || !s.t) {
@@ -1666,18 +1450,6 @@ function bootFeed() {
   seedRole().then((s) => {
     if (window.__ktChannel ? window.__ktChannel.canUpload : s && (s.role === "admin" || s.role === "super")) mountUploadFab();
   });
-  window.__tzfeed = {
-    mounted: true,
-    clips: () => clips.map((c) => c.id),
-    order: () => order.slice(),
-    rank: (i) => rank(typeof i === "number" ? i : state.index),
-    active: () => state.index,
-    shuffle: () => state.shuffle,
-    setShuffle,
-    step,
-    durOf: (i) => durOf(slides[i], $("video", slides[i])),
-    pictureVerdict: (file) => pictureVerdict(file),
-    uploadFile: (file, name) => uploadPicked(file, name),
-    pick: () => pickAndUpload()
-  };
+  // The empty channel's "Record your first tape" button (js/shell/app.js) opens the file picker here.
+  window.__tzfeed = { pick: () => pickAndUpload() };
 }
