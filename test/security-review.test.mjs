@@ -13,7 +13,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createUploadManager, probe, STALE_UPLOAD_MS } from '../server/uploads.mjs';
-import { sessOk, sessToken } from '../server/api.js';
+import { loginPause, sessOk, sessToken } from '../server/api.js';
 import { openDatabase } from '../server/db.mjs';
 import { migrate } from '../server/schema.mjs';
 import { ROOT, startInstall, PARENT } from './helpers.mjs';
@@ -406,4 +406,25 @@ test('L11: FFmpeg opens uploads only as local files in the containers phones mak
   for (const file of [asUpload('other.ts'), asUpload('other.avi'), join(dir, 'list.source'), join(dir, 'playlist.m3u8')]) {
     await assert.rejects(probe(file), file);
   }
+});
+
+test('M2: guessing spread just under the 15-minute limit still stops within a day', () => {
+  const now = Date.parse('2026-10-22T12:00:00Z');
+  const every = (count, gap) => Array.from({ length: count }, (_, i) => now - (count - i) * gap);
+  assert.equal(loginPause(every(9, 60000), now), null);
+  assert.match(loginPause(every(10, 60000), now), /15 minutes/);
+  // Nine tries every 15 minutes never trips the short limit, but the day's 50th does.
+  assert.equal(loginPause(every(49, 100000), now + 15 * 60000 + 1), null);
+  assert.match(loginPause(every(50, 100000), now), /today/);
+  assert.equal(loginPause(every(50, 100000), now + 24 * 3600000), null, 'a day later it lifts');
+});
+
+test('M2: a parent setting a new password lifts the pause on that account', { timeout: 60000 }, async t => {
+  const family = await startFamily(t);
+  const { json, parent } = family;
+  for (let i = 0; i < 10; i++) await family.call('/api/login', { body: { email: KID.email, pass: 'wrong-' + i }, headers: { 'x-forwarded-for': `192.0.2.${i}` } });
+  assert.equal((await family.call('/api/login', { body: KID })).status, 429);
+  const reset = await json('/api/admin/people/password', { headers: { 'x-kid-email': parent.email, 'x-kid-token': parent.t }, body: { target: KID_EMAIL, pass: 'a-new-kid-pass' } });
+  assert.equal(reset.status, 200);
+  assert.equal((await family.call('/api/login', { body: { email: KID.email, pass: 'a-new-kid-pass' } })).status, 200);
 });
