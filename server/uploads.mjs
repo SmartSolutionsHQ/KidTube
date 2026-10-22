@@ -8,6 +8,7 @@ import { asCreator } from './api.js';
 import { CLIP_ACCESS_SQL, DEFAULT_CHANNEL_ID, canPlayClip, channelById, channelBySlug } from './channels.mjs';
 import { publishClip } from './publish.mjs';
 import { validateSeal } from './capsules.mjs';
+import { HttpError, sendJson } from './jsonio.mjs';
 
 const execFileAsync = promisify(execFile);
 const CHUNK_SIZE = 4 * 1024 * 1024;
@@ -25,18 +26,6 @@ const STAFF = new Set(['admin', 'super']);
 // An upload nobody finished still holds the phone's raw file, GPS and all, so it goes after a day.
 export const STALE_UPLOAD_MS = 24 * 60 * 60 * 1000;
 const SWEEP_EVERY = 60 * 60 * 1000;
-
-function json(res, status, value) {
-  res.writeHead(status, {
-    'Content-Type': 'application/json',
-    'Cache-Control': 'no-store',
-  });
-  res.end(JSON.stringify(value));
-}
-
-class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
-}
 
 async function body(req, limit) {
   const chunks = [];
@@ -252,7 +241,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications, 
     if (!canPlayClip(viewer, clip)) throw new HttpError(404, 'Video not found.');
     // Checked before any byte or Range handling, so a sealed or spent tape never starts streaming.
     const verdict = canWatch(viewer, Date.now(), { clipId: clip.id, poster: !!media[2] });
-    if (verdict !== true) { json(res, 403, { ok: false, ...verdict }); return; }
+    if (verdict !== true) { sendJson(res, 403, { ok: false, ...verdict }); return; }
     const file = join(videos, media[1] + (media[2] ? '.jpg' : '.mp4'));
     if (!existsSync(file)) throw new HttpError(404, 'Video not found.');
     const size = statSync(file).size;
@@ -299,7 +288,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications, 
         mkdirSync(join(incoming, id), { mode: 0o700 });
         sqlite.prepare('INSERT INTO upload_jobs (id,email,title,size,status,created,updated,channel_id,opens_at,capsule_note) VALUES (?,?,?,?,?,?,?,?,?,?)')
           .run(id, user.email, title, size, 'receiving', now, now, channelId, seal.opensAt, seal.note);
-        return json(res, 200, { ok: true, uploadId: id, chunkSize: CHUNK_SIZE });
+        return sendJson(res, 200, { ok: true, uploadId: id, chunkSize: CHUNK_SIZE });
       }
       const chunkMatch = /^\/api\/upload\/raw\/chunk\/([a-f0-9-]{36})\/(\d{1,4})$/.exec(pathname);
       if (chunkMatch && req.method === 'POST') {
@@ -315,7 +304,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications, 
         const temporary = join(dir, `${seq}.${randomUUID()}.tmp`);
         await writeFile(temporary, bytes, { mode: 0o600 });
         await rename(temporary, join(dir, String(seq)));
-        return json(res, 200, { ok: true, seq });
+        return sendJson(res, 200, { ok: true, seq });
       }
       if (pathname === '/api/upload/raw/finish' && req.method === 'POST') {
         const payload = await jsonBody(req);
@@ -332,7 +321,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications, 
           .run(Date.now(), job.id).changes;
         if (!changed) throw new HttpError(409, 'Upload already finished.');
         pump().catch(error => console.error('Upload queue failed', error));
-        return json(res, 202, { ok: true, uploadId: job.id, status: 'queued' });
+        return sendJson(res, 202, { ok: true, uploadId: job.id, status: 'queued' });
       }
       if (pathname === '/api/upload/raw/cancel' && req.method === 'POST') {
         const payload = await jsonBody(req);
@@ -341,14 +330,14 @@ export function createUploadManager({ sqlite, env, databasePath, notifications, 
         sqlite.prepare("UPDATE upload_jobs SET status='failed', error='Upload cancelled.', updated=? WHERE id=?")
           .run(Date.now(), job.id);
         await rm(join(incoming, job.id), { recursive: true, force: true });
-        return json(res, 200, { ok: true });
+        return sendJson(res, 200, { ok: true });
       }
       const statusMatch = /^\/api\/upload\/raw\/status\/([a-f0-9-]{36})$/.exec(pathname);
       if (statusMatch && req.method === 'GET') {
         const job = await owned(req, statusMatch[1]);
         const clip = job.clip_id ? sqlite.prepare(`SELECT c.id,c.title,c.src,c.poster,c.kind,c.blurb,c.published,c.duration,c.position,c.review,ch.slug channel
           FROM clips c LEFT JOIN channels ch ON ch.id=c.channel_id WHERE c.id=?`).get(job.clip_id) : null;
-        return json(res, 200, {
+        return sendJson(res, 200, {
           ok: true, status: job.status, progress: job.progress, error: job.error,
           clip: clip && { id: clip.id, title: clip.title, src: clip.src, poster: clip.poster, kind: clip.kind,
             blurb: clip.blurb, publishedAt: clip.published, duration: clip.duration, position: clip.position,
@@ -358,7 +347,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications, 
       throw new HttpError(404, 'Not found.');
     } catch (error) {
       if (!(error instanceof HttpError)) console.error('Upload request failed:', error);
-      if (!res.headersSent) json(res, error.status || 500, { ok: false, error: error.status ? error.message : 'Server error.' });
+      if (!res.headersSent) sendJson(res, error.status || 500, { ok: false, error: error.status ? error.message : 'Server error.' });
       else res.destroy(error);
     }
   }

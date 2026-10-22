@@ -17,9 +17,9 @@
 // the visitor made borrows a few of the family's clips (/api/clips?channel=my-kid-1).
 import { randomBytes } from 'node:crypto';
 import { statSync } from 'node:fs';
-import { asStaff } from './api.js';
 import { BadgeSpecError, renderSpec } from './badge.mjs';
 import { channelById, listChannels } from './channels.mjs';
+import { HttpError, headerStaff, readJson, sendJson } from './jsonio.mjs';
 
 export const SANDBOX_COOKIE = 'kt_sandbox';
 export const SANDBOX_LIMITS = Object.freeze({
@@ -41,7 +41,6 @@ const UNSAFE_TEXT = /[\u0000-\u001f\u007f-\u009f\u200e\u200f\u2028-\u202e\u2066-
 const BADGE_ROUTE = /^\/api\/demo\/sandbox\/badge\/([a-z0-9-]{1,40})\.svg$/;
 const CHANNEL_BADGE = /^\/api\/admin\/channels\/([^/]+)\/badge$/;
 const MINUTE = 60000;
-const MAX_JSON = 16 * 1024;
 
 export const SANDBOX_NOTE = 'Your changes are only on this device and disappear at the next reset.';
 const TOO_BIG = 'That is more than the demo keeps for one visitor. Reset your changes and try again.';
@@ -49,43 +48,16 @@ const SLOW = 'Slow down a little.';
 
 // The parent's session, as the dashboard sends it. Only the owner edits kids, as on a real install.
 async function parentOf(env, req) {
-  const email = String(req.headers['x-kid-email'] || '').trim().toLowerCase();
-  const token = String(req.headers['x-kid-token'] || '');
-  const user = email && token ? await asStaff(env, email, token) : null;
+  const user = await headerStaff(env, req);
   return user?.role === 'super' ? user : null;
-}
-
-class SandboxError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
-}
-
-const json = (res, status, value, headers = {}) => {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers });
-  res.end(JSON.stringify(value));
-};
-
-async function readJson(req) {
-  if (Number(req.headers['content-length']) > MAX_JSON) throw new SandboxError(413, 'That request is too big.');
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > MAX_JSON) throw new SandboxError(413, 'That request is too big.');
-    chunks.push(chunk);
-  }
-  try {
-    const value = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
-    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
-  } catch {}
-  throw new SandboxError(400, 'Invalid request.');
 }
 
 // The same rules as a family's kid (family.mjs), plus no invisible or control characters.
 function text(value, max, label, { required = false } = {}) {
   const clean = typeof value === 'string' ? value.trim() : value == null ? '' : null;
-  if (clean === null || clean.length > max) throw new SandboxError(400, `${label} can be up to ${max} characters.`);
-  if (UNSAFE_TEXT.test(clean)) throw new SandboxError(400, `${label} can't use invisible or control characters.`);
-  if (required && !clean) throw new SandboxError(400, `Add ${label.toLowerCase()}.`);
+  if (clean === null || clean.length > max) throw new HttpError(400, `${label} can be up to ${max} characters.`);
+  if (UNSAFE_TEXT.test(clean)) throw new HttpError(400, `${label} can't use invisible or control characters.`);
+  if (required && !clean) throw new HttpError(400, `Add ${label.toLowerCase()}.`);
   return clean;
 }
 
@@ -143,7 +115,7 @@ export function createSandboxes({
   function open(req, res) {
     const found = find(req);
     if (found) return found;
-    if (limitNew(req)) throw new SandboxError(429, SLOW);
+    if (limitNew(req)) throw new HttpError(429, SLOW);
     checkStamp();
     while (boxes.size >= limits.sandboxes) boxes.delete(boxes.keys().next().value);
     const id = randomBytes(16).toString('base64url');
@@ -156,7 +128,7 @@ export function createSandboxes({
   function spend(box) {
     const at = now();
     box.writes = box.writes.filter(time => time > at - MINUTE);
-    if (box.writes.length >= limits.writesPerMinute) throw new SandboxError(429, SLOW);
+    if (box.writes.length >= limits.writesPerMinute) throw new HttpError(429, SLOW);
     box.writes.push(at);
   }
 
@@ -165,7 +137,7 @@ export function createSandboxes({
   function commit(box, change) {
     const next = { kids: new Map([...box.kids].map(([id, kid]) => [id, { ...kid }])), created: box.created.map(kid => ({ ...kid })), rev: box.rev };
     const result = change(next);
-    if (JSON.stringify(stored(next)).length > limits.bytes) throw new SandboxError(413, TOO_BIG);
+    if (JSON.stringify(stored(next)).length > limits.bytes) throw new HttpError(413, TOO_BIG);
     Object.assign(box, next);
     return result;
   }
@@ -338,13 +310,13 @@ export function createSandboxes({
     const name = text(input.name, limits.name, 'A name', { required: true });
     const kicker = text(input.kicker, limits.kicker, 'The channel line');
     const accent = text(input.accent, 7, 'The accent');
-    if (accent && !ACCENT.test(accent)) throw new SandboxError(400, 'Pick an accent color.');
+    if (accent && !ACCENT.test(accent)) throw new HttpError(400, 'Pick an accent color.');
     const themeId = text(input.themeId, 40, 'The splash');
-    if (themeId && !themeIds().includes(themeId)) throw new SandboxError(400, 'Pick one of the splash screens.');
+    if (themeId && !themeIds().includes(themeId)) throw new HttpError(400, 'Pick one of the splash screens.');
     const fields = { name, kicker, accent: accent.toUpperCase(), themeId };
     return commit(box, next => {
       if (input.id == null || input.id === '') {
-        if (next.created.length >= limits.created) throw new SandboxError(409, `You can make up to ${limits.created} kids in the demo. Remove one, or reset your changes.`);
+        if (next.created.length >= limits.created) throw new HttpError(409, `You can make up to ${limits.created} kids in the demo. Remove one, or reset your changes.`);
         const used = new Set(next.created.map(kid => kid.n));
         const n = [1, 2, 3, 4, 5, 6, 7, 8, 9].find(value => !used.has(value));
         const kid = { n, ...fields, badge: null, rev: 0 };
@@ -354,19 +326,19 @@ export function createSandboxes({
       const made = next.created.find(kid => CREATED_BASE_ID + kid.n === Number(input.id));
       if (made) { Object.assign(made, fields); return createdView(made); }
       const row = Number.isSafeInteger(Number(input.id)) ? channelById(sqlite, Number(input.id)) : null;
-      if (!row) throw new SandboxError(404, 'That kid was removed. Reload the page.');
+      if (!row) throw new HttpError(404, 'That kid was removed. Reload the page.');
       next.kids.set(row.id, { ...next.kids.get(row.id), ...fields });
       return { ...seededView(row, next) };
     });
   }
 
   function removeKid(box, id) {
-    if (!box) throw new SandboxError(404, 'There is nothing of yours to undo.');
+    if (!box) throw new HttpError(404, 'There is nothing of yours to undo.');
     return commit(box, next => {
       const index = next.created.findIndex(kid => CREATED_BASE_ID + kid.n === Number(id));
       if (index >= 0) { next.created.splice(index, 1); return 'removed'; }
       if (next.kids.delete(Number(id))) return 'undone';
-      throw new SandboxError(404, 'There is nothing of yours to undo for this kid.');
+      throw new HttpError(404, 'There is nothing of yours to undo for this kid.');
     });
   }
 
@@ -380,7 +352,7 @@ export function createSandboxes({
         return createdView(made);
       }
       const row = channelById(sqlite, Number(id));
-      if (!row) throw new SandboxError(404, 'Channel not found.');
+      if (!row) throw new HttpError(404, 'Channel not found.');
       next.kids.set(row.id, { ...next.kids.get(row.id), badge: spec, rev: next.rev });
       return seededView(row, next);
     });
@@ -408,19 +380,19 @@ export function createSandboxes({
   async function route(req, res, pathname, refuse) {
     const method = req.method === 'HEAD' ? 'GET' : req.method;
     if (pathname === '/api/demo/sandbox') {
-      if (method !== 'GET') { req.resume(); return json(res, 405, { ok: false, error: 'Method not allowed.' }); }
-      return json(res, 200, { ok: true, ...info(find(req)) });
+      if (method !== 'GET') { req.resume(); return sendJson(res, 405, { ok: false, error: 'Method not allowed.' }); }
+      return sendJson(res, 200, { ok: true, ...info(find(req)) });
     }
     if (pathname === '/api/demo/sandbox/reset') {
-      if (method !== 'POST') { req.resume(); return json(res, 405, { ok: false, error: 'Method not allowed.' }); }
+      if (method !== 'POST') { req.resume(); return sendJson(res, 405, { ok: false, error: 'Method not allowed.' }); }
       req.resume();
       const id = cookieValue(req);
       if (ID.test(id)) boxes.delete(id);
-      return json(res, 200, { ok: true, ...info(null) }, { 'Set-Cookie': cookie('', 0) });
+      return sendJson(res, 200, { ok: true, ...info(null) }, { 'Set-Cookie': cookie('', 0) });
     }
     const badge = BADGE_ROUTE.exec(pathname);
     if (badge) {
-      if (method !== 'GET') { req.resume(); return json(res, 405, { ok: false, error: 'Method not allowed.' }); }
+      if (method !== 'GET') { req.resume(); return sendJson(res, 405, { ok: false, error: 'Method not allowed.' }); }
       return sendBadge(req, res, badge[1]);
     }
 
@@ -430,31 +402,31 @@ export function createSandboxes({
       const input = await readJson(req);
       const box = open(req, res);
       spend(box);
-      return json(res, 200, { ok: true, kid: { ...saveKid(box, input), reviewUploads: false, login: null, placeholder: false } });
+      return sendJson(res, 200, { ok: true, kid: { ...saveKid(box, input), reviewUploads: false, login: null, placeholder: false } });
     }
     if (pathname === '/api/admin/kids/delete') {
       const input = await readJson(req);
       const box = find(req);
       if (box) spend(box);
       const done = removeKid(box, input.id);
-      return json(res, 200, { ok: true, done });
+      return sendJson(res, 200, { ok: true, done });
     }
     const channel = CHANNEL_BADGE.exec(pathname);
     if (channel && method === 'GET') {
       const box = find(req);
       const made = createdOf(box, channel[1]);
       const row = made ? null : channelById(sqlite, Number(channel[1]));
-      if (!made && !row) return json(res, 404, { ok: false, error: 'Channel not found.' });
+      if (!made && !row) return sendJson(res, 404, { ok: false, error: 'Channel not found.' });
       const view = made ? createdView(made) : seededView(row, box);
       let spec = made ? made.badge : box?.kids.get(row.id)?.badge || null;
       if (!spec && row) { try { const saved = JSON.parse(row.badge || 'null'); spec = saved && Object.keys(saved).length ? saved : null; } catch {} }
-      return json(res, 200, { ok: true, spec, url: view.logoUrl, imageUrl: null });
+      return sendJson(res, 200, { ok: true, spec, url: view.logoUrl, imageUrl: null });
     }
     if (channel && method === 'PUT') {
       const input = await readJson(req);
       const box = open(req, res);
       spend(box);
-      return json(res, 200, saveBadge(box, channel[1], input));
+      return sendJson(res, 200, saveBadge(box, channel[1], input));
     }
     return refuse();
   }
@@ -468,10 +440,10 @@ export function createSandboxes({
     route(req, res, pathname, () => refuse(req, res, pathname)).catch(error => {
       req.resume();
       if (res.headersSent) { res.destroy(); return; }
-      if (error instanceof SandboxError) return json(res, error.status, { ok: false, demo: true, error: error.message });
-      if (error instanceof BadgeSpecError) return json(res, 400, { ok: false, demo: true, error: error.message });
+      if (error instanceof HttpError) return sendJson(res, error.status, { ok: false, demo: true, error: error.message });
+      if (error instanceof BadgeSpecError) return sendJson(res, 400, { ok: false, demo: true, error: error.message });
       console.error('Demo sandbox request failed', error);
-      json(res, 500, { ok: false, error: 'Something went wrong. Try again.' });
+      sendJson(res, 500, { ok: false, error: 'Something went wrong. Try again.' });
     });
     return true;
   }

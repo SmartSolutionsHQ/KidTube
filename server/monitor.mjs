@@ -1,12 +1,13 @@
 import { createHmac } from 'node:crypto';
 import { readdir, stat, statfs } from 'node:fs/promises';
 import { join } from 'node:path';
-import api, { asStaff } from './api.js';
+import api from './api.js';
 import { viewer as cookieViewer } from './access.mjs';
 import { BRAND_NAME } from './brand.mjs';
 import { DEFAULT_CHANNEL_ID, channelById, channelBySlug, isStaff, listChannels } from './channels.mjs';
 import { InstallError, checkSiteUrl } from './config.mjs';
 import { FamilyError, erasePerson } from './family.mjs';
+import { HttpError, headerStaff, readJson, sendJson } from './jsonio.mjs';
 import { sendMail } from './mail.mjs';
 import { approveClip, rejectClip } from './publish.mjs';
 import { SettingError } from './settings.mjs';
@@ -27,30 +28,6 @@ const FEED_KINDS = ['review', 'upload', 'comment', 'people', 'guest', 'kids', 'v
 export const EDITABLE = ['site_name', 'site_tagline', 'family_accent', 'gate_theme', 'kids_public', 'signup_mode',
   'guest_passes', 'comments_default', 'review_uploads_default', 'splash_sound', 'views_retention_days',
   'activity_retention_days', 'mail_mode', 'brevo_api_key', 'sender_email', 'notify_email', 'site_url'];
-
-class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
-}
-
-function json(res, status, value) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(value));
-}
-
-async function readJson(req) {
-  const chunks = [];
-  let size = 0;
-  for await (const chunk of req) {
-    size += chunk.length;
-    if (size > MAX_BODY) throw new HttpError(413, 'That request is too big.');
-    chunks.push(chunk);
-  }
-  try {
-    const value = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
-    if (value && typeof value === 'object' && !Array.isArray(value)) return value;
-  } catch {}
-  throw new HttpError(400, 'Invalid request.');
-}
 
 const parse = text => { try { return JSON.parse(text || '{}') || {}; } catch { return {}; } };
 const fullName = row => [row?.first, row?.last].map(part => String(part || '').trim()).filter(Boolean).join(' ');
@@ -132,12 +109,11 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
   /* ---------- who is asking ---------- */
   async function staff(req, { owner = false } = {}) {
-    const email = String(req.headers['x-kid-email'] || '').trim().toLowerCase();
-    const token = String(req.headers['x-kid-token'] || '');
-    const user = email && token ? await asStaff(env, email, token) : null;
+    const user = await headerStaff(env, req);
     if (!user) throw new HttpError(403, 'Sign in as a parent to see this.');
     if (owner && user.role !== 'super') throw new HttpError(403, 'Only the parent who set this up can change this.');
-    return { ...user, t: token };
+    // delegate() passes the same session on to api.js.
+    return { ...user, t: String(req.headers['x-kid-token']) };
   }
 
   // Runs one of api.js's own routes as this parent and returns its answer.
@@ -376,7 +352,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/review'(req) {
       const user = await staff(req);
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const clip = needClip(body.id);
       if (body.decision === 'approve') {
         const channel = approveClip(sqlite, env.notifications, clip.id, user.email);
@@ -404,7 +380,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/clips/hide'(req) {
       const user = await staff(req);
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const clip = needClip(body.id);
       const hidden = body.hidden === true;
       sqlite.prepare('UPDATE clips SET hidden=? WHERE id=?').run(hidden ? 1 : 0, clip.id);
@@ -414,7 +390,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/clips/rename'(req) {
       const user = await staff(req);
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const clip = needClip(body.id);
       const title = String(body.title || '').trim().slice(0, 80);
       if (!title) throw new HttpError(400, 'Give the video a name.');
@@ -425,7 +401,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/clips/order'(req) {
       const user = await staff(req);
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const channel = channelBySlug(sqlite, String(body.channel || ''));
       if (!channel) throw new HttpError(404, 'That kid is gone. Reload the page.');
       const order = Array.isArray(body.order) ? body.order.map(String).filter(id => CLIP.test(id)) : [];
@@ -438,7 +414,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/clips/delete'(req) {
       const user = await staff(req);
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const clip = needClip(body.id);
       await delegate(user, '/api/clips/delete', { id: clip.id });
       log(user.email, 'clip', clip.id, { action: 'delete', title: clip.title, channel: clip.channel });
@@ -463,7 +439,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/comments/moderate'(req) {
       const user = await staff(req);
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const id = String(body.id || '');
       const row = id.length <= 80 && sqlite.prepare('SELECT m.id, m.clip_id, c.title, ch.slug FROM comments m LEFT JOIN clips c ON c.id=m.clip_id LEFT JOIN channels ch ON ch.id=c.channel_id WHERE m.id=?').get(id);
       if (!row) throw new HttpError(404, 'That comment is gone. Reload the page.');
@@ -487,7 +463,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/people/status'(req) {
       const user = await staff(req, { owner: true });
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const person = needPerson(body.target);
       const status = String(body.status || '');
       const result = await delegate(user, '/api/admin/status', { target: person.email, status });
@@ -497,7 +473,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/people/role'(req) {
       const user = await staff(req, { owner: true });
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const person = needPerson(body.target);
       const role = String(body.role || '');
       if (!['', 'admin'].includes(role)) throw new HttpError(400, 'Choose viewer or co-parent.');
@@ -509,7 +485,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/people/password'(req) {
       const user = await staff(req, { owner: true });
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const person = needPerson(body.target);
       await delegate(user, '/api/admin/password', { target: person.email, pass: String(body.pass || '') });
       log(user.email, 'person', person.email, { action: 'password', target: person.email, name: fullName(person) });
@@ -519,7 +495,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
     // Removes a person and what they added: hearts, comments, watch history, queued emails and unused guest codes.
     async 'POST /api/admin/people/delete'(req) {
       const user = await staff(req, { owner: true });
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const person = needPerson(body.target);
       if (person.email === user.email) throw new HttpError(400, 'You can\'t remove your own account.');
       removePerson(person.email);
@@ -536,13 +512,13 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/kids'(req) {
       const user = await staff(req, { owner: true });
-      const kid = await family.saveKid(await readJson(req), user.email);
+      const kid = await family.saveKid(await readJson(req, MAX_BODY), user.email);
       return { kid };
     },
 
     async 'POST /api/admin/kids/order'(req) {
       const user = await staff(req, { owner: true });
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const ids = Array.isArray(body.order) ? body.order.map(Number) : [];
       const all = listChannels(sqlite).map(row => row.id);
       if (ids.length !== all.length || new Set(ids).size !== ids.length || ids.some(id => !all.includes(id))) throw new HttpError(400, 'Reload the page and try again.');
@@ -556,7 +532,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
     // A kid goes with their videos, their login and passes made just for them. The first channel stays.
     async 'POST /api/admin/kids/delete'(req) {
       const user = await staff(req, { owner: true });
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const kid = channelById(sqlite, Number(body.id));
       if (!kid) throw new HttpError(404, 'That kid was already removed.');
       if (kid.id === DEFAULT_CHANNEL_ID) throw new HttpError(409, 'The first kid can be renamed but not removed.');
@@ -605,7 +581,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/guests'(req) {
       const user = await staff(req);
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const note = String(body.note || '').trim().slice(0, 40);
       const channel = String(body.channel || '');
       const result = await delegate(user, '/api/guest/generate', channel ? { channel } : {});
@@ -616,7 +592,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
 
     async 'POST /api/admin/guests/end'(req) {
       const user = await staff(req);
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const id = String(body.id || '');
       const row = /^[a-f0-9]{12}$/.test(id) && sqlite.prepare('SELECT code_hash FROM guest_codes WHERE substr(code_hash,1,12)=?').get(id);
       if (!row) throw new HttpError(404, 'That code is gone. Reload the page.');
@@ -635,7 +611,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
     // Saves the settings given; locked ones (set in the environment) are skipped and named in the answer.
     async 'POST /api/admin/settings'(req) {
       const user = await staff(req, { owner: true });
-      const body = await readJson(req);
+      const body = await readJson(req, MAX_BODY);
       const values = body.values && typeof body.values === 'object' ? body.values : {};
       const keys = Object.keys(values);
       const unknown = keys.filter(key => !EDITABLE.includes(key));
@@ -701,14 +677,14 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
   async function answer(req, res, route, url) {
     try {
       const result = await route(req, url);
-      json(res, 200, { ok: true, ...result });
+      sendJson(res, 200, { ok: true, ...result });
     } catch (error) {
       if (res.headersSent) { res.destroy(error); return; }
-      if (error instanceof HttpError) return json(res, error.status, { ok: false, error: error.message });
-      if (error instanceof FamilyError) return json(res, error.status, { ok: false, error: error.message });
-      if (error instanceof SettingError) return json(res, 400, { ok: false, error: error.message });
+      if (error instanceof HttpError) return sendJson(res, error.status, { ok: false, error: error.message });
+      if (error instanceof FamilyError) return sendJson(res, error.status, { ok: false, error: error.message });
+      if (error instanceof SettingError) return sendJson(res, 400, { ok: false, error: error.message });
       console.error('Dashboard request failed', error);
-      json(res, 500, { ok: false, error: 'Something went wrong. Try again.' });
+      sendJson(res, 500, { ok: false, error: 'Something went wrong. Try again.' });
     }
   }
 
@@ -717,7 +693,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
     const method = req.method === 'HEAD' ? 'GET' : req.method;
     const route = routes[`${method} ${pathname}`];
     if (route) { answer(req, res, route, new URL(req.url, 'http://localhost')); return true; }
-    if (Object.keys(routes).some(key => key.endsWith(' ' + pathname))) { json(res, 405, { ok: false, error: 'Method not allowed.' }); return true; }
+    if (Object.keys(routes).some(key => key.endsWith(' ' + pathname))) { sendJson(res, 405, { ok: false, error: 'Method not allowed.' }); return true; }
     // Kid and viewer accounts never reach the dashboard; signed-out parents get its sign-in card.
     if (pathname === '/parents' && method === 'GET') {
       const who = cookieViewer(req, sqlite, env);

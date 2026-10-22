@@ -7,6 +7,7 @@ import { asStaff } from './api.js';
 import { BadgeSpecError, renderSpec } from './badge.mjs';
 import { canViewChannel, channelById, channelBySlug } from './channels.mjs';
 import { ImageError, MAX_IMAGE_BYTES, cleanIcon, cleanImage, imageExtension } from './images.mjs';
+import { HttpError, headerStaff, sendJson } from './jsonio.mjs';
 
 // Badges, parent pictures and home-screen icons live under DATA_DIR/brand: family/* for the family's
 // badge and icons, channels/<id>/* for each kid. Files are named by content hash and never change, so
@@ -23,15 +24,6 @@ const MAX_JSON = 16 * 1024;
 const MAX_ICON = 1024 * 1024;
 const ADMIN_CHANNEL = /^\/api\/admin\/channels\/([^/]+)\/(badge|image)$/;
 const ADMIN_ICON = /^\/api\/admin\/brand\/icons\/([^/]+)$/;
-
-class HttpError extends Error {
-  constructor(status, message) { super(message); this.status = status; }
-}
-
-function json(res, status, value) {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(value));
-}
 
 async function body(req, limit) {
   if (Number(req.headers['content-length']) > limit) throw new HttpError(413, 'That file is too big.');
@@ -177,10 +169,9 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
   }
 
   /* ---------- parent changes ---------- */
+  // The dashboard sends its session in headers; a JSON body may carry it instead, like api.js routes.
   async function staff(req, payload = {}) {
-    const email = String(req.headers['x-kid-email'] || payload.email || '').trim().toLowerCase();
-    const token = String(req.headers['x-kid-token'] || payload.t || '');
-    const user = await asStaff(env, email, token);
+    const user = await headerStaff(env, req) || await asStaff(env, String(payload.email || '').trim().toLowerCase(), String(payload.t || ''));
     if (!user) throw new HttpError(403, 'Only parents can change badges.');
     return user;
   }
@@ -209,7 +200,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
         const index = await readIndex(dir);
         let spec = null;
         try { const saved = JSON.parse(channel.badge); spec = saved && Object.keys(saved).length ? saved : null; } catch {}
-        return json(res, 200, { ok: true, spec, url: channelUrl(id, index.badge), imageUrl: channelUrl(id, index.image) });
+        return sendJson(res, 200, { ok: true, spec, url: channelUrl(id, index.badge), imageUrl: channelUrl(id, index.image) });
       }
       if (what === 'badge' && req.method === 'PUT') {
         const payload = await jsonBody(req);
@@ -220,7 +211,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
         const { logo_rev: rev } = bumpBadge.get(JSON.stringify(spec), Number(id));
         const { slug } = channelFrom(id);
         log.run(Date.now(), user.email, 'badge', `channel:${id}`, JSON.stringify({ file: name }));
-        return json(res, 200, { ok: true, spec, svg, url: channelUrl(id, name), logoUrl: `/brand/${slug}.svg?v=${rev}` });
+        return sendJson(res, 200, { ok: true, spec, svg, url: channelUrl(id, name), logoUrl: `/brand/${slug}.svg?v=${rev}` });
       }
       if (what === 'image' && req.method === 'PUT') {
         const user = await owner(req);
@@ -228,19 +219,19 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
         const image = cleanImage(await body(req, MAX_IMAGE_BYTES));
         const name = await replace(dir, 'image', imageExtension(image.kind), image.bytes);
         log.run(Date.now(), user.email, 'image', `channel:${id}`, JSON.stringify({ file: name }));
-        return json(res, 200, { ok: true, url: channelUrl(id, name), width: image.width, height: image.height });
+        return sendJson(res, 200, { ok: true, url: channelUrl(id, name), width: image.width, height: image.height });
       }
       if (what === 'image' && req.method === 'DELETE') {
         const user = await owner(req);
         channelFrom(id);
         if (await remove(dir, 'image')) log.run(Date.now(), user.email, 'image', `channel:${id}`, '{"removed":true}');
-        return json(res, 200, { ok: true });
+        return sendJson(res, 200, { ok: true });
       }
       throw new HttpError(405, 'Method not allowed.');
     }
     if (pathname === '/api/admin/brand' && req.method === 'GET') {
       await staff(req);
-      return json(res, 200, { ok: true, spec: env.settings.get('family_badge'), ...await family() });
+      return sendJson(res, 200, { ok: true, spec: env.settings.get('family_badge'), ...await family() });
     }
     if (pathname === '/api/admin/brand/badge' && req.method === 'PUT') {
       const payload = await jsonBody(req);
@@ -248,7 +239,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
       const { spec, svg } = renderSpec(payload.spec);
       const name = await replace(familyDir, 'badge', 'svg', svg);
       env.settings.set('family_badge', spec, user.email);
-      return json(res, 200, { ok: true, spec, svg, url: familyUrl(name) });
+      return sendJson(res, 200, { ok: true, spec, svg, url: familyUrl(name) });
     }
     const iconRoute = ADMIN_ICON.exec(pathname);
     if (iconRoute && req.method === 'PUT') {
@@ -258,7 +249,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
       const png = cleanIcon(await body(req, MAX_ICON), ICON_SIDES[variant]);
       const name = await replace(familyDir, `icon-${variant}`, 'png', png);
       log.run(Date.now(), user.email, 'icon', 'family', JSON.stringify({ file: name }));
-      return json(res, 200, { ok: true, url: familyUrl(name) });
+      return sendJson(res, 200, { ok: true, url: familyUrl(name) });
     }
     throw new HttpError(404, 'Not found.');
   }
@@ -270,10 +261,10 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
     } catch (error) {
       req.resume();
       if (res.headersSent) { res.destroy(error); return; }
-      if (error instanceof HttpError) return json(res, error.status, { ok: false, error: error.message });
-      if (error instanceof BadgeSpecError || error instanceof ImageError) return json(res, 400, { ok: false, error: error.message });
+      if (error instanceof HttpError) return sendJson(res, error.status, { ok: false, error: error.message });
+      if (error instanceof BadgeSpecError || error instanceof ImageError) return sendJson(res, 400, { ok: false, error: error.message });
       console.error('Brand request failed', error);
-      return json(res, 500, { ok: false, error: 'Something went wrong. Try again.' });
+      return sendJson(res, 500, { ok: false, error: 'Something went wrong. Try again.' });
     }
   }
 

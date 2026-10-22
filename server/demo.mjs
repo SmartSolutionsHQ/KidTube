@@ -23,6 +23,7 @@ import { BRAND_NAME, BRAND_TOKENS } from './brand.mjs';
 import { migrate, SCHEMA_VERSION } from './schema.mjs';
 import { clientIp } from './setup.mjs';
 import { createSandboxes } from './demo-sandbox.mjs';
+import { readJson, sendJson } from './jsonio.mjs';
 import { PAGE_POLICY } from './static.mjs';
 
 export class DemoError extends Error {}
@@ -115,10 +116,6 @@ const escapeHtml = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp
 
 const MINUTE = 60000;
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-const json = (res, status, value) => {
-  res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(value));
-};
 
 // DEMO_MODE=1 (or true, yes, on) turns it on; unset, empty or 0 leaves a normal install. Anything else
 // stops the server, so a typo never quietly runs a family's install as a demo or the demo as a family's.
@@ -383,57 +380,45 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
     };
   }
 
-  async function readBody(req, limit = 4096) {
-    const chunks = [];
-    let size = 0;
-    for await (const chunk of req) {
-      size += chunk.length;
-      if (size > limit) return null;
-      chunks.push(chunk);
-    }
-    try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); } catch { return null; }
-  }
-
   // The one-tap sign-in: the same session and cookie a real login gets, for a demo account only.
   async function enter(req, res) {
-    if (limited(req, '/api/demo/enter')) { req.resume(); return json(res, 429, { ok: false, error: 'Slow down a little.' }); }
-    const body = await readBody(req);
+    if (limited(req, '/api/demo/enter')) { req.resume(); return sendJson(res, 429, { ok: false, error: 'Slow down a little.' }); }
+    const body = await readJson(req, 4096).catch(() => null);
     const role = body && Object.hasOwn(DEMO_ROLES, body.role) ? DEMO_ROLES[body.role] : null;
-    if (!role) return json(res, 400, { ok: false, error: 'Pick a kid, Grandma or a parent.' });
+    if (!role) return sendJson(res, 400, { ok: false, error: 'Pick a kid, Grandma or a parent.' });
     const account = sqlite.prepare('SELECT email, role, status FROM accounts WHERE email=?').get(role.email);
-    if (!account || account.status !== 'approved') return json(res, 503, { ok: false, error: 'The demo is resetting. Try again in a moment.' });
+    if (!account || account.status !== 'approved') return sendJson(res, 503, { ok: false, error: 'The demo is resetting. Try again in a moment.' });
     const t = await sessToken(env, account.email);
-    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Set-Cookie': accountCookie(env, sqlite, account.email) });
-    res.end(JSON.stringify({ ok: true, email: account.email, status: 'approved', role: account.role, t, go: role.go }));
+    sendJson(res, 200, { ok: true, email: account.email, status: 'approved', role: account.role, t, go: role.go }, { 'Set-Cookie': accountCookie(env, sqlite, account.email) });
   }
 
   // The feed reports what it watched; the demo says thanks and keeps nothing, so one visitor's
   // watching never shows in "Who watched" or spends a shared kid's daily tape.
   async function watched(req, res, pathname) {
-    await readBody(req, 16384);
+    await readJson(req).catch(() => null);
     const who = viewer(req, sqlite, env);
-    if (!who) return json(res, 401, { ok: false, error: 'Log in to view this channel.' });
+    if (!who) return sendJson(res, 401, { ok: false, error: 'Log in to view this channel.' });
     const budget = env.watch && who.email ? env.watch.budgetFor(who.email) : null;
-    json(res, 200, pathname === '/api/view' ? { ok: true, viewId: 0, budget } : { ok: true, added: 0, budget });
+    sendJson(res, 200, pathname === '/api/view' ? { ok: true, viewId: 0, budget } : { ok: true, added: 0, budget });
   }
 
   function refuse(req, res, pathname) {
     req.resume();
     const error = REFUSALS.find(([pattern]) => pattern.test(pathname))?.[1] || CALM;
-    json(res, 403, { ok: false, demo: true, error });
+    sendJson(res, 403, { ok: false, demo: true, error });
   }
 
   // Runs before every other route. True when the demo answered the request.
   function handle(req, res, pathname) {
     const method = req.method === 'HEAD' ? 'GET' : req.method;
     if (pathname === '/api/demo') {
-      if (method !== 'GET') { req.resume(); json(res, 405, { ok: false, error: 'Method not allowed.' }); return true; }
-      json(res, 200, info());
+      if (method !== 'GET') { req.resume(); sendJson(res, 405, { ok: false, error: 'Method not allowed.' }); return true; }
+      sendJson(res, 200, info());
       return true;
     }
     if (pathname === '/api/demo/enter') {
-      if (method !== 'POST') { req.resume(); json(res, 405, { ok: false, error: 'Method not allowed.' }); return true; }
-      enter(req, res).catch(error => { console.error('Demo sign-in failed', error); if (!res.headersSent) json(res, 500, { ok: false, error: 'Something went wrong. Try again.' }); });
+      if (method !== 'POST') { req.resume(); sendJson(res, 405, { ok: false, error: 'Method not allowed.' }); return true; }
+      enter(req, res).catch(error => { console.error('Demo sign-in failed', error); if (!res.headersSent) sendJson(res, 500, { ok: false, error: 'Something went wrong. Try again.' }); });
       return true;
     }
     // A visitor's own sandbox, and the dashboard's kid routes it answers for the demo's parent.
@@ -442,13 +427,13 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
     if (pathname === '/api/notifications/unsubscribe') { refuse(req, res, pathname); return true; }
     if (method === 'GET' || method === 'OPTIONS') { sandboxes?.overlay(req, res, pathname); return false; }
     if (pathname === '/api/view' || pathname === '/api/view/beat') {
-      watched(req, res, pathname).catch(error => { console.error('Demo view failed', error); if (!res.headersSent) json(res, 500, { ok: false, error: 'Something went wrong.' }); });
+      watched(req, res, pathname).catch(error => { console.error('Demo view failed', error); if (!res.headersSent) sendJson(res, 500, { ok: false, error: 'Something went wrong.' }); });
       return true;
     }
     if (OPEN_WRITES.has(pathname)) {
       if (!limited(req, pathname)) return false;
       req.resume();
-      json(res, 429, { ok: false, error: 'Slow down a little.' });
+      sendJson(res, 429, { ok: false, error: 'Slow down a little.' });
       return true;
     }
     refuse(req, res, pathname);
