@@ -78,7 +78,7 @@ function show(number, view) {
   cleanup = view.cleanup || (() => {});
   paintRail(number);
   const title = el('h1', { class: 'kp-title', tabindex: '-1' }, view.title);
-  body.replaceChildren(el('div', { class: 'su-intro' }, title, view.lead ? el('p', { class: 'kp-lead' }, view.lead) : null), ...view.content);
+  body.replaceChildren(el('div', { class: 'su-intro' }, title, view.lead ? el('p', { class: 'kp-lead' }, view.lead) : null), ...view.content.filter(Boolean));
   document.title = `${view.title} · ${brand ? `${brand} demo` : 'Demo'}`;
   if (!firstPaint) { title.focus(); window.scrollTo(0, 0); }
   firstPaint = false;

@@ -72,7 +72,7 @@ function show(number, view) {
   if (navigable(number) && location.hash !== `#step-${number}`) history.replaceState(null, '', `#step-${number}`);
   paintFrame();
   const title = el('h1', { class: 'kp-title', tabindex: '-1' }, view.title);
-  body.replaceChildren(el('div', { class: 'su-intro' }, title, view.lead ? el('p', { class: 'kp-lead' }, view.lead) : null), ...view.content);
+  body.replaceChildren(el('div', { class: 'su-intro' }, title, view.lead ? el('p', { class: 'kp-lead' }, view.lead) : null), ...view.content.filter(Boolean));
   document.title = `${view.title} · Set up ${state?.brand?.name || ''}`.trim();
   if (!firstPaint) { title.focus(); window.scrollTo(0, 0); }
   firstPaint = false;
