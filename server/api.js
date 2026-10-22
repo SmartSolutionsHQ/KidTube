@@ -11,8 +11,10 @@ export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const p = url.pathname.replace(/\/+$/, '');
-    /* who the signed cookie names (access.mjs), or null; index.mjs passes it in */
+    /* who the signed cookie names (access.mjs), or null, and the address the rate limits count by
+       (setup.mjs clientIp); index.mjs passes both in */
     const viewer = (ctx && ctx.viewer) || null;
+    const ip = (ctx && ctx.ip) || 'unknown';
     try {
       /* a sealed time capsule's comments, likes and legacy media are closed to all but parents (capsules.mjs) */
       const sealed = env.capsules && await env.capsules.guard(req, p, viewer);
@@ -23,10 +25,10 @@ export default {
       if (p === '/api/me') return await me(env, viewer);
       if (p === '/api/notifications/unsubscribe' && env.handleVideoUnsubscribe) return env.handleVideoUnsubscribe(req);
 
-      if (req.method === 'POST' && p === '/api/signup') return await signup(req, env);
+      if (req.method === 'POST' && p === '/api/signup') return await signup(req, env, ip);
       if (req.method === 'POST' && p === '/api/login') return await login(req, env);
       if (req.method === 'POST' && p === '/api/guest/generate') return await guestGenerate(req, env);
-      if (req.method === 'POST' && p === '/api/guest/redeem') return await guestRedeem(req, env);
+      if (req.method === 'POST' && p === '/api/guest/redeem') return await guestRedeem(req, env, ip);
       if (req.method === 'POST' && p === '/api/guest/validate') return await guestValidate(req, env);
       if (p === '/api/check') return await check(req, url, env);
       if (p === '/api/pending') return DENY403();
@@ -45,7 +47,7 @@ export default {
       if (p === '/api/likes') { const r = await likesAll(req, url, env, viewer); return env.capsules ? env.capsules.omitSealed(r) : r; }
       if (req.method === 'POST' && p === '/api/like') return await likeSet(req, env);
       if (p === '/api/comments') return await commentsList(req, url, env, viewer);
-      if (req.method === 'POST' && p === '/api/comment') return await commentAdd(req, env);
+      if (req.method === 'POST' && p === '/api/comment') return await commentAdd(req, env, ip);
       if (req.method === 'POST' && p === '/api/comment/delete') return await commentDelete(req, env);
       return J({ ok: false, error: 'not found' }, 404);
     } catch (err) {
@@ -70,13 +72,21 @@ async function hmac(secret, msg) {
 }
 
 async function db(env, q, params) {
-  const r = await env.DB.prepare(q).bind(...(params || [])).run();
-  return r;
+  return env.DB.prepare(q).bind(...(params || [])).run();
+}
+
+/* Records one use of a route by this address in a table of (ip, ts) rows and returns how many it made
+   within the window. Older rows go first, so the table only ever holds the window. */
+async function usesWithin(env, table, ip, windowMs) {
+  const now = Date.now();
+  await db(env, `DELETE FROM ${table} WHERE ts < ?`, [now - windowMs]);
+  await db(env, `INSERT INTO ${table} (ip, ts) VALUES (?, ?)`, [ip, now]);
+  return (await db(env, `SELECT COUNT(*) AS n FROM ${table} WHERE ip = ? AND ts > ?`, [ip, now - windowMs])).results[0].n;
 }
 
 /* ---------- signup ---------- */
 const CLOSED403 = (what) => J({ ok: false, error: 'This family is not taking new ' + what + ' right now.' }, 403);
-async function signup(req, env) {
+async function signup(req, env, ip) {
   if (env.settings.get('signup_mode') === 'closed') return CLOSED403('accounts');
   const b = await req.json().catch(() => null);
   if (!b) return J({ ok: false, error: 'bad body' }, 400);
@@ -84,22 +94,18 @@ async function signup(req, env) {
   const last = String(b.last || '').trim().slice(0, 40);
   const email = String(b.email || '').trim().toLowerCase();
   if (typeof b.pass !== 'string' || b.pass.length < PASSWORD_MIN || b.pass.length > PASSWORD_MAX) return J({ ok: false, error: `Use a password of ${PASSWORD_MIN}–${PASSWORD_MAX} characters.` }, 400);
-  const {salt,hash}=await passwordRecord(b.pass);
   if (!first || !last) return J({ ok: false, error: 'name' }, 400);
   /* kid logins live on the reserved .invalid domain and are made only by a parent */
   if (!isEmail(email) || email.endsWith('@' + KID_DOMAIN)) return J({ ok: false, error: 'email' }, 400);
 
-
   /* light rate limit per IP: max 5 signups per hour */
-  const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
-  await db(env, 'DELETE FROM hits WHERE ts < ?', [Date.now() - 3600000]);
-  await db(env, 'INSERT INTO hits (ip, ts) VALUES (?, ?)', [ip, Date.now()]);
-  const c = await db(env, 'SELECT COUNT(*) AS n FROM hits WHERE ip = ? AND ts > ?', [ip, Date.now() - 3600000]);
-  if ((c.results && c.results[0] && c.results[0].n || 0) > 5) return J({ ok: false, error: 'slow down' }, 429);
+  if (await usesWithin(env, 'hits', ip, 60 * 60 * 1000) > 5) return J({ ok: false, error: 'slow down' }, 429);
 
   /* Every request gets the same answer, so signup can't be used to learn who has an account (kid logins
      included); only a new request emails the parent. */
   const SENT = () => J({ ok: true, status: 'pending' });
+  /* hashed before the lookup, so a known email answers no faster than a new one */
+  const { salt, hash } = await passwordRecord(b.pass);
   const exists = await db(env, 'SELECT status FROM accounts WHERE email = ?', [email]);
   if (exists.results && exists.results.length) return SENT();
   await db(env, 'INSERT INTO accounts (email, first, last, salt, hash, status, created) VALUES (?,?,?,?,?,?,?)',
@@ -277,7 +283,7 @@ async function guestGenerate(req, env) {
   }
   return J({ ok: false, error: 'Could not create a code. Try again.' }, 503);
 }
-async function guestRedeem(req, env) {
+async function guestRedeem(req, env, ip) {
   if (!env.settings.get('guest_passes')) return CLOSED403('guest passes');
   const payload = await req.json().catch(() => null);
   if (!payload) return J({ ok: false, error: 'Invalid request.' }, 400);
@@ -287,7 +293,6 @@ async function guestRedeem(req, env) {
   const now = Date.now();
   guestFails = guestFails.filter((at) => at > now - GUEST_WINDOW);
   if (guestFails.length >= GUEST_FAILS) return J({ ok: false, error: 'Too many wrong codes. Try again in ten minutes.' }, 429);
-  const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
   await db(env, 'DELETE FROM guest_code_attempts WHERE ts < ?', [now - 10 * 60 * 1000]);
   const recent = await db(env, 'SELECT COUNT(*) AS n FROM guest_code_attempts WHERE ip = ?', [ip]);
   if (((recent.results || [])[0]?.n || 0) >= 5) {
@@ -687,7 +692,7 @@ async function commentsList(req, url, env, viewer) {
   return J({ ok: true, rows: rows });
 }
 
-async function commentAdd(req, env) {
+async function commentAdd(req, env, ip) {
   const b = await req.json().catch(() => null);
   if (!b) return J({ ok: false, error: 'bad body' }, 400);
   if (!isClipId(b.clipId)) return J({ ok: false, error: 'clip' }, 400);
@@ -699,11 +704,7 @@ async function commentAdd(req, env) {
   const mode = env.settings.get('comments_default');
   if (mode === 'off') return J({ ok: false, error: 'Comments are turned off.' }, 403);
   /* light rate limit per IP: max 10 comments per 10 minutes */
-  const ip = req.headers.get('CF-Connecting-IP') || 'unknown';
-  await db(env, 'DELETE FROM chits WHERE ts < ?', [Date.now() - 600000]);
-  await db(env, 'INSERT INTO chits (ip, ts) VALUES (?, ?)', [ip, Date.now()]);
-  const c = await db(env, 'SELECT COUNT(*) AS n FROM chits WHERE ip = ? AND ts > ?', [ip, Date.now() - 600000]);
-  if ((c.results && c.results[0] && c.results[0].n || 0) > 10) return J({ ok: false, error: 'slow down' }, 429);
+  if (await usesWithin(env, 'chits', ip, 10 * 60 * 1000) > 10) return J({ ok: false, error: 'slow down' }, 429);
   const a = await db(env, 'SELECT first, last FROM accounts WHERE email = ?', [email]);
   const acc = a.results && a.results[0];
   const name = displayName(acc && acc.first, acc && acc.last) || 'A viewer';

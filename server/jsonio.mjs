@@ -1,5 +1,5 @@
 // Request and response helpers for the routes that run on node:http directly (everything but api.js):
-// JSON bodies and answers, HttpError, and the parent's dashboard session.
+// JSON bodies and answers, HttpError, the parent's dashboard session, and an in-memory rate limit.
 import { asStaff } from './api.js';
 import { isStaff } from './channels.mjs';
 
@@ -46,6 +46,19 @@ export async function staffFor(env, req, who, body) {
   const url = new URL(req.url, 'http://localhost');
   if (url.searchParams.has('e')) return asStaff(env, unb64u(url.searchParams.get('e')).trim().toLowerCase(), url.searchParams.get('t') || '');
   return isStaff(who) ? who : null;
+}
+
+// A sliding-window limit kept in memory: hit(key) counts one use and is true once key has gone over
+// `limit` uses in `windowMs`. Past maxKeys the whole map is dropped, so a flood cannot grow it forever.
+export function rateLimit({ limit, windowMs, maxKeys = 5000 }) {
+  const uses = new Map();
+  return function hit(key, at = Date.now()) {
+    const recent = (uses.get(key) || []).filter(time => time > at - windowMs);
+    if (uses.size > maxKeys) uses.clear();
+    recent.push(at);
+    uses.set(key, recent);
+    return recent.length > limit;
+  };
 }
 
 // Runs a route and turns thrown HttpErrors into JSON answers.

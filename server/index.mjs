@@ -90,12 +90,10 @@ async function sendApi(req, res, who) {
     chunks.push(chunk);
   }
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
-  const headers = new Headers(req.headers);
-  headers.set('CF-Connecting-IP', clientIp(req));
   const body = chunks.length ? Buffer.concat(chunks) : undefined;
-  const request = new Request(url, { method: req.method, headers, body });
+  const request = new Request(url, { method: req.method, headers: new Headers(req.headers), body });
   if(url.pathname==='/api/logout'&&req.method==='POST'){res.writeHead(200,{'Set-Cookie':clearCookie(env),'Content-Type':'application/json'}).end('{"ok":true}');return;}
-  const response = await api.fetch(request, env, { viewer: who });
+  const response = await api.fetch(request, env, { viewer: who, ip: clientIp(req) });
   const out = Object.fromEntries(response.headers);
   out['Cache-Control'] = 'no-store';
   if(response.ok&&['/api/login','/api/check','/api/guest/redeem','/api/guest/validate'].includes(url.pathname)) {

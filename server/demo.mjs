@@ -23,7 +23,7 @@ import { BRAND_NAME, BRAND_TOKENS } from './brand.mjs';
 import { migrate, SCHEMA_VERSION } from './schema.mjs';
 import { clientIp } from './setup.mjs';
 import { createSandboxes } from './demo-sandbox.mjs';
-import { readJson, sendJson } from './jsonio.mjs';
+import { rateLimit, readJson, sendJson } from './jsonio.mjs';
 import { PAGE_POLICY } from './static.mjs';
 
 export class DemoError extends Error {}
@@ -318,7 +318,7 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
   const snapshot = readSnapshot(snapshotDir(dataDir, processEnv));
   const installUrl = processEnv.DEMO_INSTALL_URL || INSTALL_URL;
   const salt = randomBytes(32);
-  const hits = new Map();
+  const limits = Object.fromEntries(Object.entries(LIMITED).map(([name, limit]) => [name, rateLimit({ limit, windowMs: LIMIT_WINDOW_MS, maxKeys: 20000 })]));
   let base = null, env = null, timer = null, lastReset = 0, nextReset = 0, sandboxes = null;
 
   const interval = minutes * MINUTE;
@@ -326,15 +326,9 @@ export function openDemo({ sqlite, dataDir, database, env: processEnv = process.
 
   // Per visitor, in memory only: the address is keyed through a per-boot secret and never written down.
   function limited(req, pathname) {
-    const limit = LIMITED[pathname];
-    if (!limit) return false;
-    const at = now();
-    const key = pathname + '|' + createHmac('sha256', salt).update(clientIp(req)).digest('hex').slice(0, 24);
-    if (hits.size > 20000) hits.clear();
-    const recent = (hits.get(key) || []).filter(time => time > at - LIMIT_WINDOW_MS);
-    recent.push(at);
-    hits.set(key, recent);
-    return recent.length > limit;
+    if (!Object.hasOwn(limits, pathname)) return false;
+    const visitor = createHmac('sha256', salt).update(clientIp(req)).digest('hex').slice(0, 24);
+    return limits[pathname](visitor, now());
   }
 
   function reset() {

@@ -1,7 +1,7 @@
 // Reactions: five stickers a signed-in viewer can toggle on a clip, next to the heart. Each kind is the id
 // of a vendored Fluent sticker in public/badge/stickers.json, so the feed draws them with the badge paths.
 // Guests watch only; sealed clips take none. No emails or activity rows, just counts.
-import { HttpError, answer, readJson, sendJson } from './jsonio.mjs';
+import { HttpError, answer, rateLimit, readJson, sendJson } from './jsonio.mjs';
 import { sessOk } from './api.js';
 import { CLIP_ACCESS_SQL, canPlayClip, canViewChannel, isClipId } from './channels.mjs';
 import { sealedFor } from './capsules.mjs';
@@ -11,17 +11,9 @@ export const RATE_LIMIT = 60;
 export const RATE_WINDOW_MS = 60 * 1000;
 
 export function createReactions({ sqlite, env, now = Date.now }) {
-  const writes = new Map();
+  // Per account: 60 writes a minute is far beyond tapping, well under a script.
+  const limited = rateLimit({ limit: RATE_LIMIT, windowMs: RATE_WINDOW_MS });
   const visible = `JOIN clips c ON c.id=r.clip_id WHERE c.hidden=0 AND c.review='approved' AND c.opens_at<=?`;
-
-  // In memory, per account: 60 writes a minute is far beyond tapping, well under a script.
-  function limited(email, at) {
-    const recent = (writes.get(email) || []).filter(time => time > at - RATE_WINDOW_MS);
-    if (writes.size > 5000) writes.clear();
-    recent.push(at);
-    writes.set(email, recent);
-    return recent.length > RATE_LIMIT;
-  }
 
   const countsFor = clipId => Object.fromEntries(sqlite.prepare('SELECT kind, COUNT(*) n FROM reactions WHERE clip_id=? GROUP BY kind').all(clipId)
     .map(row => [row.kind, row.n]));

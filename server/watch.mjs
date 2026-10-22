@@ -4,7 +4,7 @@
 // day is spent gets its video refused until local midnight. Parents, Family and guests are never limited.
 // The log stores who, what, when and how long: no IP address, no user agent. Rows older than
 // views_retention_days are pruned at boot and daily. GET /api/admin/views reads it for "Who watched".
-import { HttpError, answer, readJson, sendJson, staffFor } from './jsonio.mjs';
+import { HttpError, answer, rateLimit, readJson, sendJson, staffFor } from './jsonio.mjs';
 import { displayName, isEmail } from './api.js';
 import { CLIP_ACCESS_SQL, canPlayClip, isClipId, isStaff } from './channels.mjs';
 import { sealedFor } from './capsules.mjs';
@@ -56,7 +56,7 @@ export function dayStart(now, timezone) {
 }
 
 export function createWatch({ sqlite, settings, env, now = Date.now }) {
-  const starts = new Map();
+  const tooManyStarts = rateLimit({ limit: START_LIMIT, windowMs: 60 * MINUTE });
   let timer = null;
   const timezone = () => settings.get('family_timezone');
   const log = (actor, kind, subject, detail) => sqlite.prepare('INSERT INTO activity (ts,actor,kind,subject,detail) VALUES (?,?,?,?,?)')
@@ -110,11 +110,7 @@ export function createWatch({ sqlite, settings, env, now = Date.now }) {
     if (sealed) throw new HttpError(403, 'sealed', { opensAt: sealed.opensAt });
     const budget = budgetFor(who.email, at);
     if (budget && budget.remaining <= 0) { noteEnd(who.email, budget, at); throw new HttpError(403, 'end-of-tape', { resetsAt: budget.resetsAt, budget }); }
-    const recent = (starts.get(key) || []).filter(time => time > at - 3600000);
-    if (starts.size > 5000) starts.clear();
-    recent.push(at);
-    starts.set(key, recent);
-    if (recent.length > START_LIMIT) throw new HttpError(429, 'Slow down a little.');
+    if (tooManyStarts(key, at)) throw new HttpError(429, 'Slow down a little.');
     const credit = Math.floor(Math.min(START_CREDIT_S, Math.max(0, Number(body.seconds) || 0)));
     const viewId = Number(sqlite.prepare('INSERT INTO views (clip_id,channel_id,viewer,started,updated,seconds) VALUES (?,?,?,?,?,?)')
       .run(clipId, clip.channel_id, key, at, at, credit).lastInsertRowid);
