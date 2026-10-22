@@ -3,7 +3,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { passwordRecord, passwordMatches } from './passwords.mjs';
 import { sendMail } from './mail.mjs';
 import { BRAND_NAME, WORDMARK } from './brand.mjs';
-import { kidEmail } from './family.mjs';
+import { KID_DOMAIN, kidEmail } from './family.mjs';
 import { CLIP_ACCESS_SQL, canPlayClip, canViewChannel } from './channels.mjs';
 import { approveClip, rejectClip } from './publish.mjs';
 
@@ -86,7 +86,8 @@ async function signup(req, env) {
   if (typeof b.pass !== 'string' || b.pass.length < 12 || b.pass.length > 128) return J({ok:false,error:'Use a password of 12–128 characters.'},400);
   const {salt,hash}=await passwordRecord(b.pass);
   if (!first || !last) return J({ ok: false, error: 'name' }, 400);
-  if (!EMAIL_OK(email)) return J({ ok: false, error: 'email' }, 400);
+  /* kid logins live on the reserved .invalid domain and are made only by a parent */
+  if (!EMAIL_OK(email) || email.endsWith('@' + KID_DOMAIN)) return J({ ok: false, error: 'email' }, 400);
 
 
   /* light rate limit per IP: max 5 signups per hour */
@@ -96,15 +97,15 @@ async function signup(req, env) {
   const c = await db(env, 'SELECT COUNT(*) AS n FROM hits WHERE ip = ? AND ts > ?', [ip, Date.now() - 3600000]);
   if ((c.results && c.results[0] && c.results[0].n || 0) > 5) return J({ ok: false, error: 'slow down' }, 429);
 
+  /* Every request gets the same answer, so signup can't be used to learn who has an account (kid logins
+     included); only a new request emails the parent. */
+  const SENT = () => J({ ok: true, status: 'pending' });
   const exists = await db(env, 'SELECT status FROM accounts WHERE email = ?', [email]);
-  if (exists.results && exists.results.length) {
-    const st = exists.results[0].status;
-    if (st === 'pending') return J({ ok: true, status: 'pending', notified: await notify(env, first, last, email) });
-    return J({ ok: false, error: 'exists' }, 409);
-  }
+  if (exists.results && exists.results.length) return SENT();
   await db(env, 'INSERT INTO accounts (email, first, last, salt, hash, status, created) VALUES (?,?,?,?,?,?,?)',
     [email, first, last, salt, hash, 'pending', Date.now()]);
-  return J({ ok: true, status: 'pending', notified: await notify(env, first, last, email) });
+  await notify(env, first, last, email);
+  return SENT();
 }
 
 /* ---------- notify email via Brevo; the request is saved either way ---------- */

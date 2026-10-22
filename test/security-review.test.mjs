@@ -10,7 +10,7 @@ import { sessOk, sessToken } from '../server/api.js';
 import { openDatabase } from '../server/db.mjs';
 import { migrate } from '../server/schema.mjs';
 import { ROOT, startInstall, PARENT } from './helpers.mjs';
-import { startFamily, memoryDatabase, KID, KID_EMAIL } from './family-fixture.mjs';
+import { startFamily, memoryDatabase, KID, KID_EMAIL, VIEWER } from './family-fixture.mjs';
 
 const fakeReq = (forwarded, remote = '10.0.0.9') => ({ headers: forwarded ? { 'x-forwarded-for': forwarded } : {}, socket: { remoteAddress: remote } });
 
@@ -209,4 +209,21 @@ test('L4: session signatures are checked in constant time', async t => {
   const body = source.slice(source.indexOf('async function sessOk'), source.indexOf('const dispName'));
   assert.doesNotMatch(body, /sig\s*!==/, 'no plain string comparison of the signature');
   assert.match(body, /sameHex\(/);
+});
+
+test('L5: signup gives one answer whether or not the email has an account, and refuses kid logins', { timeout: 60000 }, async t => {
+  const family = await startFamily(t);
+  const { json, db, viewer } = family;
+  const ask = (email, i) => json('/api/signup', { body: { first: 'Ask', last: 'Er', email, pass: 'a-long-enough-password' }, headers: { 'x-forwarded-for': `192.0.2.${i}` } });
+  const fresh = await ask('brand-new@example.com', 1);
+  const again = await ask('brand-new@example.com', 2);
+  const approved = await ask(viewer.email, 3);
+  assert.equal(fresh.status, 200);
+  assert.deepEqual([again.status, again.body], [fresh.status, fresh.body]);
+  assert.deepEqual([approved.status, approved.body], [fresh.status, fresh.body], 'an approved account looks the same');
+  const kid = await ask(KID_EMAIL, 4), madeUpKid = await ask('nobody-here@kids.invalid', 5);
+  assert.deepEqual([kid.status, kid.body], [madeUpKid.status, madeUpKid.body]);
+  assert.equal(kid.status, 400);
+  assert.equal(db.prepare("SELECT COUNT(*) n FROM accounts WHERE email='brand-new@example.com'").get().n, 1);
+  assert.equal((await family.login(VIEWER)).status, 'approved', 'the existing account and its password are untouched');
 });

@@ -135,8 +135,8 @@ function accessForm(box, mode, message) {
       const body = Object.fromEntries(new FormData(form));
       if (body.email) body.email = body.email.toLowerCase().trim();
       const reply = await post(mode === 'guest' ? '/api/guest/redeem' : mode === 'signup' ? '/api/signup' : '/api/login', body);
-      if (!reply.ok) throw Error(reply.error === 'exists' ? 'That account already exists. Try logging in.' : reply.error || 'Could not connect. Try again.');
-      if (mode === 'signup') { render('login', 'Request sent. Once a parent approves your account, log in here.'); return; }
+      if (!reply.ok) throw Error(reply.error === 'email' ? 'Use your email address.' : reply.error || 'Could not connect. Try again.');
+      if (mode === 'signup') { render('login', 'Request sent. Once a parent approves your account, log in here. If you already have one, just log in.'); return; }
       if (mode === 'guest') { finish({ guest: true, guestToken: reply.token, role: 'guest', exp: reply.expires, scope: reply.scope || null }); return; }
       if (reply.status !== 'approved') {
         status.textContent = reply.status === 'pending' ? 'Your account is waiting for a parent to approve it.' : 'This account has not been approved.';
