@@ -124,3 +124,25 @@ test('M3: uploads nobody finished are swept after a day, with any stray folders'
   assert.equal(existsSync(queued), true, 'a finished upload waiting to convert stays');
   assert.equal(existsSync(stray), false);
 });
+
+test('L1 and M4: kids\' badges stay within a guest pass and never sit in a shared cache', { timeout: 60000 }, async t => {
+  const family = await startFamily(t);
+  const { call, db, parent, guest } = family;
+  const spec = { v: 1, shape: 'star', bg: '#FF5C2B', text: { value: 'TOBI', font: 'anton', color: '#0B0C10' } };
+  const saved = await (await call('/api/admin/channels/1/badge', { method: 'PUT', body: { email: parent.email, t: parent.t, spec } })).json();
+  const pass = await (await call('/api/guest/generate', { body: { email: parent.email, t: parent.t, channel: 'ada' } })).json();
+  const adaOnly = (await call('/api/guest/redeem', { body: { code: pass.code } })).headers.get('set-cookie').split(';')[0];
+  const get = (path, cookie) => fetch(family.origin + path, { headers: cookie ? { cookie } : {} });
+
+  const shown = await get(saved.url);
+  assert.equal(shown.status, 200, 'kids_public is on by default');
+  assert.equal(shown.headers.get('cache-control'), 'private, max-age=3600');
+  assert.equal((await get(saved.logoUrl)).headers.get('cache-control'), 'private, max-age=3600');
+
+  db.prepare("INSERT INTO settings (key,value,updated) VALUES ('kids_public','false',0) ON CONFLICT(key) DO UPDATE SET value='false'").run();
+  for (const path of [saved.url, saved.logoUrl, '/brand/tobi.svg']) {
+    assert.equal((await get(path)).status, 401, `signed out ${path}`);
+    assert.equal((await get(path, adaOnly)).status, 404, `Ada's guest pass ${path}`);
+    assert.equal((await get(path, guest.cookie)).status, 200, `a whole-family pass ${path}`);
+  }
+});
