@@ -498,6 +498,11 @@ body[data-mode="immersive"] .kt-pause-host {
   top: calc(var(--tz-safe-t) + var(--tz-head-h) + 44px);
 }
 
+/* One play mark at a time: the theme's pause screen brings its own. */
+.tz-slide:has(.kt-pause-host[data-kt-shown]) .tz-glyph {
+  opacity: 0;
+}
+
 /* the switch-kid button in the header */
 #switch-kid[hidden] {
   display: none;
