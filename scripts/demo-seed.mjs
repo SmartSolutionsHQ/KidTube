@@ -446,7 +446,7 @@ const SCENES = {
   mandelbrot: `mandelbrot=s=${W}x${H}:r=${FPS}:maxiter=300:start_scale=2.6:end_scale=1.4:end_pts=${CLIP_SECONDS * FPS}:start_x=-0.743643887:start_y=0.131825904:outer=normalized_iteration_count,hue=s=0.9`,
   grid: `gradients=s=${W}x${H}:c0=0x1D0F3B:c1=0xFF5C2B:c2=0x3B1D6B:n=3:type=linear:speed=0.01:seed=4:r=${FPS},drawgrid=w=60:h=60:t=2:c=white@0.12`,
   ocean: `gradients=s=${W}x${H}:c0=0x062A4D:c1=0x0E6BA8:c2=0x4DB8FF:n=3:type=linear:x0=0:y0=0:x1=0:y1=${H}:speed=0.006:seed=2:r=${FPS}`,
-  life: `life=s=54x96:r=2:ratio=0.18:seed=7:mold=40:life_color=0x4DB8FF:death_color=0x0B0C2A:mold_color=0x16305A,scale=${W}:${H}:flags=neighbor,fps=${FPS},tmix=frames=12`,
+  life: `life=s=54x96:r=2:ratio=0.18:seed=7:mold=40:life_color=0x2F6AA3:death_color=0x0B1530:mold_color=0x152B4F,scale=${W}:${H}:flags=neighbor,fps=${FPS},tmix=frames=12`,
   jungle: `gradients=s=${W}x${H}:c0=0x0F3D1F:c1=0x3DFFB0:c2=0x1F6B2F:n=3:type=circular:speed=0.008:seed=9:r=${FPS}`,
   sunset: `gradients=s=${W}x${H}:c0=0xFFD23F:c1=0xFF5C2B:c2=0x6A1B6B:n=3:type=linear:x0=0:y0=0:x1=0:y1=${H}:speed=0.006:seed=5:r=${FPS}`,
   rainbow: `gradients=s=${W}x${H}:c0=0xFF6FB5:c1=0xFFD23F:c2=0x3DFFB0:c3=0x4DB8FF:c4=0xA98BFF:n=5:type=spiral:speed=0.01:seed=3:r=${FPS}`,

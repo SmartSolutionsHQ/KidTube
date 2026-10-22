@@ -125,7 +125,7 @@
 /* On the front door the block sits under the kids' badges, centred like the rest of the door. */
 .kt-door .ktd-try { width: min(420px, 100%); margin: 18px auto 4px; }
 .kt-door .ktd-try-head, .kt-door .ktd-try-note { text-align: center; }
-.ktd-try-compact { margin: 0 0 14px; }
+.ktd-try-compact { margin: 14px 0; }
 
 .ktd-install {
   display: inline-block;
