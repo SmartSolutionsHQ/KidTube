@@ -26,6 +26,22 @@ export function slugFrom(name) {
   return base || 'kid';
 }
 
+// Everything an account left behind, for the caller's own transaction: hearts, comments, watch history,
+// reactions, email queue and preferences, unused guest codes and uploads. Activity rows keep what happened
+// but say "someone" instead of the person's email and name.
+export function erasePerson(sqlite, email) {
+  for (const sql of ['DELETE FROM likes WHERE email=?', 'DELETE FROM comments WHERE email=?', 'DELETE FROM views WHERE viewer=?',
+    'DELETE FROM reactions WHERE email=?', 'DELETE FROM watch_bonus WHERE email=?', 'DELETE FROM video_notification_deliveries WHERE email=?',
+    'DELETE FROM video_email_preferences WHERE email=?', 'DELETE FROM guest_codes WHERE creator=? AND redeemed IS NULL',
+    "DELETE FROM upload_jobs WHERE email=? AND status<>'processing'", "DELETE FROM activity WHERE kind='seen' AND subject=?",
+    "UPDATE activity SET detail=json_set(detail,'$.name','someone') WHERE json_valid(detail) AND json_extract(detail,'$.target')=?",
+    "UPDATE activity SET actor='someone' WHERE actor=?", "UPDATE activity SET subject='someone' WHERE subject=?",
+    'DELETE FROM accounts WHERE email=?']) sqlite.prepare(sql).run(email);
+  // As a whole JSON string, so a longer address that contains this one is left alone.
+  const quoted = JSON.stringify(email);
+  sqlite.prepare(`UPDATE activity SET detail=replace(detail,?,'"someone"') WHERE instr(detail,?)>0`).run(quoted, quoted);
+}
+
 const text = (value, max, label, { required = false } = {}) => {
   const clean = typeof value === 'string' ? value.trim() : value == null ? '' : null;
   if (clean === null || clean.length > max) throw new FamilyError(400, `${label} can be up to ${max} characters.`);
@@ -123,9 +139,9 @@ export function createFamily({ sqlite, themeIds = () => [], removeChannelFiles =
           VALUES (?,?,?,?,?,?,?,?)`).run(slug, name, kicker, accent, themeId, reviewUploads ? 1 : 0, position, Date.now()).lastInsertRowid);
       }
       if (!email) {
-        sqlite.prepare("DELETE FROM accounts WHERE role='kid' AND channel_id=?").run(channelId);
+        for (const login of sqlite.prepare("SELECT email FROM accounts WHERE role='kid' AND channel_id=?").all(channelId)) erasePerson(sqlite, login.email);
       } else {
-        if (existing && existing.email !== email) sqlite.prepare('DELETE FROM accounts WHERE email=?').run(existing.email);
+        if (existing && existing.email !== email) erasePerson(sqlite, existing.email);
         if (existing?.email === email) {
           sqlite.prepare('UPDATE accounts SET first=? WHERE email=?').run(name, email);
           if (record) sqlite.prepare('UPDATE accounts SET salt=?, hash=? WHERE email=?').run(record.salt, record.hash, email);
@@ -154,7 +170,7 @@ export function createFamily({ sqlite, themeIds = () => [], removeChannelFiles =
     if (sqlite.prepare('SELECT 1 FROM clips WHERE channel_id=? LIMIT 1').get(row.id)) throw new FamilyError(409, 'This channel has videos, so it stays.');
     sqlite.exec('BEGIN IMMEDIATE');
     try {
-      sqlite.prepare("DELETE FROM accounts WHERE role='kid' AND channel_id=?").run(row.id);
+      for (const login of sqlite.prepare("SELECT email FROM accounts WHERE role='kid' AND channel_id=?").all(row.id)) erasePerson(sqlite, login.email);
       sqlite.prepare('DELETE FROM channels WHERE id=?').run(row.id);
       log(actor, 'channel', row.id, { action: 'remove', slug: row.slug, name: row.name });
       sqlite.exec('COMMIT');

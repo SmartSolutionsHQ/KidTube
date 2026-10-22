@@ -6,7 +6,7 @@ import { viewer as cookieViewer } from './access.mjs';
 import { BRAND_NAME } from './brand.mjs';
 import { DEFAULT_CHANNEL_ID, channelById, channelBySlug, isStaff, listChannels } from './channels.mjs';
 import { InstallError, checkSiteUrl } from './config.mjs';
-import { FamilyError } from './family.mjs';
+import { FamilyError, erasePerson } from './family.mjs';
 import { sendMail } from './mail.mjs';
 import { approveClip, rejectClip } from './publish.mjs';
 import { SettingError } from './settings.mjs';
@@ -514,7 +514,8 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
       const person = needPerson(body.target);
       if (person.email === user.email) throw new HttpError(400, 'You can\'t remove your own account.');
       removePerson(person.email);
-      log(user.email, 'person', person.email, { action: 'delete', target: person.email, name: fullName(person) });
+      // The record of the removal names nobody, like the rows erasePerson rewrote.
+      log(user.email, 'person', 'someone', { action: 'delete', name: 'someone' });
       return {};
     },
 
@@ -682,11 +683,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
   function removePerson(email) {
     sqlite.exec('BEGIN IMMEDIATE');
     try {
-      for (const sql of ['DELETE FROM likes WHERE email=?', 'DELETE FROM comments WHERE email=?', 'DELETE FROM views WHERE viewer=?',
-        'DELETE FROM reactions WHERE email=?', 'DELETE FROM watch_bonus WHERE email=?',
-        "DELETE FROM video_notification_deliveries WHERE email=? AND status<>'sent'", 'DELETE FROM video_email_preferences WHERE email=?',
-        'DELETE FROM guest_codes WHERE creator=? AND redeemed IS NULL', "DELETE FROM activity WHERE kind='seen' AND subject=?",
-        'DELETE FROM accounts WHERE email=?']) sqlite.prepare(sql).run(email);
+      erasePerson(sqlite, email);
       sqlite.exec('COMMIT');
     } catch (error) { sqlite.exec('ROLLBACK'); throw error; }
     seen.delete(email);

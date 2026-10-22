@@ -227,3 +227,34 @@ test('L5: signup gives one answer whether or not the email has an account, and r
   assert.equal(db.prepare("SELECT COUNT(*) n FROM accounts WHERE email='brand-new@example.com'").get().n, 1);
   assert.equal((await family.login(VIEWER)).status, 'approved', 'the existing account and its password are untouched');
 });
+
+test('L6: removing a person, or a kid login from the kid form, leaves no email or name behind', { timeout: 60000 }, async t => {
+  const family = await startFamily(t);
+  const { json, db, parent, viewer } = family;
+  const owner = { 'x-kid-email': parent.email, 'x-kid-token': parent.t };
+  const everywhere = needle => db.prepare("SELECT name FROM sqlite_schema WHERE type='table'").all().flatMap(({ name }) =>
+    db.prepare(`PRAGMA table_info(${name})`).all().filter(column => db.prepare(`SELECT COUNT(*) n FROM ${name} WHERE instr(CAST(${column.name} AS TEXT), ?)>0`).get(needle).n)
+      .map(column => `${name}.${column.name}`));
+  // A trail like a real account's: approved, password reset, a sent email, an upload job, a budget.
+  await json('/api/admin/people/password', { headers: owner, body: { target: viewer.email, pass: 'another-long-password' } });
+  db.prepare("INSERT INTO video_announcements (clip_id,title,blurb,duration,published,created) VALUES ('tobi-1','t','',1,'',0)").run();
+  db.prepare("INSERT INTO video_notification_deliveries (clip_id,email,delivery_key,status,next_attempt) VALUES ('tobi-1',?,'k1','sent',0)").run(viewer.email);
+  db.prepare("INSERT INTO upload_jobs (id,email,title,size,status,created,updated) VALUES ('99999999-9999-4999-8999-999999999999',?,'t',1,'done',0,0)").run(viewer.email);
+  db.prepare("INSERT INTO activity (ts,actor,kind,subject,detail) VALUES (0,?,'person',?,?)").run(parent.email, viewer.email, JSON.stringify({ action: 'approved', target: viewer.email, name: 'Nana Okafor' }));
+  db.prepare("INSERT INTO activity (ts,actor,kind,subject,detail) VALUES (0,?,'comment','x','{}')").run(viewer.email);
+  db.prepare("INSERT INTO activity (ts,actor,kind,subject,detail) VALUES (0,'system','guest','x',?)").run(JSON.stringify({ note: 'x', by: `x${viewer.email}` }));
+  assert.ok(everywhere(viewer.email).length > 3);
+  assert.equal((await json('/api/admin/people/delete', { headers: owner, body: { target: viewer.email } })).status, 200);
+  assert.deepEqual(everywhere(viewer.email).filter(where => !where.startsWith('activity.detail')), []);
+  assert.ok(!db.prepare('SELECT detail FROM activity').all().some(row => row.detail.includes(`"${viewer.email}"`)));
+  assert.ok(db.prepare('SELECT detail FROM activity').all().some(row => row.detail.includes(`x${viewer.email}`)), 'a longer address that contains it is left alone');
+  assert.deepEqual(everywhere('Nana Okafor'), []);
+  const feed = await json('/api/admin/activity?kind=people', { headers: owner });
+  assert.ok(feed.body.rows.some(row => /someone/.test(row.text)));
+
+  // A kid login taken off in the kid form goes the same way.
+  db.prepare("INSERT INTO likes (clip_id,email,created) VALUES ('tobi-1',?,0)").run(KID_EMAIL);
+  db.prepare("INSERT INTO views (clip_id,channel_id,viewer,started,updated) VALUES ('tobi-1',1,?,0,0)").run(KID_EMAIL);
+  assert.equal((await json('/api/admin/kids', { headers: owner, body: { id: 1, name: 'Tobi', login: null } })).status, 200);
+  assert.deepEqual(everywhere(KID_EMAIL), []);
+});
