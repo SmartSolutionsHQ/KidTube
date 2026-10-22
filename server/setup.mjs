@@ -1,5 +1,6 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { rmSync, writeFileSync, chmodSync } from 'node:fs';
+import { isIP } from 'node:net';
 import { accountCookie, viewer } from './access.mjs';
 import { asStaff, sessToken } from './api.js';
 import { BRAND_NAME, ENDORSEMENT } from './brand.mjs';
@@ -209,8 +210,8 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
   async function state(req) {
     const base = {
       ok: true, brand: { name: BRAND_NAME, endorsement: ENDORSEMENT }, steps: STEPS,
-      production: process.env.NODE_ENV === 'production', origin: requestOrigin(req),
-      tokenFile: paths.tokenFile, docker: paths.dataDir === '/data',
+      // Not the token file's path: anyone can ask this before the claim, and the path names the data folder.
+      production: process.env.NODE_ENV === 'production', origin: requestOrigin(req), docker: paths.dataDir === '/data',
     };
     if (unclaimed()) return { ...base, stage: 'code', disabled: killed || !codeHash };
     let email = null;
@@ -402,5 +403,19 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
     return site ? origin === site : origin === requestOrigin(req);
   }
 
-  return { handle, originAllowed, announce, get active() { return unclaimed(); } };
+  // DNS rebinding: a page on someone else's domain can point that name at this computer, and the browser then
+  // treats the app as part of that page's site. Once the family has a web address, a request must name it, an
+  // IP address (a rebinding page always arrives under its own name), localhost, or a name in ALLOWED_HOSTS.
+  // Before that, the setup code is the gate.
+  function hostAllowed(req) {
+    const site = settings.get('site_url');
+    if (!site || !req.headers.host) return true;
+    let host;
+    try { host = new URL(`http://${req.headers.host}`).hostname.toLowerCase(); } catch { return false; }
+    if (host === new URL(site).hostname || host === 'localhost' || host.endsWith('.localhost')) return true;
+    if (isIP(host.replace(/^\[|\]$/g, ''))) return true;
+    return String(process.env.ALLOWED_HOSTS || '').toLowerCase().split(',').map(name => name.trim()).filter(Boolean).includes(host);
+  }
+
+  return { handle, originAllowed, hostAllowed, announce, get active() { return unclaimed(); } };
 }

@@ -1,5 +1,7 @@
 // Regressions for docs/plan/security-review.md: each test names the finding it pins down.
 import test from 'node:test';
+import { spawn } from 'node:child_process';
+import { request } from 'node:http';
 import assert from 'node:assert/strict';
 import { addressKey, clientIp, createSetup } from '../server/setup.mjs';
 import { createMonitor } from '../server/monitor.mjs';
@@ -335,4 +337,47 @@ test('L9: new-video emails link to the web address the wizard saved after boot',
   assert.match(sent[0].htmlContent, /https:\/\/videos\.example\.test\/#\/c\/main\/v\/clip-1/);
   assert.match(sent[0].textContent, /https:\/\/videos\.example\.test\/api\/notifications\/unsubscribe\?/);
   assert.doesNotMatch(sent[0].htmlContent, /localhost/);
+});
+
+// node's fetch picks the Host header itself, so these requests go through node:http.
+const withHost = (origin, path, host) => new Promise((resolve, reject) => {
+  const url = new URL(path, origin);
+  request({ host: url.hostname, port: url.port, path: url.pathname + url.search, headers: { host } }, response => {
+    let text = '';
+    response.on('data', chunk => { text += chunk; });
+    response.on('end', () => resolve({ status: response.statusCode, text }));
+  }).on('error', reject).end();
+});
+
+test('L10: once the family has a web address, other host names are refused (DNS rebinding)', { timeout: 60000 }, async t => {
+  const install = await startInstall(t, { ALLOWED_HOSTS: 'kidbox.local, Videos.Example.Test' });
+  // The install's web address is http://localhost:3000.
+  for (const host of ['evil.example', 'evil.example:3000', 'localhost.evil.example', 'kidbox.lan']) {
+    const answer = await withHost(install.origin, '/api/site', host);
+    assert.equal(answer.status, 421, host);
+    assert.doesNotMatch(answer.text, /"ok"/, host);
+  }
+  for (const host of ['localhost:3000', 'LOCALHOST', '127.0.0.1:3000', '192.168.1.20:3000', '[::1]:3000', 'kids.localhost', 'kidbox.local', 'videos.example.test:8443']) {
+    assert.equal((await withHost(install.origin, '/api/site', host)).status, 200, host);
+  }
+  assert.equal((await withHost(install.origin, '/api/health', 'anything.example')).status, 200, 'the health check never depends on the name');
+  assert.equal((await withHost(install.origin, '/', 'evil.example')).status, 421, 'pages too');
+});
+
+test('L10: before setup, anyone may ask for the state, but it no longer names the data folder', { timeout: 60000 }, async t => {
+  const dir = mkdtempSync(join(tmpdir(), 'kidtube-fresh-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const env = { ...process.env, PORT: '0', HOST: '127.0.0.1', DATABASE_PATH: join(dir, 'data/kidtube.sqlite'), PUBLIC_DIR: join(ROOT, 'public'), MAIL_MODE: 'disabled' };
+  for (const key of ['SIGN_SECRET', 'SITE_URL', 'DATA_DIR', 'TRUST_PROXY']) delete env[key];
+  const child = spawn(process.execPath, [join(ROOT, 'server/index.mjs')], { cwd: dir, env, stdio: ['ignore', 'pipe', 'pipe'] });
+  t.after(() => child.kill());
+  const port = await new Promise((resolve, reject) => {
+    child.stdout.on('data', chunk => { const match = /listening on (\d+)/.exec(String(chunk)); if (match) resolve(match[1]); });
+    child.once('exit', () => reject(new Error('the server stopped')));
+  });
+  const state = await (await fetch(`http://127.0.0.1:${port}/api/setup/state`)).json();
+  assert.equal(state.stage, 'code');
+  assert.equal('tokenFile' in state, false);
+  assert.ok(!JSON.stringify(state).includes(dir), 'the data folder path is not in the answer');
+  assert.equal((await withHost(`http://127.0.0.1:${port}`, '/api/setup/state', 'any-name.example')).status, 200, 'no web address yet, so any name works');
 });

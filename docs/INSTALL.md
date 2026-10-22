@@ -116,6 +116,9 @@ Out of the box, KidTube only answers the computer it runs on. To try it from pho
 3. On a phone on the same Wi-Fi, open `http://192.168.1.20:3000`.
 4. In the parent dashboard, under Settings, set the web address to that same `http://192.168.1.20:3000`.
 
+Use the number, as above. Once the web address is set, a name such as `kidbox.local` answers "not the web
+address this family uses" unless you list it in `.env` as `ALLOWED_HOSTS=kidbox.local`.
+
 This is fine for a trial. Two things to know: sign-ins on plain `http://` are not encrypted on your Wi-Fi, and
 phones only install the app from an `https://` address. The next two parts fix both.
 

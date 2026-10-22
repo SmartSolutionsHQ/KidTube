@@ -120,6 +120,8 @@ const server = http.createServer((req, res) => {
   res.setHeader('Referrer-Policy','no-referrer');
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('X-Frame-Options','DENY');
+  // The health check answers whatever the Host, so Docker and monitors on the box itself keep working.
+  if(!setup.hostAllowed(req)&&req.url.split('?')[0]!=='/api/health'){res.writeHead(421,{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'}).end('This is not the web address this family uses. Open the address from the parent dashboard, or add this name to ALLOWED_HOSTS.\n');return;}
   if(!['GET','HEAD','OPTIONS'].includes(req.method)&&!setup.originAllowed(req)){res.writeHead(403).end();return;}
   let pathname;
   try { pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname).replace(/\/+$/, '') || '/'; }catch{res.writeHead(400).end();return;}
