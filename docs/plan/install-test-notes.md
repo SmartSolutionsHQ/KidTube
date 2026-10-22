@@ -29,6 +29,8 @@ Branch `claude/install-test-88e3b0`, cut from `foundation-clean`. Not pushed, ta
   `compose.yaml`), or it names a path that doesn't exist on their computer.
 - `.env` reaches the app through `env_file`, but a variable exported in the shell reaches only what
   `compose*.yaml` passes explicitly. Pass anything both Caddy and the app need in both places.
+- The named-volume fix message spells the Compose service name (`docker compose run … kidtube …` in
+  `server/config.mjs` and its test). Renaming the service in `compose.yaml` means changing it there too.
 - Colima only shares `$HOME` with its VM. Bind mounts (`./data`, `./Caddyfile`) from `/tmp` or other places
   outside home silently mount an empty folder.
 
