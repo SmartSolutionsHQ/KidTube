@@ -17,6 +17,8 @@ import { channelHash, parseRoute, routeClip } from './route.mjs';
 import { clearSession, logOut, openAuth, openProfile, readSession, revalidate, wireAuthDialog, writeSession } from './auth-dialog.js';
 import { closeDoor, openDoor, openLobby, openNote } from './gate.js';
 import { badgeFor, openSwitcher } from './picker.js';
+// Registers the service worker for the home-screen app (secure contexts only).
+import './pwa.js';
 
 // recovery.js reads this once when it boots to know a splash is coming; showSplash() replaces it.
 window.__tzsplash ??= { state: 'pending' };

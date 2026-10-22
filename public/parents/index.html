@@ -7,6 +7,11 @@
   <meta name="robots" content="noindex">
   <meta name="theme-color" content="#05060A">
   <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <link rel="stylesheet" href="/css/reset.css">
   <link rel="stylesheet" href="/css/fonts.css">
   <link rel="stylesheet" href="/css/base.css">
@@ -27,6 +32,7 @@
         <p class="kp-small kd-who" id="kd-who"></p>
         <div class="kd-nav-links">
           <a href="/">Back to the videos</a>
+          <a href="/install">Add to a home screen</a>
           <button class="kp-btn kp-btn-quiet" type="button" id="kd-signout" hidden>Sign out</button>
         </div>
         <span class="kd-credit">
@@ -47,5 +53,6 @@
   </noscript>
 
   <script type="module" src="/js/parent/app.js"></script>
+  <script type="module" src="/js/shell/pwa.js"></script>
 </body>
 </html>

@@ -19,6 +19,7 @@ import { createSetup } from './setup.mjs';
 import { createCapsules } from './capsules.mjs';
 import { createReactions } from './reactions.mjs';
 import { createWatch } from './watch.mjs';
+import { createPwa } from './pwa.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const publicDir = resolve(process.env.PUBLIC_DIR || 'public');
@@ -68,6 +69,8 @@ env.deleteLocalVideo = uploads.deleteVideo;
 const brandFiles = createBrandFiles({ sqlite, env, dataDir });
 const family = createFamily({ sqlite, themeIds: () => themes.list().map(theme => theme.id), removeChannelFiles: brandFiles.removeChannel });
 const setup = createSetup({ sqlite, settings, env, paths: install, family, sendFile });
+// The home-screen app: manifest, Apple icon and the service worker, built from the shell as it is now.
+const pwa = createPwa({ settings, brandFiles, dataDir, publicDir, pageHtml: sendFile.pageHtml });
 const monitor = (await import('./monitor.mjs')).createMonitor({ sqlite, settings, env, family, paths: install });
 notifications.kick();
 
@@ -114,6 +117,7 @@ const server = http.createServer((req, res) => {
   let pathname;
   try { pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname).replace(/\/+$/, '') || '/'; }catch{res.writeHead(400).end();return;}
   if(pathname==='/api/themes'){themes.handle(req,res);return;}
+  if(pwa.handle(req,res,pathname))return;
   if(setup.handle(req,res,pathname))return;
   if(monitor.handle(req,res,pathname))return;
   if(['/api/login','/api/signup','/api/guest/redeem'].includes(pathname)){
