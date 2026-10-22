@@ -146,7 +146,8 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ ...body, email: user.email, t: user.t }),
     });
-    const response = await api.fetch(request, env, { viewer: null });
+    // internal: these routes write their own activity rows, so api.js doesn't add a second.
+    const response = await api.fetch(request, env, { viewer: null, internal: true });
     const result = await response.json().catch(() => ({}));
     if (!response.ok || !result.ok) throw new HttpError(response.status >= 400 ? response.status : 400, result.error || 'That did not work. Try again.');
     return result;

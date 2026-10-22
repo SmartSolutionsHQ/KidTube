@@ -300,3 +300,18 @@ test('L7: rate-limit addresses go within the hour, and the setup claim keeps no 
   assert.ok(claim, 'the claim is still recorded');
   assert.ok(!claim.detail.includes('203.0.113.7'), claim.detail);
 });
+
+test('L8: clip changes made through the direct routes are recorded once, like the dashboard\'s', { timeout: 60000 }, async t => {
+  const family = await startFamily(t);
+  const { json, db, coparent } = family;
+  const rows = () => db.prepare("SELECT actor, subject, detail FROM activity WHERE kind='clip' ORDER BY id").all()
+    .map(row => [row.actor, row.subject, JSON.parse(row.detail).action]);
+  const as = { email: coparent.email, t: coparent.t };
+  assert.equal((await json('/api/clips/rename', { body: { ...as, id: 'tobi-1', title: 'Quietly renamed' } })).status, 200);
+  assert.equal((await json('/api/clips/reorder', { body: { ...as, order: ['tobi-2', 'tobi-1'] } })).status, 200);
+  assert.equal((await json('/api/clips/delete', { body: { ...as, id: 'ada-1' } })).status, 200);
+  assert.deepEqual(rows(), [[coparent.email, 'tobi-1', 'rename'], [coparent.email, 'channel:1', 'order'], [coparent.email, 'ada-1', 'delete']]);
+  const headers = { 'x-kid-email': coparent.email, 'x-kid-token': coparent.t };
+  assert.equal((await json('/api/admin/clips/rename', { headers, body: { id: 'tobi-2', title: 'Through the dashboard' } })).status, 200);
+  assert.equal(rows().filter(([, subject]) => subject === 'tobi-2').length, 1, 'the dashboard route still writes exactly one row');
+});

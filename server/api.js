@@ -34,9 +34,9 @@ export default {
       if (p === '/api/clips') return await clipsList(url, env, viewer);
       if (p === '/api/clips/locate') return await clipsLocate(url, env, viewer);
       if (req.method === 'POST' && p === '/api/admin/clips/review') return await clipsReview(req, env);
-      if (req.method === 'POST' && p === '/api/clips/reorder') return await clipsReorder(req, env);
-      if (req.method === 'POST' && p === '/api/clips/rename') return await clipsRename(req, env);
-      if (req.method === 'POST' && p === '/api/clips/delete') return await clipsDelete(req, env);
+      if (req.method === 'POST' && p === '/api/clips/reorder') return await clipsReorder(req, env, ctx);
+      if (req.method === 'POST' && p === '/api/clips/rename') return await clipsRename(req, env, ctx);
+      if (req.method === 'POST' && p === '/api/clips/delete') return await clipsDelete(req, env, ctx);
       if (p.startsWith('/api/media/')) return await mediaServe(req, env, p, viewer);
       if (p === '/api/admin/overview') return await adminOverview(req, url, env);
       if (req.method === 'POST' && p === '/api/admin/status') return await adminStatus(req, env);
@@ -383,7 +383,15 @@ async function me(env, viewer) {
   return J({ ok: true, viewer: { role: String(row.role || ''), email: viewer.email, first: row.first || '', channel: row.role === 'kid' ? row.slug || null : null } });
 }
 
-async function clipsReorder(req, env) {
+/* Called directly, these write the activity row the dashboard's own routes write (monitor.mjs), so no
+   change goes unrecorded; the dashboard passes ctx.internal and records it itself. */
+function audit(env, from, actor, subject, detail) {
+  if ((from && from.internal) || !env.sqlite) return;
+  env.sqlite.prepare("INSERT INTO activity (ts,actor,kind,subject,detail) VALUES (?,?,'clip',?,?)").run(Date.now(), actor, subject, JSON.stringify(detail));
+}
+const clipFacts = async (env, id) => ((await db(env, 'SELECT c.title, c.channel_id, ch.slug FROM clips c LEFT JOIN channels ch ON ch.id = c.channel_id WHERE c.id = ?', [id])).results || [])[0];
+
+async function clipsReorder(req, env, from) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
   const list = Array.isArray(ctx.body.order) ? [...new Set(ctx.body.order.filter((s) => CLIP_OK(s)))] : [];
@@ -397,20 +405,26 @@ async function clipsReorder(req, env) {
     next.set(channelOf.get(id), position);
     await db(env, 'UPDATE clips SET position = ? WHERE id = ?', [position, id]);
   }
+  for (const channelId of next.keys()) {
+    const slug = ((await db(env, 'SELECT slug FROM channels WHERE id = ?', [channelId])).results || [])[0]?.slug || '';
+    audit(env, from, ctx.staff.email, `channel:${channelId}`, { action: 'order', channel: slug });
+  }
   return J({ ok: true, count: list.length });
 }
 
-async function clipsRename(req, env) {
+async function clipsRename(req, env, from) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
   const id = String(ctx.body.id || '');
   const title = String(ctx.body.title || '').trim().slice(0, 80);
   if (!CLIP_OK(id) || !title) return J({ ok: false, error: 'title' }, 400);
+  const before = await clipFacts(env, id);
   const r = await db(env, 'UPDATE clips SET title = ? WHERE id = ?', [title, id]);
+  if (before) audit(env, from, ctx.staff.email, id, { action: 'rename', from: before.title, title, channel: before.slug || '' });
   return J({ ok: true, changes: (r.meta && r.meta.changes) || 0 });
 }
 
-async function clipsDelete(req, env) {
+async function clipsDelete(req, env, from) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
   const id = String(ctx.body.id || '');
@@ -419,7 +433,9 @@ async function clipsDelete(req, env) {
   const row = c.results && c.results[0];
   if (!row) return J({ ok: false, error: 'no clip' }, 404);
   const m = (row.src || '').match(/^\/api\/media\/([A-Za-z0-9-]{8,80})$/);
+  const facts = await clipFacts(env, id);
   await db(env, 'DELETE FROM clips WHERE id = ?', [id]);
+  audit(env, from, ctx.staff.email, id, { action: 'delete', title: facts.title, channel: facts.slug || '' });
   if (m) {
     await db(env, 'DELETE FROM media WHERE id = ?', [m[1]]);
     await db(env, 'DELETE FROM media_chunks WHERE id = ?', [m[1]]);
