@@ -140,7 +140,9 @@ test('end of tape on the real routes', { timeout: 60000 }, async t => {
     assert.equal((await budget(kid, { target: KID_EMAIL, minutes: 30 })).status, 403);
     assert.equal((await budget(parent, { target: KID_EMAIL, minutes: 25 })).status, 400, 'one of the listed choices');
     assert.deepEqual((await budget(parent, { target: coparent.email, minutes: 30 })).body, { ok: false, error: 'Parents are never limited.' });
-    const set = await budget(coparent, { target: KID_EMAIL, minutes: 30 });
+    // Kids' tapes stay with the owner (security review M1).
+    assert.equal((await budget(coparent, { target: KID_EMAIL, minutes: 30 })).status, 403);
+    const set = await budget(parent, { target: KID_EMAIL, minutes: 30 });
     assert.equal(set.status, 200);
     assert.equal(set.body.minutes, 30);
     assert.deepEqual(set.body.budget, { limit: 1800, used: 0, remaining: 1800, resetsAt: set.body.resetsAt });
@@ -207,7 +209,10 @@ test('end of tape on the real routes', { timeout: 60000 }, async t => {
     assert.ok(all.body.rows.every((row, i, rows) => i === 0 || rows[i - 1].started >= row.started), 'newest first');
     const ada = await json('/api/admin/views?channel=ada', { cookie: parent.cookie });
     assert.deepEqual(ada.body.rows.map(row => row.clipId), ['ada-1']);
-    const kidOnly = await json(`/api/admin/views?viewer=${encodeURIComponent(KID_EMAIL)}`, { cookie: coparent.cookie });
+    // Watch history stays with the owner (security review M1).
+    assert.equal((await json('/api/admin/views', { cookie: coparent.cookie })).status, 403);
+    assert.equal((await json(`/api/admin/views?${family.staffQuery(coparent)}`)).status, 403);
+    const kidOnly = await json(`/api/admin/views?viewer=${encodeURIComponent(KID_EMAIL)}`, { cookie: parent.cookie });
     assert.ok(kidOnly.body.rows.length >= 2 && kidOnly.body.rows.every(row => row.viewer === KID_EMAIL && row.viewerName === 'Tobi'));
     const page = await json('/api/admin/views?limit=1', { cookie: parent.cookie });
     assert.equal(page.body.rows.length, 1);

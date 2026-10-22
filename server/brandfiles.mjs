@@ -180,6 +180,12 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
     if (!user) throw new HttpError(403, 'Only parents can change badges.');
     return user;
   }
+  // Kids' badges and pictures and the family's own belong to the owner, like the Kids and Settings screens.
+  async function owner(req, payload) {
+    const user = await staff(req, payload);
+    if (user.role !== 'super') throw new HttpError(403, 'Only the parent who set this up can change this.');
+    return user;
+  }
 
   function channelFrom(id) {
     const channel = channelById(sqlite, Number(id));
@@ -203,7 +209,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
       }
       if (what === 'badge' && req.method === 'PUT') {
         const payload = await jsonBody(req);
-        const user = await staff(req, payload);
+        const user = await owner(req, payload);
         channelFrom(id);
         const { spec, svg } = renderSpec(payload.spec);
         const name = await replace(dir, 'badge', 'svg', svg);
@@ -213,7 +219,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
         return json(res, 200, { ok: true, spec, svg, url: channelUrl(id, name), logoUrl: `/brand/${slug}.svg?v=${rev}` });
       }
       if (what === 'image' && req.method === 'PUT') {
-        const user = await staff(req);
+        const user = await owner(req);
         channelFrom(id);
         const image = cleanImage(await body(req, MAX_IMAGE_BYTES));
         const name = await replace(dir, 'image', imageExtension(image.kind), image.bytes);
@@ -221,7 +227,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
         return json(res, 200, { ok: true, url: channelUrl(id, name), width: image.width, height: image.height });
       }
       if (what === 'image' && req.method === 'DELETE') {
-        const user = await staff(req);
+        const user = await owner(req);
         channelFrom(id);
         if (await remove(dir, 'image')) log.run(Date.now(), user.email, 'image', `channel:${id}`, '{"removed":true}');
         return json(res, 200, { ok: true });
@@ -234,7 +240,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
     }
     if (pathname === '/api/admin/brand/badge' && req.method === 'PUT') {
       const payload = await jsonBody(req);
-      const user = await staff(req, payload);
+      const user = await owner(req, payload);
       const { spec, svg } = renderSpec(payload.spec);
       const name = await replace(familyDir, 'badge', 'svg', svg);
       env.settings.set('family_badge', spec, user.email);
@@ -244,7 +250,7 @@ export function createBrandFiles({ sqlite, env, dataDir }) {
     if (iconRoute && req.method === 'PUT') {
       const variant = iconRoute[1];
       if (!Object.hasOwn(ICON_SIDES, variant)) throw new HttpError(404, 'Unknown icon.');
-      const user = await staff(req);
+      const user = await owner(req);
       const png = cleanIcon(await body(req, MAX_ICON), ICON_SIDES[variant]);
       const name = await replace(familyDir, `icon-${variant}`, 'png', png);
       log.run(Date.now(), user.email, 'icon', 'family', JSON.stringify({ file: name }));

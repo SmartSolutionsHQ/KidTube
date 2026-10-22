@@ -542,12 +542,14 @@ async function adminOverview(url, env) {
     reactions: reactionTotals[c.id] || {},
     sealed: c.opens_at > Date.now(), opensAt: c.opens_at || 0, openedAt: c.opened_at || 0, capsuleNote: c.capsule_note || '',
   }));
+  /* the people list and their emails stay with the owner, as in /api/admin/people */
+  const owner = s.role === 'super';
   const fans = Object.entries(likesByFan)
-    .map(([email, n]) => ({ name: byName[email] || email, email: email, likes: n }))
+    .map(([email, n]) => ({ name: byName[email] || (owner ? email : 'Someone'), ...(owner ? { email } : {}), likes: n }))
     .sort((x, y) => y.likes - x.likes).slice(0, 12);
   return J({
     ok: true, role: s.role,
-    accounts: acc.results || [],
+    accounts: owner ? acc.results || [] : [],
     clips: clips, topFans: fans,
     recent: (cm.results || []).map((c) => ({ clip: c.clip_id, name: c.name, body: c.body, at: c.created, hidden: !!c.hidden })),
   });

@@ -66,3 +66,30 @@ test('H1: a fresh install without a proxy keeps the per-address login limit', { 
   for (let i = 0; i < 22; i++) statuses.push((await install.call('/api/login', { body: { email: `n${i}@example.com`, pass: 'x' } })).status);
   assert.equal(statuses.at(-1), 429);
 });
+
+test('M1: co-parents can review and moderate, but watch history, people, tapes and badges stay with the owner', { timeout: 60000 }, async t => {
+  const family = await startFamily(t);
+  const { json, parent, coparent, staffQuery } = family;
+  const as = who => ({ email: who.email, t: who.t });
+  const spec = { v: 1, shape: 'star', bg: '#FF5C2B', text: { value: 'TOBI', font: 'anton', color: '#0B0C10' } };
+  const routes = [
+    ['GET', '/api/admin/views', who => ({ path: `/api/admin/views?${staffQuery(who)}` })],
+    ['GET', '/api/admin/budget', who => ({ path: `/api/admin/budget?target=tobi%40kids.invalid&${staffQuery(who)}` })],
+    ['POST', '/api/admin/budget', who => ({ body: { ...as(who), target: KID_EMAIL, minutes: 30 } })],
+    ['POST', '/api/admin/budget/bonus', who => ({ body: { ...as(who), target: KID_EMAIL, minutes: 15 } })],
+    ['POST', '/api/admin/timezone', who => ({ body: { ...as(who), timezone: 'UTC' } })],
+    ['PUT', '/api/admin/channels/1/badge', who => ({ method: 'PUT', body: { ...as(who), spec } })],
+    ['PUT', '/api/admin/brand/badge', who => ({ method: 'PUT', body: { ...as(who), spec } })],
+  ];
+  const call = (who, path, make) => { const { path: p = path, ...options } = make(who); return json(p, options); };
+  for (const [method, path, make] of routes) assert.equal((await call(coparent, path, make)).status, 403, `co-parent ${method} ${path}`);
+  // The owner still can (the bonus needs a daily tape, which the budget route just before it sets).
+  for (const [method, path, make] of routes) assert.equal((await call(parent, path, make)).status, 200, `owner ${method} ${path}`);
+  // The overview keeps the co-parent's review work but not the people list or anyone's email.
+  const mine = await json(`/api/admin/overview?${staffQuery(coparent)}`);
+  assert.equal(mine.status, 200);
+  assert.deepEqual(mine.body.accounts, []);
+  assert.ok(mine.body.clips.length > 0);
+  assert.ok(!JSON.stringify(mine.body).includes('@'), 'no email addresses for a co-parent');
+  assert.ok((await json(`/api/admin/overview?${staffQuery(parent)}`)).body.accounts.length >= 4);
+});
