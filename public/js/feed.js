@@ -2,7 +2,10 @@
 import { publishVideo } from '/js/server-upload-v1.js';
 import { playClip, retryClip } from '/js/player-media-v1.js';
 var CATALOG = [];
-var serverClipsReady = new Promise(resolve => { if(window.kidUnlocked) resolve(); else document.addEventListener("kid:unlocked",resolve,{once:true}); }).then(() => fetch("/api/clips")).then((r) => r.json()).then((j) => {
+// The shell (js/shell/app.js) names the kid's channel in window.__ktChannel before it unlocks the feed.
+var channelSlug = () => window.__ktChannel?.slug || "";
+var clipHash = (id) => (channelSlug() ? "#/c/" + channelSlug() : "#") + "/v/" + id;
+var serverClipsReady = new Promise(resolve => { if(window.kidUnlocked) resolve(); else document.addEventListener("kid:unlocked",resolve,{once:true}); }).then(() => fetch("/api/clips" + (channelSlug() ? "?channel=" + encodeURIComponent(channelSlug()) : ""))).then((r) => r.json()).then((j) => {
   if (j && j.ok && Array.isArray(j.clips) ) {
     CATALOG.length = 0;
     for (const row of j.clips) CATALOG.push(row);
@@ -144,7 +147,7 @@ function buildReel() {
   clips.length = 0;
   for (const c of sorted) clips.push(c);
   order = clips.map((c, i) => i);
-  reel.innerHTML = clips.length ? clips.map(slideMarkup).join("") : '<section class="tz-slide" data-end="1"><p>The channel is waiting for its first videos.</p></section>';
+  reel.innerHTML = clips.length ? clips.map(slideMarkup).join("") : '<section class="tz-slide" data-end="1">' + (window.__ktShell?.emptyMarkup?.() || "<p>The channel is waiting for its first videos.</p>") + "</section>";
   slides = queryAll(".tz-slide", reel);
   $('[data-bind="total"]').textContent = String(clips.length).padStart(2, "0");
   $('[data-bind="log"]').innerHTML = logMarkup();
@@ -171,7 +174,7 @@ function logMarkup() {
 }
 function endplateMarkup() {
   return `<span class="tz-label">The end</span>
-    <p class="tz-meta">${clips.length} CLIPS \xB7 SINCE ${clips.length ? fmtDate(clips[clips.length - 1].publishedAt) : ""}</p>
+    <p class="tz-meta">${clips.length} ${clips.length === 1 ? "CLIP" : "CLIPS"}${clips.length ? " \xB7 SINCE " + fmtDate(clips[clips.length - 1].publishedAt) : ""}</p>
     <button class="tz-btn" type="button" data-act="top">BACK TO LATEST</button>`;
 }
 function applyFit(slide) {
@@ -284,7 +287,7 @@ function setActive(i, { scroll = true } = {}) {
   if (c) {
     hydrateReactions(state.index);
     $('[data-bind="live"]').textContent = `${state.shuffle ? "Shuffled. " : ""}Clip ${rank(state.index) + 1} of ${clips.length}. ${c.title}.`;
-    history.replaceState(null, "", `#/v/${c.id}`);
+    history.replaceState(null, "", clipHash(c.id));
   } else {
     $('[data-bind="live"]').textContent = "End of the channel.";
   }
@@ -1113,7 +1116,7 @@ function heartBurst(slide, x, y) {
   setTimeout(() => burst.remove(), 750);
 }
 function bootFeed() {
-  const deep = location.hash.match(/^#\/v\/(.+)$/);
+  const deep = location.hash.match(/^#\/(?:c\/[^/]+\/)?v\/(.+)$/);
   const start = deep ? clips.findIndex((c) => c.id === deep[1]) : 0;
   syncMode();
   setSound(false);
@@ -1522,7 +1525,12 @@ function bootFeed() {
       return;
     }
     const title = (String(name || "").trim() || "New clip").slice(0, 80);
-    const clip = await publishVideo(file, title, s, message => fabSay(message));
+    const clip = await publishVideo(file, title, s, message => fabSay(message), channelSlug());
+    if (clip && clip.review === "pending") {
+      fabSay("", 1);
+      window.__ktShell?.sentToParent?.(clip, title);
+      return;
+    }
     fabSay("Published! Taking you to it...", 2600);
     try {
       insertClipTop(clip);
@@ -1563,13 +1571,13 @@ function bootFeed() {
     requestAnimationFrame(() => {
       if (slides[0]) slides[0].scrollIntoView({ behavior: "auto", block: "start" });
     });
-    history.replaceState(null, "", "#/v/" + row.id);
+    history.replaceState(null, "", clipHash(row.id));
   }
   setActive(start > -1 ? start : 0, { scroll: false });
   if (start > 0 && body.dataset.mode === "immersive") requestAnimationFrame(() => slides[start]?.scrollIntoView({ behavior: "auto", block: "start" }));
   seedLikes();
   seedRole().then((s) => {
-    if (s && (s.role === "admin" || s.role === "super")) mountUploadFab();
+    if (window.__ktChannel ? window.__ktChannel.canUpload : s && (s.role === "admin" || s.role === "super")) mountUploadFab();
   });
   window.__tzfeed = {
     mounted: true,
@@ -1582,6 +1590,7 @@ function bootFeed() {
     step,
     durOf: (i) => durOf(slides[i], $("video", slides[i])),
     pictureVerdict: (file) => pictureVerdict(file),
-    uploadFile: (file, name) => uploadPicked(file, name)
+    uploadFile: (file, name) => uploadPicked(file, name),
+    pick: () => pickAndUpload()
   };
 }
