@@ -8,9 +8,7 @@
 
 KidTube gives each kid in your family their own little video channel. They design the badge, pick the intro and
 post the videos. You run it on a computer at home, decide who can watch, and see every upload before it goes
-live. No ads, no algorithm, no strangers.
-
-*A little channel. A big imagination.*
+live. No ads, no recommendation feed, no strangers.
 
 <p align="center">
   <img src="docs/images/phone-front-door.jpg" alt="The front door on a phone: Who's on tape today? with two kids' badges, Wren and Bo" width="260">
@@ -18,33 +16,8 @@ live. No ads, no algorithm, no strangers.
   <img src="docs/images/phone-feed.jpg" alt="A kid's feed on a phone: a video called Volcano part 2 with one star sticker" width="260">
 </p>
 
-The families in these pictures are made up, and so are their videos.
-
-## What everyone gets
-
-**Kids**
-
-- A channel of their own: their name, a line about them, a colour, and a badge they design with shapes and
-  stickers. No photo of your child is needed anywhere.
-- An intro that plays when someone opens their channel. Six to pick from: a VHS tape, an arcade cabinet, a comic
-  cover, a creature file, a blueprint and a calm glass one.
-- Posting from a phone: "What's it called?", then "Record it to tape". If you review uploads, they see "Sent to a
-  parent" and it goes live when you say yes.
-- Time capsules: a video sealed until a birthday, with a note, that opens on the day.
-
-**Parents**
-
-- One calm dashboard at `/parents`: videos waiting for review, comments, who asked to watch, who watched what,
-  guest codes, an activity feed and settings.
-- Nobody watches until you approve them. Kids' uploads and new comments wait for you by default.
-- A daily watch limit per kid, if you want one. When it runs out the channel shows "End of tape" and stops.
-- Everything stays on your own computer. Videos, names and watch history never go anywhere else.
-
-**Family**
-
-- Grandparents, cousins and friends ask to watch from the front door, and you let them in by name.
-- Or give someone a guest code for 24 hours, limited to one kid if you like, with a card to print and a QR.
-- Hearts, sticker reactions and comments, and the app on their home screen like any other.
+The families in these pictures are made up, and so are their videos. KidTube is not affiliated with YouTube or
+Google.
 
 ## Install in three lines
 
@@ -56,48 +29,49 @@ docker compose up -d
 docker logs kidtube
 ```
 
-The last command shows a setup link and a one-time code. Open the link, type the code, and a seven-step setup
-walks you through your parent account, your family's name, each kid's channel, who can watch, optional email,
-and putting it on your phone.
+The last command shows a setup link and a one-time code. Open the link, type the code, and seven short steps set
+up your parent account, your family, each kid's channel, who can watch, optional email, and the app on your
+phone. [docs/INSTALL.md](docs/INSTALL.md) covers NAS boxes, phones on your Wi-Fi, HTTPS with or without a domain,
+and running it without Docker.
 
-<p align="center">
-  <img src="docs/images/setup-done.jpg" alt="The last setup step: instructions for adding the app to an iPhone and an Android phone, and each kid's login" width="640">
-</p>
+## What everyone gets
 
-[docs/INSTALL.md](docs/INSTALL.md) has the whole thing in plain words: a mini PC or NAS, phones on your home
-Wi-Fi, private HTTPS with Tailscale and no domain, your own domain, an existing reverse proxy, and running it
-without Docker.
+**Kids**
 
-## Why not a big video app?
+- A channel of their own: their name, a line about them, a colour, and a badge they design with shapes and
+  stickers. No photo of your child is needed anywhere.
+- An intro that plays when someone opens their channel, from six: a VHS tape, an arcade cabinet, a comic cover,
+  a creature file, a blueprint and a calm glass one.
+- Posting from a phone with their own kid login. If you review uploads, they see "Sent to a parent" and the
+  video goes live when you approve it.
+- Time capsules: a video sealed until a birthday, with a note, that opens on the day.
 
-Big video apps are built for watching other people's tapes. KidTube is built for recording your own.
+**Parents**
 
-| | Big video apps | KidTube |
-|---|---|---|
-| Whose videos | Strangers' channels | Your kids' own |
-| Who picks what plays | A recommendation feed | Your kid's videos, newest first |
-| Who can watch your kid | Anyone, or nobody if kids can't post | People you approved by name |
-| Ads | Usually | None |
-| Where it runs | The company's servers | A computer in your home |
+- One dashboard at `/parents`: videos waiting for review, comments, who asked to watch, who watched what, guest
+  codes, activity and settings.
+- Nobody watches until you approve them. Kids' uploads and new comments wait for you by default.
+- A daily watch limit for anyone you choose. When it runs out the channel shows "End of tape" and stops.
 
-KidTube is not affiliated with YouTube or Google.
+**Family**
+
+- Grandparents, cousins and friends ask to watch from the front door, and you let them in by name.
+- Or give someone a guest code that works for 24 hours, for one kid or all of them, with a card to print.
+- Hearts, sticker reactions and comments, and the app on their home screen like any other.
 
 ## Privacy at a glance
 
-- **It runs on your box.** Videos, accounts, comments and watch history live in one folder on your computer. No
-  analytics, no outside requests; fonts and stickers ship with the app.
-- **You choose the audience.** Every viewer is approved by a parent, or holds a guest code you made. Videos,
-  posters, titles and comments always need a sign-in. Kids' names and badges on the front door are on by
-  default; one switch turns them off.
-- **You see what was watched.** Who watched which video, and how much, is kept for 90 days and only parents see
-  it. Viewers are told when they sign up. No IP addresses or device details are stored.
-- **Phone details are stripped.** Uploads are converted on the box, and the location and other details phones
-  hide in videos are removed.
-- **Email is optional.** With it on, Brevo sends approval and new-video notices; with it off, nothing leaves.
-- **The home-screen app keeps only the app's look** (styles, scripts, fonts) on the phone, never videos or
-  anything private.
+- **It runs on your computer.** Videos, accounts, comments and watch history stay in one folder there. No
+  analytics and no outside requests: fonts and stickers ship with the app.
+- **You choose the audience.** Every viewer is approved by you or holds a guest code you made. Videos, titles and
+  comments always need a sign-in. The front door shows the kids' names and badges unless you switch that off.
+- **You see what was watched.** Who watched which video is kept for 90 days, only you can see it, and viewers are
+  told when they sign up. No IP addresses or device details are stored.
+- **Phone details are stripped.** Uploads are converted on your computer, and the location and device details
+  phones put in videos are removed.
+- **Email is optional.** With it on, Brevo sends approval and new-video emails. With it off, nothing leaves.
 
-[SECURITY.md](SECURITY.md) has the details and how to report a problem.
+[SECURITY.md](SECURITY.md) has the security model and how to report a problem.
 
 ## A look around
 
@@ -110,26 +84,21 @@ KidTube is not affiliated with YouTube or Google.
   <img src="docs/images/guest-code.jpg" alt="A guest code for Uncle Theo, Bo only, with a QR code and a print button" width="400">
 </p>
 
-## Running it
+## Docs
 
-- [docs/INSTALL.md](docs/INSTALL.md): installing, HTTPS, phones, and a tour of the parent dashboard
-- [docs/UPGRADING.md](docs/UPGRADING.md): updating, rolling back, and moving an older family site onto KidTube
-- [docs/OPERATIONS.md](docs/OPERATIONS.md): backups, restores, account recovery and troubleshooting
-- [docs/EMAIL.md](docs/EMAIL.md): optional email with Brevo's free plan
-- [docs/THEMES.md](docs/THEMES.md): how splash themes work, and how to make one
-- [CHANGELOG.md](CHANGELOG.md): what changed in each version
-
-## Contributing
-
-KidTube has no runtime dependencies and no build step. It needs Node 24 and FFmpeg to run the tests:
-
-```bash
-npm test
-```
-
-Keep changes generic and test them on a scratch install, never on a family's real one. Never attach a real
-`.env`, database, backup or video to an issue. [docs/VERIFY.md](docs/VERIFY.md) is the checklist we run before a
-release, and [docs/RENAMING.md](docs/RENAMING.md) lists where the product name lives.
+| To | Read |
+|---|---|
+| Install it, add HTTPS, put it on phones | [docs/INSTALL.md](docs/INSTALL.md) |
+| Use the dashboard, back up, recover a password, fix a problem | [docs/OPERATIONS.md](docs/OPERATIONS.md) |
+| Update, roll back, or move an older family site onto KidTube | [docs/UPGRADING.md](docs/UPGRADING.md) |
+| Turn on email | [docs/EMAIL.md](docs/EMAIL.md) |
+| Run the public demo | [docs/DEMO.md](docs/DEMO.md) |
+| Make a splash theme | [docs/THEMES.md](docs/THEMES.md) |
+| Rename the product | [docs/RENAMING.md](docs/RENAMING.md) |
+| Check a release before tagging it | [docs/VERIFY.md](docs/VERIFY.md) |
+| Understand the security model, or report a problem | [SECURITY.md](SECURITY.md) |
+| See what changed | [CHANGELOG.md](CHANGELOG.md) |
+| Find your way around the code | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and [CONTRIBUTING.md](CONTRIBUTING.md) |
 
 ## By Smart Solutions
 
