@@ -1,19 +1,19 @@
 {
   "name": "@smartsolutionshq/kidtube",
-  "version": "0.1.0",
-  "description": "A self-hosted, parent-managed family video channel",
+  "version": "0.2.0",
+  "description": "Your kid's first video channel, with an audience you choose. Self-hosted, parent-managed.",
   "type": "module",
   "license": "MIT",
   "engines": { "node": ">=24.16.0 <25" },
   "bin": { "create-kidtube": "bin/create-kidtube.mjs" },
-  "files": ["bin/", "server/", "public/", "scripts/*.mjs", "test/", "docs/*.md", "Dockerfile", "compose.yaml", "compose.https.yaml", "Caddyfile", ".env.example", ".dockerignore", "LICENSE", "SECURITY.md"],
+  "files": ["bin/", "server/", "public/", "scripts/*.mjs", "test/", "docs/*.md", "Dockerfile", "compose.yaml", "compose.https.yaml", "Caddyfile", ".env.example", ".dockerignore", "LICENSE", "SECURITY.md", "CHANGELOG.md"],
   "scripts": {
     "setup": "node scripts/setup.mjs",
     "start": "node --env-file-if-exists=.env server/index.mjs",
     "test": "node --test test/*.test.mjs",
     "doctor": "node --env-file-if-exists=.env scripts/doctor.mjs",
     "backup": "node --env-file-if-exists=.env scripts/backup.mjs",
-    "email:test": "node --env-file=.env scripts/test-email.mjs"
+    "email:test": "node --env-file-if-exists=.env scripts/test-email.mjs"
   },
   "repository": { "type": "git", "url": "https://github.com/SmartSolutionsHQ/KidTube.git" }
 }

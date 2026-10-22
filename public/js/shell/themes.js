@@ -553,14 +553,20 @@ export function attachPause(opts = {}) {
     timers.set(video, setTimeout(async () => {
       if (signal.aborted || !video.paused || !isMain(video)) return;
       const entry = await overlayFor(video);
-      if (entry && video.paused && !signal.aborted) entry.api.show?.(video.currentTime || 0, Number.isFinite(video.duration) ? video.duration : 0);
+      if (entry && video.paused && !signal.aborted) {
+        entry.api.show?.(video.currentTime || 0, Number.isFinite(video.duration) ? video.duration : 0);
+        // The feed hides its own play glyph while a theme's pause screen is up (shell.css).
+        entry.host.toggleAttribute('data-kt-shown', true);
+      }
     }, 160));
   }, { capture: true, signal });
   const hide = event => {
     const video = event.target;
     if (!(video instanceof HTMLVideoElement)) return;
     clearTimeout(timers.get(video));
-    overlays.get(video)?.api.hide?.();
+    const entry = overlays.get(video);
+    entry?.api.hide?.();
+    entry?.host.removeAttribute('data-kt-shown');
   };
   for (const name of ['play', 'playing', 'ended', 'emptied']) document.addEventListener(name, hide, { capture: true, signal });
 

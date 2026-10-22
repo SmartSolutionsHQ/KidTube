@@ -276,6 +276,19 @@
 [data-kt-theme="ember-tape"] .et-pause-mark {
   color: var(--et-accent);
 }
+/* Phones: the upload button sits at the top right and the caption at the bottom left, so the readouts
+   stack down the left side under PAUSED instead. */
+@media (max-width: 899px) {
+  [data-kt-theme="ember-tape"] .et-pause-time {
+    top: calc(clamp(16px, 4cqmin, 34px) + 24px);
+    right: auto;
+    left: clamp(16px, 4cqmin, 34px);
+  }
+  [data-kt-theme="ember-tape"] .et-pause-label {
+    top: calc(clamp(16px, 4cqmin, 34px) + 48px);
+    bottom: auto;
+  }
+}
 [data-kt-theme="ember-tape"] .et-play {
   position: absolute;
   left: 50%;

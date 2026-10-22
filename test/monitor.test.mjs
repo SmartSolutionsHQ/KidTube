@@ -349,4 +349,10 @@ test('feed sentences stay plain', () => {
   assert.equal(say({ kind: 'upload', actor: 'p@x.co', detail: { title: 'Kite', channel: 'ezra' } }), 'Noor Halvorsen posted "Kite" on Ezra.');
   assert.equal(say({ kind: 'person', action: 'role', actor: 'p@x.co', detail: { name: 'Sam', role: 'admin' } }), 'Noor Halvorsen made Sam a co-parent.');
   assert.equal(say({ kind: 'review', action: 'approved', actor: 'system', detail: { title: '' } }), 'The app approved "Untitled".');
+  assert.equal(say({ kind: 'capsule.seal', actor: 'p@x.co', subject: 'c1', detail: { title: 'For Ezra at 10' } }), 'Noor Halvorsen sealed "For Ezra at 10" as a time capsule.');
+  assert.equal(say({ kind: 'capsule.open', actor: 'system', subject: 'c1', detail: { title: 'For Ezra at 10' } }), 'The time capsule "For Ezra at 10" opened.');
+  assert.equal(say({ kind: 'budget.set', actor: 'p@x.co', subject: 'p@x.co', detail: { minutes: 15 } }), "Noor Halvorsen set Noor Halvorsen's daily tape to 15 minutes.");
+  assert.equal(say({ kind: 'budget.set', actor: 'p@x.co', subject: 'kid@kids.invalid', detail: { minutes: 0 } }), "Noor Halvorsen took away kid@kids.invalid's daily tape.");
+  assert.equal(say({ kind: 'budget.bonus', actor: 'p@x.co', subject: 'kid@kids.invalid', detail: { minutes: 15 } }), 'Noor Halvorsen gave kid@kids.invalid 15 extra minutes today.');
+  assert.equal(say({ kind: 'budget.end', actor: 'kid@kids.invalid', subject: 'kid@kids.invalid', detail: {} }), "kid@kids.invalid reached the end of today's tape.");
 });

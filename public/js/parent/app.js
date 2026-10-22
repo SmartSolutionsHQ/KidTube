@@ -14,6 +14,7 @@ import * as guests from './guests.js';
 import * as activity from './activity.js';
 import * as watched from './watched.js';
 import * as settings from './settings.js';
+import { dashboardTitle } from './format.js';
 
 export const TABS = [
   { id: 'home', label: 'Home', module: home },
@@ -48,8 +49,8 @@ function say(text, level = 'good') {
 }
 
 function setFamily(name) {
-  for (const node of document.querySelectorAll('[data-family-name]')) node.textContent = name;
-  document.title = `Parent dashboard · ${name}`;
+  for (const node of document.querySelectorAll('[data-family-name]')) node.textContent = name || 'Parent dashboard';
+  document.title = dashboardTitle(name, document.body.dataset.brand);
 }
 
 /* ---------- signing in ---------- */
@@ -123,7 +124,7 @@ $('#kd-signout').addEventListener('click', async () => {
 /* ---------- tabs ---------- */
 async function refresh() {
   summary = await api.get('/api/admin/summary');
-  setFamily(summary.family.name || 'Parent dashboard');
+  setFamily(summary.family.name);
   paintNav();
   return summary;
 }

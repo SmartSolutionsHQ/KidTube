@@ -17,6 +17,8 @@ import { channelHash, parseRoute, routeClip } from './route.mjs';
 import { clearSession, logOut, openAuth, openProfile, readSession, revalidate, wireAuthDialog, writeSession } from './auth-dialog.js';
 import { closeDoor, openDoor, openLobby, openNote } from './gate.js';
 import { badgeFor, openSwitcher } from './picker.js';
+// Registers the service worker for the home-screen app (secure contexts only).
+import './pwa.js';
 
 // recovery.js reads this once when it boots to know a splash is coming; showSplash() replaces it.
 window.__tzsplash ??= { state: 'pending' };
@@ -184,6 +186,9 @@ function unlock(viewer) {
   document.body.removeAttribute('data-locked');
   appParts.forEach(node => { node.inert = false; });
   $('#account-button').textContent = viewer.role === 'guest' ? 'Guest' : 'Account';
+  // Only parents have a dashboard; kids, viewers and guests would be sent straight back.
+  const parentsLink = document.querySelector('.kid-nav a[href="/parents"]');
+  if (parentsLink) parentsLink.hidden = !STAFF.has(viewer.role);
   document.dispatchEvent(new Event('kid:unlocked'));
 }
 

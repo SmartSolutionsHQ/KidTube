@@ -19,6 +19,8 @@ const HASH_LENGTH = 12;
 // Root-relative script and stylesheet references in a page's src and href attributes.
 const ASSET_REFERENCE = /(\b(?:src|href)=)(["'])(\/[^"'?#\s]+\.(?:js|css))\2/g;
 const IMMUTABLE = 'public, max-age=31536000, immutable';
+// Folders whose index.html answers the bare path.
+const PRETTY = new Set(['/about', '/parents', '/install']);
 // Every page gets the same policy as a header, so no page can forget it or weaken it with a <meta>.
 export const PAGE_POLICY = [
   "default-src 'self'", "script-src 'self'", "style-src 'self' 'unsafe-inline'", "img-src 'self' data: blob:",
@@ -103,9 +105,9 @@ export function createStatic(publicDir) {
     else if (ext === '.html' && statSync(file).isFile()) page(file, statSync(file));
   }
 
-  return function sendFile(req, res, pathname) {
+  function sendFile(req, res, pathname) {
     const target = pathname === '/' ? '/index.html'
-      : ['/about', '/parents'].includes(pathname) ? `${pathname}/index.html` : pathname;
+      : PRETTY.has(pathname) ? `${pathname}/index.html` : pathname;
     let decoded;
     try { decoded = decodeURIComponent(target); } catch { res.writeHead(400).end(); return; }
     const file = resolve(root, '.' + decoded);
@@ -175,7 +177,14 @@ export function createStatic(publicDir) {
     stream.on('error', error => res.destroy(error));
     res.on('close', () => stream.destroy());
     stream.pipe(res);
+  }
+  // A page as it is served (brand filled in, assets stamped), so the service worker can list the shell.
+  sendFile.pageHtml = path => {
+    const file = resolve(root, '.' + path);
+    if (!inside(file) || !existsSync(file)) return '';
+    return page(file, statSync(file)).identity.toString('utf8');
   };
+  return sendFile;
 }
 
 const senders = new Map();

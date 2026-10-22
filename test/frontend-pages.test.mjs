@@ -6,7 +6,7 @@ import { ROOT } from './helpers.mjs';
 
 const PUBLIC = join(ROOT, 'public');
 const read = path => readFileSync(join(PUBLIC, path), 'utf8');
-const PAGES = ['index.html', 'about/index.html', 'parents/index.html'];
+const PAGES = ['index.html', 'about/index.html', 'parents/index.html', 'install/index.html', 'offline.html'];
 
 // Every id, class and data-* hook the page scripts look up. Renaming one breaks the feed silently.
 const INDEX_HOOKS = [
@@ -49,7 +49,9 @@ test('pages are readable markup, free of builder leftovers and first-person copy
     assert.match(html, /<html lang="en">/);
     assert.match(html, /<meta name="viewport"/);
     for (const [, path] of html.matchAll(/(?:src|href)="(\/[^"?#]+)"/g)) {
-      if (path === '/' || path === '/about' || path === '/parents') continue;
+      if (['/', '/about', '/parents', '/install'].includes(path)) continue;
+      // Served by server/pwa.mjs, not from public/.
+      if (['/manifest.webmanifest', '/apple-touch-icon.png'].includes(path)) continue;
       assert.ok(existsSync(join(PUBLIC, path)), `${page} points at ${path}, which exists`);
     }
   }

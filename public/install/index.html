@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Add to your home screen · {{brand.name}}</title>
+  <meta name="robots" content="noindex">
+  <meta name="theme-color" content="#05060A">
+  <link rel="icon" href="/assets/logo.svg" type="image/svg+xml">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <link rel="stylesheet" href="/css/reset.css">
+  <link rel="stylesheet" href="/css/fonts.css">
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/parent.css">
+  <link rel="stylesheet" href="/install/install.css">
+</head>
+<body class="kp ki" data-platform="other">
+  <main class="ki-page">
+    <div class="ki-card kp-panel kp-stack">
+      <div class="ki-head">
+        <img class="ki-icon" src="/apple-touch-icon.png" alt="" width="64" height="64">
+        <div class="kp-stack-tight">
+          <h1 class="kp-title" data-ki="title">Add it to your home screen</h1>
+          <p class="kp-lead">It opens full screen like an app, with the family's own icon.</p>
+        </div>
+      </div>
+
+      <p class="kp-note kp-note-good" data-ki="installed" hidden>It's on this device already. You're using the app now.</p>
+      <p class="kp-note kp-note-warn" data-ki="insecure" hidden>
+        Phones only install it from a secure (HTTPS) address. Until the family's box has one, it works in the
+        phone's browser. The install guide shows how to add HTTPS.
+      </p>
+
+      <section class="ki-way" data-way="prompt" hidden>
+        <h2 class="kp-heading">On this device</h2>
+        <p class="kp-small">Your browser can add it straight away.</p>
+        <button class="kp-btn kp-btn-primary" type="button" data-ki="install">Install the app</button>
+        <p class="kp-small" data-ki="result" role="status"></p>
+      </section>
+
+      <section class="ki-way" data-way="ios">
+        <h2 class="kp-heading">iPhone or iPad</h2>
+        <ol class="kp-steps-list">
+          <li>Open this page in Safari.</li>
+          <li>Tap the Share button, the square with an arrow pointing up.</li>
+          <li>Scroll down and tap Add to Home Screen, then Add.</li>
+        </ol>
+        <p class="kp-small">The home-screen app keeps its own sign-in, separate from Safari. Sign in once more the first time you open it.</p>
+      </section>
+
+      <section class="ki-way" data-way="android">
+        <h2 class="kp-heading">Android</h2>
+        <ol class="kp-steps-list">
+          <li>Open this page in Chrome.</li>
+          <li>Tap the menu, the three dots at the top right.</li>
+          <li>Tap Install app or Add to Home screen.</li>
+        </ol>
+      </section>
+
+      <section class="ki-way" data-way="desktop">
+        <h2 class="kp-heading">A computer</h2>
+        <p class="kp-small">In Chrome or Edge, use the install icon at the right end of the address bar. Other browsers keep it as a bookmark, which works just as well.</p>
+      </section>
+
+      <div class="kp-actions">
+        <a href="/">Back to the videos</a>
+        <a href="/parents">Parent dashboard</a>
+      </div>
+    </div>
+
+    <span class="ki-credit">
+      <span class="ki-credit-label">{{brand.name}} by</span>
+      <img src="/assets/smart-solutions-logo-white-transparent.png" alt="Smart Solutions" width="150" height="31">
+    </span>
+  </main>
+
+  <script type="module" src="/install/install.js"></script>
+</body>
+</html>

@@ -528,10 +528,12 @@ async function saveDraft(id, draft) {
   pendingDrafts.set(id, draft);
   syncPost();
   showDraft();
+  let held = false;
   try {
     const s = sessRead();
     const j = await apiPost("/api/comment", { clipId: id, email: s.email, t: s.t, body: draft.body });
     if (!j || !j.ok) throw new Error("save");
+    held = !!(j.row && j.row.hidden);
     pendingDrafts.delete(id);
     if (clips[state.index]?.id === id) await renderComments();
   } catch {
@@ -540,6 +542,11 @@ async function saveDraft(id, draft) {
     posting = false;
     syncPost();
     showDraft();
+  }
+  // Comments a parent reads first would otherwise just vanish from the sheet.
+  if (held && clips[state.index]?.id === id) {
+    postStatus.innerHTML = '<p class="tz-cmt-body">Sent. A parent reads new comments before they show here.</p>';
+    postStatus.style.opacity = "1";
   }
 }
 cForm.addEventListener("submit", async (e) => {
@@ -817,31 +824,6 @@ document.addEventListener("pointerdown", (e) => {
 .tz-upload-pill{position:absolute;left:50%;transform:translateX(-50%);top:14px;z-index:40;
   padding:8px 12px;border-radius:2px;background:rgba(5,6,10,.85);color:var(--tz-paper,#F7F4EC);
   font:500 11px/1.3 var(--tz-mono,'DM Mono',monospace);letter-spacing:.08em;max-width:80%;text-align:center}`;
-  document.head.appendChild(st);
-})();
-(() => {
-  const st = document.createElement("style");
-  st.id = "tz-namecard-style";
-  st.textContent = `
-.tz-namecard{position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
-  padding:20px;background:rgba(5,6,10,.72);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px)}
-.tz-namecard-in{width:100%;max-width:360px;background:var(--tz-ink,#0B0C10);border:1px solid rgba(247,244,236,.28);
-  border-radius:4px;padding:18px 18px 14px;color:var(--tz-paper,#F7F4EC);
-  font:500 12px/1.5 var(--tz-mono,'DM Mono',monospace);box-shadow:0 18px 60px rgba(5,6,10,.7)}
-.tz-namecard-kicker{margin:0 0 10px;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--tz-flare,#FF5C2B)}
-.tz-namecard-lbl{display:block;margin:0 0 6px;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:rgba(247,244,236,.6)}
-.tz-namecard-input{width:100%;box-sizing:border-box;background:rgba(247,244,236,.07);
-  border:1px solid rgba(247,244,236,.3);border-radius:2px;color:var(--tz-paper,#F7F4EC);
-  font:500 14px/1 var(--tz-mono,'DM Mono',monospace);padding:11px 10px}
-.tz-namecard-input:focus{outline:none;border-color:var(--tz-flare,#FF5C2B)}
-.tz-namecard-meta{margin:8px 0 14px;font-size:10px;letter-spacing:.1em;color:rgba(247,244,236,.5)}
-.tz-namecard-acts{display:flex;gap:8px;justify-content:flex-end}
-.tz-namecard-btn{appearance:none;background:none;border:1px solid rgba(247,244,236,.3);color:var(--tz-paper,#F7F4EC);
-  font:500 10px/1 var(--tz-mono,'DM Mono',monospace);letter-spacing:.14em;text-transform:uppercase;
-  padding:10px 13px;border-radius:2px;cursor:pointer}
-.tz-namecard-btn:hover{border-color:var(--tz-flare,#FF5C2B);color:var(--tz-flare,#FF5C2B)}
-.tz-namecard-go{border-color:var(--tz-flare,#FF5C2B);color:var(--tz-flare,#FF5C2B)}
-.tz-namecard-go:hover{background:var(--tz-flare,#FF5C2B);color:var(--tz-flare-ink,#0B0C10)}`;
   document.head.appendChild(st);
 })();
 (() => {
@@ -1240,12 +1222,17 @@ function bootFeed() {
       const card = document.createElement("div");
       card.className = "tz-namecard";
       card.innerHTML = `
-      <div class="tz-namecard-in" role="dialog" aria-modal="true" aria-label="Name this clip">
-        <p class="tz-namecard-kicker">Ready to publish</p>
-        <label class="tz-namecard-lbl" for="tz-clipname">Name this clip</label>
+      <div class="tz-namecard-in" role="dialog" aria-modal="true" aria-labelledby="tz-namecard-title">
+        <p class="tz-namecard-kicker"></p>
+        <h2 class="tz-namecard-title" id="tz-namecard-title">What's it called?</h2>
+        <label class="tz-namecard-lbl" for="tz-clipname">Title</label>
         <input class="tz-namecard-input" id="tz-clipname" type="text" maxlength="80" autocomplete="off" spellcheck="false">
-        <p class="tz-namecard-meta"></p>
-        <label class="tz-namecard-seal"><input type="checkbox" data-seal> Seal as a time capsule</label>
+        <div class="tz-namecard-file">
+          <svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true"><path d="M12 16V5M7 10l5-5 5 5M5 19h14" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+          <span class="tz-namecard-meta"></span>
+        </div>
+        <p class="tz-namecard-note"></p>
+        <label class="tz-namecard-seal"><input type="checkbox" data-seal> Seal it as a time capsule</label>
         <div class="tz-namecard-capsule" hidden>
           <label class="tz-namecard-lbl" for="tz-opens">Opens on</label>
           <input class="tz-namecard-input" id="tz-opens" type="datetime-local">
@@ -1254,18 +1241,25 @@ function bootFeed() {
           <p class="tz-namecard-err" role="alert"></p>
         </div>
         <div class="tz-namecard-acts">
-          <button class="tz-namecard-btn" type="button" data-name="cancel">Cancel</button>
-          <button class="tz-namecard-btn tz-namecard-go" type="button" data-name="go">Publish</button>
+          <button class="tz-namecard-btn tz-namecard-go" type="button" data-name="go">Record it to tape</button>
+          <button class="tz-namecard-btn tz-namecard-quiet" type="button" data-name="cancel">Cancel</button>
         </div>
       </div>`;
       const input = $(".tz-namecard-input", card);
       const fallback = titleFromName(file && file.name);
       input.value = fallback;
+      const channelName = window.__ktChannel?.name || "";
+      $(".tz-namecard-kicker", card).textContent = channelName ? "New tape \xB7 " + channelName : "New tape";
       $(".tz-namecard-meta", card).textContent = [
+        file && file.name ? file.name : "",
         fmtDur(secs),
-        file && file.size ? (file.size / 1048576).toFixed(1) + " MB" : "",
-        "converted to 480p on the server"
+        file && file.size ? (file.size / 1048576).toFixed(1) + " MB" : ""
       ].filter(Boolean).join(" \xB7 ");
+      // Parents' uploads go live; anyone else's may wait for a parent, depending on the kid's settings.
+      const role = sessRead()?.role || "";
+      $(".tz-namecard-note", card).textContent = role === "admin" || role === "super"
+        ? "Up to 5 minutes. It goes on the channel as soon as it's converted."
+        : "Up to 5 minutes. A parent may check it before it goes on your channel.";
       document.body.appendChild(card);
       // A capsule opens at least an hour from now; the date is read in this device's time zone.
       const sealBox = $("[data-seal]", card), capsule = $(".tz-namecard-capsule", card), opens = $("#tz-opens", card);
@@ -1273,7 +1267,7 @@ function bootFeed() {
       opens.min = localInput(Date.now() + 36e5 + 6e4);
       sealBox.addEventListener("change", () => {
         capsule.hidden = !sealBox.checked;
-        $(".tz-namecard-go", card).textContent = sealBox.checked ? "Seal and publish" : "Publish";
+        $(".tz-namecard-go", card).textContent = sealBox.checked ? "Seal it to tape" : "Record it to tape";
         if (sealBox.checked) opens.focus();
       });
       const done = (val) => {

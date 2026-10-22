@@ -749,6 +749,9 @@ a.kd-card:hover { background: var(--kp-raised); }
 @media (min-width: 600px) {
   .kd-main { padding: 32px 32px 96px; }
   .kd-item { grid-template-columns: 120px minmax(0, 1fr); }
+  /* Rows without a picture (people, comments) and kid rows keep their own columns. */
+  .kd-item-plain { grid-template-columns: minmax(0, 1fr); }
+  .kd-item:has(> .kd-badge-art) { grid-template-columns: 52px minmax(0, 1fr); }
   .kd-thumb { width: 120px; height: 76px; }
   .kd-new-code { grid-template-columns: minmax(0, 1fr) auto; }
 }
