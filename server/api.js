@@ -1,4 +1,5 @@
 /* Account, moderation, and catalog API. */
+import { timingSafeEqual } from 'node:crypto';
 import { passwordRecord, passwordMatches } from './passwords.mjs';
 import { sendMail } from './mail.mjs';
 import { BRAND_NAME, WORDMARK } from './brand.mjs';
@@ -182,6 +183,8 @@ async function check(req, url, env) {
 
 /* Sessions expire after seven days and password changes invalidate them. */
 const CLIP_OK = (s) => /^[A-Za-z0-9_-]{1,80}$/.test(String(s || ''));
+/* signatures compare in constant time, like the media cookie's */
+const sameHex = (given, expected) => /^[a-f0-9]{64}$/.test(String(given)) && timingSafeEqual(Buffer.from(given, 'hex'), Buffer.from(expected, 'hex'));
 async function sessToken(env,email) {
  const r=await db(env,'SELECT hash FROM accounts WHERE email=?',[email]);
  const expires=Date.now()+7*86400000;
@@ -192,7 +195,7 @@ async function sessOk(env, email, t) {
   const [expires,sig]=String(t).split('.');
   if(!/^\d{13}$/.test(expires)||Number(expires)<=Date.now()||Number(expires)>Date.now()+7*86400000)return null;
   const credential=await db(env,'SELECT hash FROM accounts WHERE email=?',[email]);
-  if(!credential.results[0] || sig!==await hmac(env.SIGN_SECRET,'sess|'+email+'|'+expires+'|'+credential.results[0].hash))return null;
+  if(!credential.results[0] || !sameHex(sig, await hmac(env.SIGN_SECRET,'sess|'+email+'|'+expires+'|'+credential.results[0].hash)))return null;
   const r = await db(env, 'SELECT status FROM accounts WHERE email = ?', [email]);
   const row = r.results && r.results[0];
   return row && row.status === 'approved' ? email : null;

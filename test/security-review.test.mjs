@@ -6,6 +6,9 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createUploadManager, STALE_UPLOAD_MS } from '../server/uploads.mjs';
+import { sessOk, sessToken } from '../server/api.js';
+import { openDatabase } from '../server/db.mjs';
+import { migrate } from '../server/schema.mjs';
 import { ROOT, startInstall, PARENT } from './helpers.mjs';
 import { startFamily, memoryDatabase, KID, KID_EMAIL } from './family-fixture.mjs';
 
@@ -188,4 +191,22 @@ test('L3: GET routes take the session from X-Kid-Email and X-Kid-Token', { timeo
   assert.equal((await json('/api/admin/views', { headers: headers(parent) })).status, 200);
   assert.equal((await json('/api/admin/overview', { headers: headers(parent) })).status, 200);
   assert.equal((await json('/api/admin/views', { headers: headers(viewer) })).status, 403);
+});
+
+test('L4: session signatures are checked in constant time', async t => {
+  const { sqlite, DB } = openDatabase(':memory:');
+  t.after(() => sqlite.close());
+  await migrate(sqlite);
+  sqlite.prepare("INSERT INTO accounts (email,first,last,salt,hash,status,created) VALUES ('nana@example.com','Nana','O','s','scrypt:x','approved',0)").run();
+  const env = { DB, SIGN_SECRET: 'a-test-only-signing-secret-of-enough-length' };
+  const token = await sessToken(env, 'nana@example.com');
+  assert.equal(await sessOk(env, 'nana@example.com', token), 'nana@example.com');
+  const [expires, sig] = token.split('.');
+  for (const bad of [`${expires}.${sig.replace(/.$/, c => c === '0' ? '1' : '0')}`, `${expires}.${sig.toUpperCase()}`, `${expires}.${sig.slice(2)}`, `${expires}.zz${sig.slice(2)}`]) {
+    assert.equal(await sessOk(env, 'nana@example.com', bad), null, bad);
+  }
+  const source = readFileSync(join(ROOT, 'server/api.js'), 'utf8');
+  const body = source.slice(source.indexOf('async function sessOk'), source.indexOf('const dispName'));
+  assert.doesNotMatch(body, /sig\s*!==/, 'no plain string comparison of the signature');
+  assert.match(body, /sameHex\(/);
 });
