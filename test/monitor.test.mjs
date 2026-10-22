@@ -93,6 +93,7 @@ test('every dashboard route is for parents, and some for the owner only', { time
   assert.equal(summary.me.role, 'admin');
   assert.equal(summary.counts.people, null, 'a co-parent does not see sign-up requests');
   assert.deepEqual(summary.kids.map(kid => kid.slug), ['milo', 'juni']);
+  assert.equal(summary.features.views, false, 'the v2 views table has no watch history route yet');
 });
 
 test('the dashboard page turns kid and viewer accounts away', { timeout: 60000 }, async t => {
@@ -286,6 +287,10 @@ test('guest codes carry a kid scope, list their state and can be ended', { timeo
   list = await f.ok('co', '/api/admin/guests');
   assert.equal(list.codes[0].state, 'ended');
   assert.equal((await fetch(f.origin + '/api/clips', { headers: { cookie } })).status, 401, 'an ended pass stops at once');
+  const unused = await f.ok('co', '/api/admin/guests', {});
+  await f.ok('co', '/api/admin/guests/end', { id: unused.id });
+  assert.equal((await f.ok('co', '/api/admin/guests')).codes.find(code => code.id === unused.id).state, 'cancelled');
+  assert.equal((await f.call(null, '/api/guest/redeem', { code: unused.code })).status, 400, 'a cancelled code no longer works');
 });
 
 test('kids: add, reorder and remove with their videos; never the first one', { timeout: 60000 }, async t => {
@@ -316,6 +321,10 @@ test('settings: saved with a row each, locked ones skipped, a bad address refuse
   assert.equal(saved.settings.find(entry => entry.key === 'comments_default').value, 'open');
   const rows = f.db.prepare("SELECT subject FROM activity WHERE kind='setting' ORDER BY id DESC LIMIT 2").all().map(row => row.subject);
   assert.deepEqual(rows.sort(), ['comments_default', 'site_name']);
+  const count = () => f.db.prepare("SELECT COUNT(*) n FROM activity WHERE kind='setting'").get().n;
+  const before2 = count();
+  await f.ok('parent', '/api/admin/settings', { values: { site_name: 'The Test Tapes', comments_default: 'open', guest_passes: true } });
+  assert.equal(count(), before2, 'saving unchanged values writes nothing');
   assert.equal((await f.call('parent', '/api/admin/settings', { values: { site_url: 'not a url' } })).status, 400);
   assert.equal((await f.call('parent', '/api/admin/settings', { values: { nope: 1 } })).status, 400);
   assert.equal((await f.call('parent', '/api/admin/settings', { values: { site_name: ' ' } })).status, 400);
@@ -331,9 +340,11 @@ test('feed sentences stay plain', () => {
   const kids = key => ({ ezra: 'Ezra' }[key] || '');
   const say = row => describeActivity(row, { names, kids });
   assert.equal(say({ kind: 'upload', actor: 'ezra@kids.invalid', detail: { title: 'Slime lab 3', review: 'pending', channel: 'ezra' } }),
-    'Ezra posted "Slime lab 3" on Ezra. It is waiting for review.');
-  assert.equal(say({ kind: 'guest', action: 'used', actor: 'guest:abc', detail: { note: 'Gran' , ends: 'tomorrow' } }), 'A guest code for Gran was used. It ends tomorrow.');
-  assert.equal(say({ kind: 'setting', action: '', actor: 'p@x.co', subject: 'kids_public', detail: {} }), 'Noor Halvorsen changed a setting: kids on the front door.');
+    'Ezra posted "Slime lab 3". It is waiting for review.');
+  assert.equal(say({ kind: 'guest', action: 'used', actor: 'guest:abc', detail: { note: 'Gran' } }), 'A guest code for Gran was used. They can watch for 24 hours.');
+  assert.equal(say({ kind: 'badge', actor: 'p@x.co', detail: { channel: 'ezra' } }), 'Noor Halvorsen saved a new badge for Ezra.');
+  assert.equal(say({ kind: 'setting', action: '', actor: 'p@x.co', subject: 'kids_public', detail: {} }), 'Noor Halvorsen changed the front door names setting.');
+  assert.equal(say({ kind: 'upload', actor: 'p@x.co', detail: { title: 'Kite', channel: 'ezra' } }), 'Noor Halvorsen posted "Kite" on Ezra.');
   assert.equal(say({ kind: 'person', action: 'role', actor: 'p@x.co', detail: { name: 'Sam', role: 'admin' } }), 'Noor Halvorsen made Sam a co-parent.');
   assert.equal(say({ kind: 'review', action: 'approved', actor: 'system', detail: { title: '' } }), 'The app approved "Untitled".');
 });

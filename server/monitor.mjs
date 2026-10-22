@@ -64,7 +64,7 @@ export function describeActivity(row, { names = () => '', kids = () => '' } = {}
   const d = row.detail || {};
   const kid = kids(d.channel ?? d.channelId) || d.kid || '';
   switch (`${row.kind}:${row.action || ''}`) {
-    case 'upload:': return `${who} posted ${quote(d.title)}${kid ? ` on ${kid}` : ''}.${d.review === 'pending' ? ' It is waiting for review.' : ''}`;
+    case 'upload:': return `${who} posted ${quote(d.title)}${kid && kid !== who ? ` on ${kid}` : ''}.${d.review === 'pending' ? ' It is waiting for review.' : ''}`;
     case 'signup:': return `${who} asked to watch.`;
     case 'comment:posted': return `${who} commented on ${quote(d.title)}.${d.waiting ? ' It is waiting for review.' : ''}`;
     case 'review:approved': return `${who} approved ${quote(d.title)}${kid ? ` on ${kid}` : ''}.`;
@@ -84,7 +84,7 @@ export function describeActivity(row, { names = () => '', kids = () => '' } = {}
     case 'person:password': return `${who} set a new password for ${d.name || d.target}.`;
     case 'person:delete': return `${who} removed ${d.name || d.target} and everything they added.`;
     case 'guest:create': return `${who} made a guest code${d.note ? ` for ${d.note}` : ''}${kid ? ` (${kid} only)` : ''}.`;
-    case 'guest:used': return `A guest code${d.note ? ` for ${d.note}` : ''} was used. It ends ${d.ends || 'in 24 hours'}.`;
+    case 'guest:used': return `A guest code${d.note ? ` for ${d.note}` : ''} was used. They can watch for 24 hours.`;
     case 'guest:end': return `${who} ended a guest code${d.note ? ` for ${d.note}` : ''}.`;
     case 'channel:create': return `${who} added ${d.name || 'a kid'}.`;
     case 'channel:update': return `${who} changed ${d.name || 'a kid'}'s channel.`;
@@ -93,7 +93,8 @@ export function describeActivity(row, { names = () => '', kids = () => '' } = {}
     case 'badge:': return `${who} saved a new badge${kid ? ` for ${kid}` : ''}.`;
     case 'image:': return `${who} changed ${kid ? `${kid}'s` : 'a'} picture.`;
     case 'icon:': return `${who} saved the family badge.`;
-    case 'setting:': return `${who} changed a setting: ${SETTING_NAMES[row.subject] || row.subject}.`;
+    case 'setting:': return row.subject === 'setup_complete' ? `${who} finished setting up the family.`
+      : `${who} changed the ${SETTING_NAMES[row.subject] || row.subject} setting.`;
     case 'setup:claim': return `${who} set up the family.`;
     case 'email:test': return `${who} sent a test email to ${d.to}.`;
     default: return `${who}: ${row.kind}${row.action ? ` ${row.action}` : ''}.`;
@@ -102,7 +103,7 @@ export function describeActivity(row, { names = () => '', kids = () => '' } = {}
 
 export const SETTING_NAMES = {
   site_name: 'family name', site_tagline: 'tagline', family_accent: 'family color', gate_theme: 'front door splash',
-  kids_public: 'kids on the front door', signup_mode: 'new viewers', guest_passes: 'guest codes',
+  kids_public: 'front door names', signup_mode: 'new viewers', guest_passes: 'guest codes',
   comments_default: 'comments', review_uploads_default: 'upload review for new kids', splash_sound: 'splash sound',
   views_retention_days: 'how long watch history is kept', activity_retention_days: 'how long activity is kept',
   mail_mode: 'email', brevo_api_key: 'email key', sender_email: 'sender address', notify_email: 'notice address',
@@ -239,7 +240,10 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
           const detail = parse(row.detail);
           const item = { at: row.ts, kind: row.kind, action: detail.action || detail.decision || (row.kind === 'setup' ? row.subject : ''), actor: row.actor, subject: row.subject, detail };
           if (row.kind === 'channel') item.channel = slugOf.get(row.subject) || detail.slug || '';
-          else if (/^channel:\d+$/.test(row.subject)) item.channel = slugOf.get(row.subject.slice(8)) || '';
+          else if (/^channel:\d+$/.test(row.subject)) {
+            item.channel = slugOf.get(row.subject.slice(8)) || '';
+            detail.channel ??= item.channel;
+          }
           else item.channel = detail.channel || '';
           if (row.kind === 'review' && !detail.title) detail.title = sqlite.prepare('SELECT title FROM clips WHERE id=?').get(row.subject)?.title || 'a video';
           if (want(item)) { rows.push(item); found++; }
@@ -273,7 +277,7 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
         ORDER BY g.redeemed DESC LIMIT ?`).all(...[until, ...(channel ? [channel] : []), cap])) {
         const note = guestNote(row.code_hash.slice(0, 12));
         rows.push({ at: row.redeemed, kind: 'guest', action: 'used', actor: 'guest:' + row.code_hash.slice(0, 12), channel: row.slug || '',
-          detail: { note, ends: new Date(row.session_expires).toISOString(), channel: row.slug } });
+          detail: { note, channel: row.slug } });
       }
     }
     rows.sort((a, b) => b.at - a.at);
@@ -315,6 +319,8 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
         family: { name: site.site_name, accent: site.family_accent, siteUrl: site.site_url, guestPasses: site.guest_passes,
           comments: site.comments_default, signupMode: site.signup_mode, kidsPublic: site.kids_public, viewsDays: site.views_retention_days },
         counts: counts(user.role),
+        // Watch history arrives with the launch-story milestone's views table (it has a started column).
+        features: { views: sqlite.prepare('PRAGMA table_info(views)').all().some(column => column.name === 'started') },
         kids: listChannels(sqlite).map(row => ({ id: row.id, slug: row.slug, name: row.name, accent: row.accent || site.family_accent,
           logoUrl: row.logo_rev ? `/brand/${row.slug}.svg?v=${row.logo_rev}` : null })),
       };
@@ -562,7 +568,8 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
         enabled: settings.get('guest_passes') === true,
         codes: rows.map(row => {
           const id = row.code_hash.slice(0, 12);
-          const state = row.redeemed == null ? (row.expires > at ? 'waiting' : 'expired') : row.session_expires > at ? 'active' : 'ended';
+          const cancelled = !!sqlite.prepare("SELECT 1 FROM activity WHERE kind='guest' AND subject=? AND json_extract(detail,'$.action')='end'").get(id);
+          const state = row.redeemed == null ? (row.expires > at ? 'waiting' : cancelled ? 'cancelled' : 'expired') : row.session_expires > at ? 'active' : 'ended';
           return { id, created: row.created, creator: row.creator, creatorName: book.names(row.creator), expires: row.expires,
             redeemed: row.redeemed, sessionExpires: row.session_expires, scope: row.slug || null, scopeName: book.kids(row.slug) || null,
             note: guestNote(id), state, viewer: row.token_hash ? 'guest:' + row.token_hash.slice(0, 12) : null, lastUsed: row.token_hash ? seenAt.get('guest:' + row.token_hash.slice(0, 12)) || row.redeemed : null };
@@ -627,7 +634,9 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
           if (!(changes[key] ?? settings.get(key))) throw new HttpError(400, `Add ${label}.`);
         }
       }
-      for (const [key, value] of Object.entries(changes)) settings.set(key, value, user.email);
+      // Only real changes are saved, so the activity feed lists what the parent actually changed.
+      const same = (key, value) => { try { return JSON.stringify(settings.get(key)) === JSON.stringify(value); } catch { return false; } };
+      for (const [key, value] of Object.entries(changes)) if (!same(key, value)) settings.set(key, value, user.email);
       return { settings: settings.describe().filter(entry => EDITABLE.includes(entry.key)), skipped };
     },
 
