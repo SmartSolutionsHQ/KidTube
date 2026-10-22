@@ -1,8 +1,9 @@
 import { scrypt as derive, randomBytes, timingSafeEqual } from 'node:crypto';
 import { promisify } from 'node:util';
 const scrypt = promisify(derive);
-export async function passwordRecord(password) {
-  if (typeof password !== 'string' || password.length < 12 || password.length > 128) throw new Error('Use a password of 12–128 characters.');
+// Parents and viewers need 12 characters; kid logins may use 8 because a parent reviews what they post.
+export async function passwordRecord(password, { min = 12 } = {}) {
+  if (typeof password !== 'string' || password.length < min || password.length > 128) throw new Error(`Use a password of ${min}–128 characters.`);
   const salt = randomBytes(16).toString('hex');
   const hash = 'scrypt:' + (await scrypt(password, salt, 64)).toString('hex');
   return { salt, hash };

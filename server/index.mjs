@@ -1,5 +1,5 @@
 import http from 'node:http';
-import { dirname, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { Readable } from 'node:stream';
 import api, { sessOk } from './api.js';
 import { viewer, mediaCookie, accountCookie, clearCookie } from './access.mjs';
@@ -13,24 +13,29 @@ import { BRAND_NAME } from './brand.mjs';
 import { createSettings } from './settings.mjs';
 import { createSite } from './site.mjs';
 import { createBrandFiles } from './brandfiles.mjs';
+import { InstallError, checkSiteUrl, prepareInstall } from './config.mjs';
+import { createFamily } from './family.mjs';
+import { createSetup } from './setup.mjs';
 
 const port = Number(process.env.PORT || 3000);
 const publicDir = resolve(process.env.PUBLIC_DIR || 'public');
 const sendFile = createStatic(publicDir);
 const themes = createThemes(publicDir);
-const dbFile = process.env.DATABASE_PATH || 'data/kidtube.sqlite';
-if (!process.env.SIGN_SECRET) throw new Error('SIGN_SECRET is required');
-if(process.env.SIGN_SECRET.length<32) throw new Error('SIGN_SECRET must have at least 32 characters. Run npm run setup.');
-const { sqlite, DB } = openDatabase(dbFile, { allowEmpty: process.env.ALLOW_EMPTY_DB === '1' });
-await migrate(sqlite, { dataDir: process.env.DATA_DIR || dirname(dbFile) });
+// First boot needs no .env: the data folder, the signing secret and the database are created here,
+// and SITE_URL waits for the setup wizard. Problems a parent can fix print one plain message.
+const stop = message => { console.error(message); process.exit(1); };
+let install;
+try { install = prepareInstall(); } catch (error) { if (error instanceof InstallError) stop(error.message); throw error; }
+const { database: dbFile, dataDir } = install;
+const { sqlite, DB } = openDatabase(dbFile, { allowEmpty: true });
+await migrate(sqlite, { dataDir });
 const settings = createSettings(sqlite);
-if (!settings.get('site_url')) throw new Error('SITE_URL is required');
-if(process.env.NODE_ENV==='production'&&!settings.get('site_url').startsWith('https:'))throw new Error('Production requires HTTPS SITE_URL.');
-if(settings.get('mail_mode')==='brevo')for(const key of ['brevo_api_key','notify_email','sender_email'])if(!settings.get(key))throw new Error(key.toUpperCase()+' is required for email');
+try { checkSiteUrl(settings.get('site_url')); } catch (error) { stop(error.message); }
+if(settings.get('mail_mode')==='brevo')for(const key of ['brevo_api_key','notify_email','sender_email'])if(!settings.get(key))stop(key.toUpperCase()+' is required for email');
 // Site and mail settings are read live, so a parent's change applies without a restart.
 const env = {
   DB,
-  SIGN_SECRET: process.env.SIGN_SECRET,
+  SIGN_SECRET: install.secret,
   get SITE_URL() { return settings.get('site_url'); },
   get MAIL_MODE() { return settings.get('mail_mode'); },
   get BREVO_API_KEY() { return settings.get('brevo_api_key'); },
@@ -43,7 +48,9 @@ const notifications = createVideoNotifications({ sqlite, env });
 env.handleVideoUnsubscribe = request => notifications.handleUnsubscribe(request);
 const uploads = createUploadManager({ sqlite, env, databasePath: dbFile, notifications });
 env.deleteLocalVideo = uploads.deleteVideo;
-const brandFiles = createBrandFiles({ sqlite, env, dataDir: process.env.DATA_DIR || dirname(dbFile) });
+const brandFiles = createBrandFiles({ sqlite, env, dataDir });
+const family = createFamily({ sqlite, themeIds: () => themes.list().map(theme => theme.id), removeChannelFiles: brandFiles.removeChannel });
+const setup = createSetup({ sqlite, settings, env, paths: install, family, sendFile });
 notifications.kick();
 
 async function sendApi(req, res) {
@@ -85,10 +92,11 @@ const server = http.createServer((req, res) => {
   res.setHeader('Referrer-Policy','no-referrer');
   res.setHeader('X-Content-Type-Options','nosniff');
   res.setHeader('X-Frame-Options','DENY');
-  if(!['GET','HEAD','OPTIONS'].includes(req.method)&&req.headers.origin&&req.headers.origin!==env.SITE_URL){res.writeHead(403).end();return;}
+  if(!['GET','HEAD','OPTIONS'].includes(req.method)&&!setup.originAllowed(req)){res.writeHead(403).end();return;}
   let pathname;
   try { pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname).replace(/\/+$/, '') || '/'; }catch{res.writeHead(400).end();return;}
   if(pathname==='/api/themes'){themes.handle(req,res);return;}
+  if(setup.handle(req,res,pathname))return;
   if(['/api/login','/api/signup','/api/guest/redeem'].includes(pathname)){
     const ip=process.env.TRUST_PROXY==='1'?(req.headers['x-forwarded-for']||req.socket.remoteAddress):req.socket.remoteAddress;
     const now=Date.now(); for(const [k,v] of attempts)if(v.until<now)attempts.delete(k);
@@ -114,7 +122,10 @@ const server = http.createServer((req, res) => {
     res.writeHead(405).end();
   }
 });
-server.listen(port, process.env.HOST || '127.0.0.1', () => console.log(`${BRAND_NAME} listening on ${server.address().port}`));
+server.listen(port, process.env.HOST || '127.0.0.1', () => {
+  console.log(`${BRAND_NAME} listening on ${server.address().port}`);
+  setup.announce(server.address().port);
+});
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => {
   server.close(async () => { await notifications.close(); sqlite.close(); process.exit(0); });
 });

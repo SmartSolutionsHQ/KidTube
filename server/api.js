@@ -2,6 +2,7 @@
 import { passwordRecord, passwordMatches } from './passwords.mjs';
 import { sendMail } from './mail.mjs';
 import { BRAND_NAME, WORDMARK } from './brand.mjs';
+import { kidEmail } from './family.mjs';
 
 export default {
   async fetch(req, env, ctx) {
@@ -130,7 +131,9 @@ const BAD_LOGIN = () => J({ ok: false, error: 'Wrong email or password.' }, 401)
 async function login(req, env) {
   const b = await req.json().catch(() => null);
   if (!b) return J({ ok: false, error: 'bad body' }, 400);
-  const email = String(b.email || '').trim().toLowerCase();
+  let email = String(b.email || '').trim().toLowerCase();
+  /* kids sign in with a bare login name such as "juni" */
+  if (/^[a-z][a-z0-9-]{1,23}$/.test(email)) email = kidEmail(email);
   const pass = String(b.pass || '');
   if (!EMAIL_OK(email) || !pass) return J({ ok: false, error: 'creds' }, 400);
   const r = await db(env, 'SELECT salt, hash, status, role FROM accounts WHERE email = ?', [email]);
@@ -189,7 +192,7 @@ async function asCreator(env, email, t) {
   const row = r.results && r.results[0];
   return row && ['admin', 'super', 'kid'].includes(row.role) ? { email: e, role: row.role, channelId: row.channel_id } : null;
 }
-export { asStaff, asCreator, sessOk };
+export { asStaff, asCreator, sessOk, sessToken };
 async function staffFrom(req, env) {
   const b = await req.json().catch(() => null);
   if (!b) return null;
