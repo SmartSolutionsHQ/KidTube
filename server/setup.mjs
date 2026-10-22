@@ -239,7 +239,8 @@ export function createSetup({ sqlite, settings, env, paths, family, sendFile, lo
       sqlite.prepare(`INSERT INTO accounts (email,first,last,salt,hash,status,role,created) VALUES (?,?,?,?,?,'approved','super',?)
         ON CONFLICT(email) DO UPDATE SET first=excluded.first, last=excluded.last, salt=excluded.salt, hash=excluded.hash,
         status='approved', role='super', channel_id=NULL`).run(email, first, last, record.salt, record.hash, Date.now());
-      activity(email, 'claim', { ip });
+      // Who claimed it, not from where: the address would sit in the activity log for a year.
+      activity(email, 'claim', {});
       step(email, 2);
       sqlite.exec('COMMIT');
     } catch (error) {

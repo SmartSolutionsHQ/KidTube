@@ -193,8 +193,16 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
   const lastSeen = () => new Map(sqlite.prepare("SELECT subject, ts FROM activity WHERE kind='seen'").all().map(row => [row.subject, row.ts]));
 
   /* ---------- retention ---------- */
+  // Rate limits keep addresses for an hour at most (signups); afterwards nothing needs them. api.js only
+  // clears each table when that route is used again, which in a small family can be months.
+  function pruneAddresses() {
+    const before = now() - 60 * 60 * 1000;
+    for (const table of ['hits', 'chits', 'guest_code_attempts']) sqlite.prepare(`DELETE FROM ${table} WHERE ts < ?`).run(before);
+  }
+
   // Activity and watch history older than the family's settings go, at boot and once a day.
   function prune() {
+    pruneAddresses();
     const at = now();
     sqlite.prepare('DELETE FROM activity WHERE ts < ?').run(at - settings.get('activity_retention_days') * DAY);
     const columns = sqlite.prepare('PRAGMA table_info(views)').all().map(column => column.name);
@@ -723,6 +731,8 @@ export function createMonitor({ sqlite, settings, env, family, paths = {}, now =
   prune();
   const daily = setInterval(() => { try { prune(); } catch (error) { console.error('Retention prune failed', error); } }, DAY);
   daily.unref?.();
+  const hourly = setInterval(() => { try { pruneAddresses(); } catch (error) { console.error('Address prune failed', error); } }, 60 * 60 * 1000);
+  hourly.unref?.();
 
-  return { handle, prune, feed, touch, storage, close: () => clearInterval(daily) };
+  return { handle, prune, pruneAddresses, feed, touch, storage, close: () => { clearInterval(daily); clearInterval(hourly); } };
 }

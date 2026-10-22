@@ -1,7 +1,10 @@
 // Regressions for docs/plan/security-review.md: each test names the finding it pins down.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { addressKey, clientIp } from '../server/setup.mjs';
+import { addressKey, clientIp, createSetup } from '../server/setup.mjs';
+import { createMonitor } from '../server/monitor.mjs';
+import { createSettings } from '../server/settings.mjs';
+import { createFamily } from '../server/family.mjs';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -257,4 +260,43 @@ test('L6: removing a person, or a kid login from the kid form, leaves no email o
   db.prepare("INSERT INTO views (clip_id,channel_id,viewer,started,updated) VALUES ('tobi-1',1,?,0,0)").run(KID_EMAIL);
   assert.equal((await json('/api/admin/kids', { headers: owner, body: { id: 1, name: 'Tobi', login: null } })).status, 200);
   assert.deepEqual(everywhere(KID_EMAIL), []);
+});
+
+test('L7: rate-limit addresses go within the hour, and the setup claim keeps no address', async t => {
+  const { sqlite, DB } = openDatabase(':memory:');
+  t.after(() => sqlite.close());
+  await migrate(sqlite);
+  const settings = createSettings(sqlite, {});
+  const env = { DB, SIGN_SECRET: 'a-test-only-signing-secret-of-enough-length', SITE_URL: '', settings };
+  const family = createFamily({ sqlite });
+  let clock = Date.now();
+  const monitor = createMonitor({ sqlite, settings, env, family, paths: {}, now: () => clock });
+  t.after(() => monitor.close());
+  for (const table of ['hits', 'chits', 'guest_code_attempts']) {
+    sqlite.prepare(`INSERT INTO ${table} (ip,ts) VALUES ('203.0.113.7',?), ('198.51.100.1',?)`).run(clock - 2 * 3600000, clock - 60000);
+  }
+  monitor.pruneAddresses();
+  for (const table of ['hits', 'chits', 'guest_code_attempts']) {
+    assert.deepEqual(sqlite.prepare(`SELECT ip FROM ${table}`).all().map(row => row.ip), ['198.51.100.1'], table);
+  }
+  clock += 2 * 3600000;
+  monitor.prune();
+  for (const table of ['hits', 'chits', 'guest_code_attempts']) assert.equal(sqlite.prepare(`SELECT COUNT(*) n FROM ${table}`).get().n, 0, table);
+
+  const dir = mkdtempSync(join(tmpdir(), 'kidtube-claim-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const paths = { tokenFile: join(dir, 'setup-token'), dataDir: dir };
+  const setup = createSetup({ sqlite, settings, env, paths, family, sendFile() {}, log() {} });
+  const code = readFileSync(paths.tokenFile, 'utf8').trim();
+  const status = await new Promise(resolve => {
+    const body = Buffer.from(JSON.stringify({ code, first: 'Remi', last: 'Okafor', email: 'remi@example.com', pass: 'a-long-enough-password' }));
+    const req = { method: 'POST', url: '/api/setup/claim', headers: { host: 'localhost' }, socket: { remoteAddress: '203.0.113.7' },
+      async *[Symbol.asyncIterator]() { yield body; } };
+    const res = { headersSent: false, writeHead(code) { this.code = code; return this; }, end() { resolve(this.code); }, destroy() { resolve(0); } };
+    setup.handle(req, res, '/api/setup/claim');
+  });
+  assert.equal(status, 200);
+  const claim = sqlite.prepare("SELECT detail FROM activity WHERE kind='setup' AND subject='claim'").get();
+  assert.ok(claim, 'the claim is still recorded');
+  assert.ok(!claim.detail.includes('203.0.113.7'), claim.detail);
 });
