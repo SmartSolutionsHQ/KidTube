@@ -349,3 +349,154 @@ export function pause(host, ctx) {
     },
   };
 }
+
+// ---------- time capsule unlock and end of tape ----------
+
+const UNLOCK_MS = 2400;
+const isReduced = (host, ctx) => ctx.reducedMotion || host.hasAttribute('data-kt-reduced');
+// A VCR-style counter, 0:45:12.
+const counter = value => {
+  const s = Math.max(0, Math.floor(Number(value) || 0));
+  return `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+};
+const osdDate = ms => {
+  const date = new Date(Number(ms) || Date.now());
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).replace(',', '').toUpperCase();
+};
+
+// A short tape hiss with a soft clunk as the seal tears.
+function playHiss(audio) {
+  const now = audio.currentTime + 0.02;
+  const length = Math.floor(audio.sampleRate * 0.45);
+  const buffer = audio.createBuffer(1, length, audio.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1;
+  const hiss = audio.createBufferSource();
+  hiss.buffer = buffer;
+  const band = audio.createBiquadFilter();
+  band.type = 'bandpass';
+  band.frequency.value = 3600;
+  band.Q.value = 0.7;
+  const hissGain = audio.createGain();
+  hissGain.gain.setValueAtTime(0.0001, now);
+  hissGain.gain.exponentialRampToValueAtTime(0.05, now + 0.04);
+  hissGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.42);
+  hiss.connect(band).connect(hissGain).connect(audio.destination);
+  hiss.start(now);
+  hiss.stop(now + 0.45);
+  const clunk = audio.createOscillator();
+  clunk.type = 'sine';
+  clunk.frequency.setValueAtTime(140, now);
+  clunk.frequency.exponentialRampToValueAtTime(50, now + 0.16);
+  const clunkGain = audio.createGain();
+  clunkGain.gain.setValueAtTime(0.0001, now);
+  clunkGain.gain.exponentialRampToValueAtTime(0.08, now + 0.006);
+  clunkGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+  clunk.connect(clunkGain).connect(audio.destination);
+  clunk.start(now);
+  clunk.stop(now + 0.22);
+}
+
+// A time capsule opens: the seal strip tears apart with an RGB split, then the clip title types in
+// on the OSD. Built here, shown by play().
+export function unlock(host, ctx) {
+  const { h } = ctx;
+  host.style.setProperty('--et-accent', ctx.accent);
+  host.style.setProperty('--et-ink', ctx.accentInk);
+  const sealText = 'SEALED ✦ SEALED ✦ SEALED ✦ SEALED ✦ SEALED';
+  const half = side => h('div', { class: `et-unlock-half et-unlock-${side}` }, h('span', { text: sealText }));
+  const date = osdDate(ctx.openedAt);
+  const root = h('div', { class: 'et-unlock' },
+    h('p', { class: 'et-unlock-osd' }, '▶ PLAY'),
+    date ? h('p', { class: 'et-unlock-date', text: date }) : null,
+    h('div', { class: 'et-unlock-seal' }, half('l'), half('r')),
+    h('div', { class: 'et-unlock-stage' },
+      h('p', { class: 'et-unlock-kicker' }, 'Tape unsealed'),
+      h('p', { class: 'et-unlock-title', text: String(ctx.title || '').toUpperCase() }),
+      ctx.note ? h('p', { class: 'et-unlock-note', text: ctx.note }) : null));
+  let running = null, timer = 0, finish = () => {};
+  const stop = () => { clearTimeout(timer); timer = 0; finish(); };
+  ctx.signal.addEventListener('abort', stop, { once: true });
+  return {
+    play() {
+      if (running) return running;
+      host.replaceChildren(root);
+      const reduced = isReduced(host, ctx);
+      if (!reduced) {
+        const audio = ctx.sound.context();
+        if (audio) try { playHiss(audio); } catch {}
+      }
+      running = new Promise(resolve => {
+        finish = resolve;
+        if (ctx.signal.aborted) resolve();
+        else timer = setTimeout(resolve, reduced ? 30 : UNLOCK_MS);
+      });
+      return running;
+    },
+    destroy() {
+      stop();
+      host.replaceChildren();
+    },
+  };
+}
+
+// End of tape: the picture tears, snow rolls by once, then END OF TAPE rests on the OSD with the tape
+// label and the counter stopped at today's watch time. The shell draws its words and button below.
+export function ending(host, ctx) {
+  const { h } = ctx;
+  host.style.setProperty('--et-accent', ctx.accent);
+  host.style.setProperty('--et-ink', ctx.accentInk);
+  const snow = h('canvas', { class: 'et-end-snow', width: 96, height: 160 });
+  const count = h('span', { text: counter(0) });
+  const root = h('div', { class: 'et-end', 'aria-hidden': 'true' },
+    snow,
+    h('div', { class: 'et-end-tear' }, h('i'), h('i'), h('i'), h('i')),
+    h('div', { class: 'et-end-roll' }),
+    h('div', { class: 'et-end-scan' }),
+    h('p', { class: 'et-end-osd' }, h('span', { class: 'et-end-mark' }, '■'), ' STOP'),
+    h('p', { class: 'et-end-side', text: `TAPE ${ctx.number} · SP` }),
+    h('div', { class: 'et-end-stage' },
+      h('p', { class: 'et-end-title' }, 'END OF TAPE'),
+      h('p', { class: 'et-end-label', text: `${ctx.slug.toUpperCase()}-T-${ctx.number}` }),
+      h('p', { class: 'et-end-count' }, 'CTR ', count)));
+  const stops = [];
+  const halt = () => { while (stops.length) stops.pop()(); };
+  ctx.signal.addEventListener('abort', halt, { once: true });
+  let shown = false;
+  const paintSnow = () => {
+    const paint = snow.getContext('2d');
+    if (!paint) return;
+    const image = paint.createImageData(snow.width, snow.height);
+    const data = image.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const v = 40 + Math.random() * 180;
+      data[i] = v; data[i + 1] = v; data[i + 2] = v; data[i + 3] = 255;
+    }
+    paint.putImageData(image, 0, 0);
+  };
+  return {
+    show({ used = 0 } = {}) {
+      const total = Math.max(0, Math.floor(Number(used) || 0));
+      count.textContent = counter(total);
+      if (shown) return;
+      shown = true;
+      host.replaceChildren(root);
+      if (isReduced(host, ctx)) return;
+      paintSnow();
+      // Snow for the first 1.7 s only, then the picture holds still.
+      stops.push(ctx.loop(time => { paintSnow(); return time < 1.7; }, { fps: 15 }));
+      // The counter runs up to today's time as the title lands, then stops.
+      count.textContent = counter(0);
+      stops.push(ctx.loop(time => {
+        const p = Math.min(1, Math.max(0, (time - 1.3) / 0.7));
+        count.textContent = counter(total * p);
+        return p < 1;
+      }, { fps: 20 }));
+    },
+    destroy() {
+      halt();
+      host.replaceChildren();
+    },
+  };
+}

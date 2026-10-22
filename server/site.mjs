@@ -9,7 +9,7 @@ export function createSite({ sqlite, settings }) {
       ok: true, brand: { name: BRAND_NAME, endorsement: ENDORSEMENT },
       siteName: site.site_name, tagline: site.site_tagline, accent: site.family_accent, gateTheme: site.gate_theme,
       badge: site.family_badge, splashSound: site.splash_sound, signupMode: site.signup_mode, guestPasses: site.guest_passes,
-      setup: site.setup_complete ? 'complete' : 'required', kidsPublic: site.kids_public,
+      setup: site.setup_complete ? 'complete' : 'required', kidsPublic: site.kids_public, timezone: site.family_timezone,
       channels: site.kids_public ? listChannels(sqlite).map(row => publicChannel(row, site)) : [],
     };
   }

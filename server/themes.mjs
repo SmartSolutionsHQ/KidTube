@@ -16,7 +16,10 @@ const FEED_VALUE = /^(?:#[0-9a-f]{6}|\d{1,3}px|accent)$/i;
 const ID = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 const HEX = /^#[0-9a-f]{6}$/i;
 const MODES = ['gate', 'channel'];
-const MANIFEST_KEYS = ['contract', 'id', 'name', 'description', 'author', 'version', 'tags', 'weight', 'modes', 'sound', 'defaultAccent', 'accents', 'feed'];
+const MANIFEST_KEYS = ['contract', 'id', 'name', 'description', 'author', 'version', 'tags', 'weight', 'modes', 'sound', 'defaultAccent', 'accents', 'feed', 'endingCopy'];
+// pause is required; unlock (a time capsule opening) and ending (end of tape) are optional.
+const ACCENT_KEYS = ['pause', 'unlock', 'ending'];
+export const ENDING_COPY_MAX = 40;
 const HASH_LENGTH = 12;
 
 const isText = (value, max) => typeof value === 'string' && value.trim().length > 0 && value.length <= max;
@@ -40,8 +43,14 @@ export function validateManifest(manifest, folder) {
   if (typeof manifest.sound !== 'boolean') errors.push('sound must be true or false');
   if (typeof manifest.defaultAccent !== 'string' || !HEX.test(manifest.defaultAccent)) errors.push('defaultAccent must be #rrggbb');
   const accents = manifest.accents;
-  if (!accents || typeof accents !== 'object' || Array.isArray(accents) || Object.keys(accents).some(key => key !== 'pause')
-    || typeof accents.pause !== 'boolean') errors.push('accents must be {pause: true|false}');
+  if (!accents || typeof accents !== 'object' || Array.isArray(accents) || Object.keys(accents).some(key => !ACCENT_KEYS.includes(key))
+    || typeof accents.pause !== 'boolean' || Object.values(accents).some(value => typeof value !== 'boolean')) {
+    errors.push('accents must be {pause, unlock?, ending?} with true|false values');
+  }
+  // Optional words for the end-of-tape warnings, in the theme's voice: { warn5, warn1 }.
+  const copy = manifest.endingCopy;
+  if (copy !== undefined && (!copy || typeof copy !== 'object' || Array.isArray(copy) || Object.keys(copy).some(key => !['warn5', 'warn1'].includes(key))
+    || !Object.values(copy).every(value => isText(value, ENDING_COPY_MAX)))) errors.push(`endingCopy must be {warn5?, warn1?} of up to ${ENDING_COPY_MAX} characters`);
   const feed = manifest.feed;
   if (!feed || typeof feed !== 'object' || Array.isArray(feed)) errors.push('feed must be an object of --tz-* variables');
   else for (const [name, value] of Object.entries(feed)) {
@@ -97,6 +106,7 @@ export function createThemes(publicDir) {
           id: manifest.id, name: manifest.name, description: manifest.description, author: manifest.author,
           version: manifest.version, tags: manifest.tags, weight: manifest.weight, modes: manifest.modes,
           sound: manifest.sound, defaultAccent: manifest.defaultAccent, accents: manifest.accents, feed: manifest.feed,
+          ...(manifest.endingCopy ? { endingCopy: manifest.endingCopy } : {}),
           preview: url('preview.webp'), css: url('splash.css'), js: url('splash.js'),
         });
       } catch { continue; }

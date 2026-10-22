@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { BRAND_NAME, DEFAULT_ACCENT, ENDORSEMENT, TAGLINE } from '../server/brand.mjs';
 import { publishClip } from '../server/publish.mjs';
+import { SERVER_TIMEZONE } from '../server/settings.mjs';
 import { startInstall, PARENT } from './helpers.mjs';
 
 const VIDEO = '22222222-2222-4222-8222-222222222222';
@@ -28,7 +29,7 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
     assert.deepEqual(site, {
       ok: true, brand: { name: BRAND_NAME, endorsement: ENDORSEMENT },
       siteName: '', tagline: TAGLINE, accent: DEFAULT_ACCENT, gateTheme: 'ember-tape', badge: null, splashSound: true,
-      signupMode: 'approval', guestPasses: true, setup: 'complete', kidsPublic: true,
+      signupMode: 'approval', guestPasses: true, setup: 'complete', kidsPublic: true, timezone: SERVER_TIMEZONE,
       channels: [
         { slug: 'ana', name: 'Ana', kicker: 'Side A', accent: '#4df6ff', themeId: 'arcade', logoUrl: '/brand/ana.svg?v=3' },
         { slug: 'ben', name: 'Ben', kicker: '', accent: DEFAULT_ACCENT, themeId: 'ember-tape', logoUrl: null },
@@ -70,7 +71,7 @@ test('front door, channels and the clip catalog', { timeout: 30000 }, async t =>
     const overview = await json(`/api/admin/overview?e=${Buffer.from(PARENT.email).toString('base64url')}&t=${parent.t}`);
     assert.deepEqual(overview.clips.find(clip => clip.id === 'clip-pending'), {
       id: 'clip-pending', title: 'Clip clip-pending', position: 3, review: 'pending', hidden: false, channel: 'ana',
-      likes: 0, comments: 0, likers: [],
+      likes: 0, comments: 0, likers: [], reactions: {}, sealed: false, opensAt: 0, openedAt: 0, capsuleNote: '',
     });
   });
 

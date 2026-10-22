@@ -3,7 +3,7 @@ import { sendMail } from './mail.mjs';
 import { BRAND_NAME, WORDMARK } from './brand.mjs';
 import { DEFAULT_CHANNEL_ID } from './channels.mjs';
 
-const SUBJECT = `New video on ${BRAND_NAME}`;
+const DEFAULT_SUBJECT = `New video on ${BRAND_NAME}`;
 const MAX_ATTEMPTS = 8;
 const esc = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -14,22 +14,27 @@ export function watchLink(clip, siteUrl) {
   return new URL(`/#/${slug}v/${encodeURIComponent(clip.id)}`, siteUrl).href;
 }
 
+// A time capsule that just opened (capsule_note is set, even to '') gets its own subject and the note.
+const capsuleSubject = clip => `A time capsule just opened on ${clip.channel_name ? `${clip.channel_name}'s channel` : BRAND_NAME}`;
+
 export function videoEmail(clip, { siteUrl, unsubscribeUrl }) {
   const watchUrl = watchLink(clip, siteUrl);
+  const capsule = clip.capsule_note != null;
+  const SUBJECT = capsule ? capsuleSubject(clip) : DEFAULT_SUBJECT;
   const seconds = Math.max(0, Math.round(Number(clip.duration) || 0));
   const duration = `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
   const posted = new Intl.DateTimeFormat('en-US', {
     timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short',
   }).format(new Date(clip.published));
-  const joke = 'A new video is ready on your family channel.';
+  const joke = capsule ? `It was sealed until now.${clip.capsule_note ? ` "${clip.capsule_note}"` : ''}` : 'A new video is ready on your family channel.';
   const text = `${SUBJECT}\n\n${joke}\n\n${clip.title}\nLength: ${duration}\nPosted: ${posted} (UTC)${clip.blurb ? `\n${clip.blurb}` : ''}\n\nWatch the new vid: ${watchUrl}\n\nLog in with your ${BRAND_NAME} account to watch.\n\nYou received this because you have an approved ${BRAND_NAME} account.\nStop new-video emails: ${unsubscribeUrl}`;
-  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${SUBJECT}</title></head>
+  const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(SUBJECT)}</title></head>
 <body style="margin:0;background:#0B0C10;color:#F7F4EC;font-family:Arial,sans-serif">
 <div style="display:none;max-height:0;overflow:hidden">${esc(clip.title)} · A new moment to share.</div>
 <main style="max-width:560px;margin:0 auto;padding:32px 24px">
   <p style="color:#3265FF;letter-spacing:3px;font-size:12px;font-weight:bold">${WORDMARK}</p>
-  <h1 style="font-size:30px;line-height:1.2">${SUBJECT}</h1>
-  <p style="line-height:1.6">${joke}</p>
+  <h1 style="font-size:30px;line-height:1.2">${esc(SUBJECT)}</h1>
+  <p style="line-height:1.6">${esc(joke)}</p>
   <div style="border:1px solid #44404A;border-radius:10px;padding:20px;margin:24px 0">
     <h2 style="font-size:22px;margin:0 0 12px">${esc(clip.title)}</h2>
     <p style="color:#C4BEC9;font-size:14px;margin:0;line-height:1.7">Length: ${duration}<br>Posted: ${esc(posted)} (UTC)</p>
@@ -51,8 +56,9 @@ export function createVideoNotifications({ sqlite, env, fetchImpl = fetch, now =
   function enqueue(clip) {
     if (env.MAIL_MODE==='disabled' || (clip.kind && clip.kind !== 'video')) return;
     const added = sqlite.prepare(`INSERT OR IGNORE INTO video_announcements
-      (clip_id,title,blurb,duration,published,created,channel_id) VALUES (?,?,?,?,?,?,?)`)
-      .run(clip.id, clip.title, clip.blurb || '', Number(clip.duration) || 0, clip.publishedAt || clip.published, now(), clip.channelId ?? DEFAULT_CHANNEL_ID).changes;
+      (clip_id,title,blurb,duration,published,created,channel_id,capsule_note) VALUES (?,?,?,?,?,?,?,?)`)
+      .run(clip.id, clip.title, clip.blurb || '', Number(clip.duration) || 0, clip.publishedAt || clip.published, now(), clip.channelId ?? DEFAULT_CHANNEL_ID,
+        clip.capsule ? String(clip.capsuleNote || '') : null).changes;
     if (!added) return;
     const recipients = sqlite.prepare(`SELECT email FROM accounts WHERE status='approved'
       AND NOT EXISTS (SELECT 1 FROM video_email_preferences p WHERE p.email=accounts.email AND p.unsubscribed=1)`).all();
@@ -101,7 +107,7 @@ ${action ? `<form method="post" action="${esc(action)}"><button style="backgroun
 
   async function drain() {
     while (!stopped) {
-      const row = sqlite.prepare(`SELECT d.*, a.title, a.blurb, a.duration, a.published, ch.slug AS channel FROM video_notification_deliveries d
+      const row = sqlite.prepare(`SELECT d.*, a.title, a.blurb, a.duration, a.published, a.capsule_note, ch.slug AS channel, ch.name AS channel_name FROM video_notification_deliveries d
         JOIN video_announcements a ON a.clip_id=d.clip_id LEFT JOIN channels ch ON ch.id=a.channel_id
         WHERE d.status='pending' AND d.next_attempt<=? ORDER BY d.next_attempt, d.rowid LIMIT 1`).get(now());
       if (!row) return;

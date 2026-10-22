@@ -23,7 +23,7 @@ gallery. The event log shows `tz:hold`, `tz:enter` and what the loader did. Use 
 public/themes/arcade-crt/
   manifest.json   name, tags, weight, sound, accents
   splash.css      every rule scoped to the theme
-  splash.js       export mount(), and pause() if it has one
+  splash.js       export mount(), and pause(), unlock(), ending() if it has them
   preview.webp    gallery thumbnail, a finished still at 390 × 844 (312 × 675 is fine)
   fonts/          optional: OFL woff2 files plus OFL.txt
 ```
@@ -46,8 +46,9 @@ The folder name is the theme id: lowercase words joined by hyphens. The whole fo
   "modes": ["gate", "channel"],
   "sound": true,
   "defaultAccent": "#3DFFB0",
-  "accents": { "pause": true },
-  "feed": { "--tz-flare": "accent", "--tz-ink": "#04040A" }
+  "accents": { "pause": true, "unlock": true, "ending": true },
+  "feed": { "--tz-flare": "accent", "--tz-ink": "#04040A" },
+  "endingCopy": { "warn5": "5 MINUTES OF CREDIT LEFT", "warn1": "LAST LIFE: 1 MINUTE" }
 }
 ```
 
@@ -62,7 +63,9 @@ The folder name is the theme id: lowercase words joined by hyphens. The whole fo
 | `modes` | `gate` (the family's front door) and/or `channel` (a kid's channel). |
 | `sound` | `true` if the theme can play a sound after the Enter tap. |
 | `defaultAccent` | `#rrggbb` used when a channel has no accent. |
-| `accents.pause` | `true` if `splash.js` exports `pause()`. |
+| `accents.pause` | `true` if `splash.js` exports `pause()`. Required. |
+| `accents.unlock`, `accents.ending` | Optional. `true` if `splash.js` exports `unlock()` / `ending()`; the test checks they match. |
+| `endingCopy` | Optional. `{ "warn5", "warn1" }`, up to 40 characters each: the daily-tape warnings at 5 and 1 minutes, in the theme's voice. Without them the shell says "5 minutes of tape left". |
 | `feed` | Feed variables the theme restyles. Allowed: `--tz-flare`, `--tz-paper`, `--tz-ink`, `--tz-surface`, `--tz-dim`, `--tz-rad-frame`, `--tz-rad-sheet`. Values: `#rrggbb`, a px length, or `"accent"`. |
 
 Unknown fields make the manifest invalid, and an invalid theme is left out of the list.
@@ -84,6 +87,7 @@ export function pause(host, ctx) {
 - `mount()` builds the splash inside `host` and returns `{ dismiss(reason) }`. `dismiss` may return a
   Promise and must finish within 600 ms; the loader stops waiting at 700 ms and removes the host anyway.
   `reason` is `enter` or `skip`.
+- `unlock()` and `ending()` are described in [Unlock and ending](#unlock-and-ending) below.
 - `pause()` draws an accent over a paused feed video. The host does not take pointer events, so a tap
   still reaches the feed's own play button. `show(seconds, total)` gets the video's current time and
   duration (`total` is 0 when unknown).
@@ -156,6 +160,42 @@ and `Creepster`. Always give a fallback stack; the theme must still look accepta
 Any other face ships in the theme's `fonts/` folder as woff2 under the SIL Open Font License, with
 `OFL.txt` beside it, declared with `@font-face` in `splash.css` using a relative URL.
 
+## Unlock and ending
+
+Two optional moments outside the splash. The shell (`public/js/shell/endings.js`) loads them with a
+2.5 s limit and uses its own calm versions when a theme has none, or when one throws or times out, so a
+broken export never blocks the viewer.
+
+```js
+// A time capsule (a clip sealed until a date) opening for the first time on this device.
+export function unlock(host, ctx) {
+  return { play() { /* returns a Promise, resolved within 2500 ms */ }, destroy() {} };
+}
+
+// The kid's daily watch time ("tape") has run out.
+export function ending(host, ctx) {
+  return { show({ resetsAt, used, limit }) {}, destroy() {} };
+}
+```
+
+- **ctx** is the pause ctx, plus for `unlock`: `title` (the clip's title), `openedAt` (ms) and `note`
+  (up to 140 characters, may be empty); for `ending`: `title` (the kid's name), `number` and `slug`.
+  `ctx.sound` follows the pause-accent rule: allowed only when the family has splash sound on and the
+  viewer has tapped something in this session, never under reduced motion.
+- **The unlock host** sits over the video slot (a size container), takes no pointer events and is
+  removed after `play()` resolves or at 3000 ms. The clip waits, then plays. Under reduced motion the
+  shell skips `unlock()` and fades in an "Opened" label instead.
+- **The ending host** is a full-screen modal `<dialog>` labelled "End of tape" (a size container). The
+  shell draws the words and the one button in a panel in the lower part of the screen, after `show()`:
+  "That's the tape for today", "More tomorrow at <local midnight>" and "Done for today" (focused;
+  it returns to the front door). Keep the theme's own headline in the upper half, render no button and
+  no sentence of your own, and put your background on your own root element. `resetsAt` is the next
+  local midnight in ms; `used` and `limit` are seconds.
+- **Both** play once and rest on a finished frame: no infinite animations, no nagging loops, nothing
+  after about 2.5 s. With `data-kt-reduced` on the host (reduced motion) show the finished frame at
+  once. All the rules above apply (scoped CSS, no network, 3 flashes a second at most, sound only
+  through `ctx.sound`). Use class names distinct from the splash and pause ones.
+
 ## The loader (`public/js/shell/themes.js`)
 
 ```js
@@ -224,11 +264,14 @@ changed file gets a new URL. The list is read from disk on each request (`Cache-
 
 ## Launch themes
 
-| Theme | Weight | Sound | Pause accent |
-|---|---|---|---|
-| Ember Tape | heavy (WebGL smoke, CSS fallback) | tape sting | VHS pause screen |
-| Glass Gate | light, the fallback | none | none |
-| Creature Feature | light (channel mode only) | theremin wobble | none |
-| Blueprint Workshop | light | paper rip | none |
-| Arcade | light | coin blip | pixel PAUSED |
-| Comic Pow | light | pow | PAUSE! bubble |
+| Theme | Weight | Sound | Pause accent | Unlock | Ending |
+|---|---|---|---|---|---|
+| Ember Tape | heavy (WebGL smoke, CSS fallback) | tape sting | VHS pause screen | seal strip tears with an RGB split | picture tears, snow, END OF TAPE |
+| Glass Gate | light, the fallback | none | none | shell default | shell default |
+| Creature Feature | light (channel mode only) | theremin wobble | none | shell default | shell default |
+| Blueprint Workshop | light | paper rip | none | shell default | shell default |
+| Arcade | light | coin blip | pixel PAUSED | NEW TAPE UNLOCKED chest | GAME OVER / INSERT COIN TOMORROW |
+| Comic Pow | light | pow | PAUSE! bubble | KA-CHUNK! burst | THE END panel with a halftone wipe |
+
+The shell default unlock splits a paper seal and slides the tape label up; the default ending runs the
+tape counter down to zero on ink.

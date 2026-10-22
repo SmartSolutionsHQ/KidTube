@@ -10,6 +10,7 @@
   "modes": ["gate", "channel"],
   "sound": true,
   "defaultAccent": "#FF5C2B",
-  "accents": { "pause": true },
+  "accents": { "pause": true, "unlock": true, "ending": true },
+  "endingCopy": { "warn5": "5:00 OF TAPE LEFT", "warn1": "1:00 OF TAPE LEFT" },
   "feed": { "--tz-flare": "accent", "--tz-ink": "#05060A", "--tz-paper": "#F7F4EC", "--tz-dim": "#A6A0AE" }
 }

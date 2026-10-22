@@ -9,6 +9,9 @@ Built by SmartSolutionsHQ from a family project, with a reusable design and inst
 ## What is included
 
 - Scrollable video feed with playback recovery, shuffle, likes, and comments.
+- Time capsules: seal a video until a birthday or any date, with a note; it waits in the channel as a locked tape and opens with the theme's own unlock.
+- Sticker reactions from the people you approved, bursting over the video.
+- An honest daily watch limit per account that ends in the theme's own "end of tape" screen, with bonus minutes a parent can add.
 - Parent approval for new accounts; a dashboard at `/parents` to manage viewers and videos.
 - Parent owner (`super`), uploader (`admin`), approved viewer, and temporary view-only guest roles.
 - One-use guest codes, valid for 24 hours; redeemed guest access also expires after 24 hours.

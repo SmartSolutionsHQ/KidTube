@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { asCreator } from './api.js';
 import { CLIP_ACCESS_SQL, DEFAULT_CHANNEL_ID, canPlayClip, channelById, channelBySlug } from './channels.mjs';
 import { publishClip } from './publish.mjs';
+import { validateSeal } from './capsules.mjs';
 
 const execFileAsync = promisify(execFile);
 const CHUNK_SIZE = 4 * 1024 * 1024;
@@ -130,7 +131,9 @@ function grabPoster(video, output, duration) {
   ], { timeoutMs: POSTER_TIMEOUT });
 }
 
-export function createUploadManager({ sqlite, env, databasePath, notifications }) {
+// canWatch(viewer, now, { clipId, poster }) answers true, or the reason a file is closed right now
+// ({ error: 'sealed', opensAt } or { error: 'end-of-tape', resetsAt }); index.mjs supplies it.
+export function createUploadManager({ sqlite, env, databasePath, notifications, canWatch = () => true }) {
   const dataDir = process.env.DATA_DIR || dirname(databasePath);
   const incoming = join(dataDir, 'incoming');
   const videos = join(dataDir, 'videos');
@@ -206,6 +209,7 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
       publishClip(sqlite, notifications, {
         id: clipId, title: job.title, src: `/api/video/${job.id}`, poster: posterSrc, kind: 'video',
         publishedAt: new Date(now).toISOString(), duration, channelId: job.channel_id, review: reviewed ? 'pending' : 'approved',
+        opensAt: job.opens_at, capsuleNote: job.capsule_note, sealedBy: job.email,
       }, job.id);
       await rm(dir, { recursive: true, force: true })
         .catch(error => console.error(`Could not remove completed upload ${job.id}:`, error));
@@ -236,7 +240,11 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
     if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed.');
     const media = MEDIA.exec(pathname.slice('/api/video/'.length));
     if (!media) throw new HttpError(404, 'Video not found.');
-    if (!canPlayClip(viewer, clipForMedia.get(`/api/video/${media[1]}`))) throw new HttpError(404, 'Video not found.');
+    const clip = clipForMedia.get(`/api/video/${media[1]}`);
+    if (!canPlayClip(viewer, clip)) throw new HttpError(404, 'Video not found.');
+    // Checked before any byte or Range handling, so a sealed or spent tape never starts streaming.
+    const verdict = canWatch(viewer, Date.now(), { clipId: clip.id, poster: !!media[2] });
+    if (verdict !== true) { json(res, 403, { ok: false, ...verdict }); return; }
     const file = join(videos, media[1] + (media[2] ? '.jpg' : '.mp4'));
     if (!existsSync(file)) throw new HttpError(404, 'Video not found.');
     const size = statSync(file).size;
@@ -272,14 +280,17 @@ export function createUploadManager({ sqlite, env, databasePath, notifications }
         const title = String(payload.title || '').trim().slice(0, 80);
         if (!Number.isSafeInteger(size) || size < 1000 || size > MAX_SOURCE) throw new HttpError(400, 'File must be under 512 MB.');
         if (!title) throw new HttpError(400, 'Name the video.');
+        // Sealing at upload: { opensAt, capsuleNote }. A kid's sealed upload still waits for review.
+        const seal = payload.opensAt ? validateSeal(payload.opensAt, payload.capsuleNote, Date.now()) : { opensAt: 0, note: '' };
+        if (seal.ok === false) throw new HttpError(400, seal.error);
         const disk = await statfs(dataDir);
         if (!hasRoom(disk.bavail * disk.bsize, size)) throw new HttpError(507, 'The server is almost out of space. Free some up and try again.');
         const pending = sqlite.prepare("SELECT COUNT(*) n FROM upload_jobs WHERE email=? AND status IN ('receiving','queued','processing') AND created>?").get(user.email, Date.now() - 86400000).n;
         if (pending >= 3) throw new HttpError(429, 'Finish an earlier upload before starting another.');
         const id = randomUUID(), now = Date.now();
         mkdirSync(join(incoming, id), { mode: 0o700 });
-        sqlite.prepare('INSERT INTO upload_jobs (id,email,title,size,status,created,updated,channel_id) VALUES (?,?,?,?,?,?,?,?)')
-          .run(id, user.email, title, size, 'receiving', now, now, channelId);
+        sqlite.prepare('INSERT INTO upload_jobs (id,email,title,size,status,created,updated,channel_id,opens_at,capsule_note) VALUES (?,?,?,?,?,?,?,?,?,?)')
+          .run(id, user.email, title, size, 'receiving', now, now, channelId, seal.opensAt, seal.note);
         return json(res, 200, { ok: true, uploadId: id, chunkSize: CHUNK_SIZE });
       }
       const chunkMatch = /^\/api\/upload\/raw\/chunk\/([a-f0-9-]{36})\/(\d{1,4})$/.exec(pathname);
