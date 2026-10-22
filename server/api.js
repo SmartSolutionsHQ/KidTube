@@ -1,4 +1,8 @@
-/* Account, moderation, and catalog API. */
+/* The account, catalog and moderation API: sign-up and sign-in, sessions and staff checks, guest codes, the
+   clip list, likes and comments, the account and clip routes the dashboard (monitor.mjs) calls through, and
+   clips stored as chunks by the original hosted version. It was written for a fetch-style host, so it takes
+   a Request and returns a Response (index.mjs adapts node:http to it) and runs its SQL through db.mjs's
+   prepare().bind().run() interface. */
 import { timingSafeEqual } from 'node:crypto';
 import { KID_PASSWORD_MIN, PASSWORD_MAX, PASSWORD_MIN, passwordRecord, passwordMatches } from './passwords.mjs';
 import { sendMail } from './mail.mjs';
@@ -31,6 +35,7 @@ export default {
       if (req.method === 'POST' && p === '/api/guest/redeem') return await guestRedeem(req, env, ip);
       if (req.method === 'POST' && p === '/api/guest/validate') return await guestValidate(req, env);
       if (p === '/api/check') return await check(req, url, env);
+      /* the original admin panel's account-request routes: old links get a pointer to the dashboard */
       if (p === '/api/pending') return DENY403();
       if (p === '/api/decide') return PAGE('Open the parent dashboard to review account requests.', 200);
       if (p === '/api/clips') return await clipsList(url, env, viewer);
@@ -197,24 +202,30 @@ async function check(req, url, env) {
   return J({ ok: true, email, status: 'approved', role: await roleOf(env, email), t });
 }
 
-/* Sessions expire after seven days and password changes invalidate them. */
+/* ---------- sessions: "<expires ms>.<signature>", the token the pages keep and send back ---------- */
+/* A session lasts seven days. It is signed over the account's password hash, so a new password ends
+   every session made with the old one. */
+const SESSION_MS = 7 * 86400000;
+const sessionSignature = (env, email, expires, hash) => hmac(env.SIGN_SECRET, 'sess|' + email + '|' + expires + '|' + hash);
 /* signatures compare in constant time, like the media cookie's */
 const sameHex = (given, expected) => /^[a-f0-9]{64}$/.test(String(given)) && timingSafeEqual(Buffer.from(given, 'hex'), Buffer.from(expected, 'hex'));
-async function sessToken(env,email) {
- const r=await db(env,'SELECT hash FROM accounts WHERE email=?',[email]);
- const expires=Date.now()+7*86400000;
- return expires+'.'+await hmac(env.SIGN_SECRET,'sess|'+email+'|'+expires+'|'+r.results[0].hash);
+
+export async function sessToken(env, email) {
+  const row = (await db(env, 'SELECT hash FROM accounts WHERE email = ?', [email])).results[0];
+  const expires = Date.now() + SESSION_MS;
+  return expires + '.' + await sessionSignature(env, email, expires, row.hash);
 }
-async function sessOk(env, email, t) {
+
+/* the email when t is a live session of an approved account, else null */
+export async function sessOk(env, email, t) {
   if (!isEmail(email) || !t) return null;
-  const [expires,sig]=String(t).split('.');
-  if(!/^\d{13}$/.test(expires)||Number(expires)<=Date.now()||Number(expires)>Date.now()+7*86400000)return null;
-  const credential=await db(env,'SELECT hash FROM accounts WHERE email=?',[email]);
-  if(!credential.results[0] || !sameHex(sig, await hmac(env.SIGN_SECRET,'sess|'+email+'|'+expires+'|'+credential.results[0].hash)))return null;
-  const r = await db(env, 'SELECT status FROM accounts WHERE email = ?', [email]);
-  const row = r.results && r.results[0];
-  return row && row.status === 'approved' ? email : null;
+  const [expires, sig] = String(t).split('.');
+  if (!/^\d{13}$/.test(expires) || Number(expires) <= Date.now() || Number(expires) > Date.now() + SESSION_MS) return null;
+  const row = (await db(env, 'SELECT hash, status FROM accounts WHERE email = ?', [email])).results[0];
+  if (!row || !sameHex(sig, await sessionSignature(env, email, expires, row.hash))) return null;
+  return row.status === 'approved' ? email : null;
 }
+
 /* "Nana Okafor" -> "Nana O.", as other viewers see a name */
 export const displayName = (first, last) => (String(first || '').trim() +
   (String(last || '').trim() ? ' ' + String(last).trim().charAt(0).toUpperCase() + '.' : '')).trim();
@@ -225,26 +236,31 @@ async function roleOf(env, email) {
   const row = r.results && r.results[0];
   return row && row.status === 'approved' ? String(row.role || '') : '';
 }
-async function asStaff(env, email, t) {
+/* { email, role } for a parent or co-parent with a live session, else null */
+export async function asStaff(env, email, t) {
   const e = await sessOk(env, email, t);
   if (!e) return null;
   const role = await roleOf(env, e);
   return isStaff({ role }) ? { email: e, role } : null;
 }
 /* staff, plus kid accounts that upload to their own channel */
-async function asCreator(env, email, t) {
+export async function asCreator(env, email, t) {
   const e = await sessOk(env, email, t);
   if (!e) return null;
   const r = await db(env, 'SELECT role, channel_id FROM accounts WHERE email = ?', [e]);
   const row = r.results && r.results[0];
   return row && ['admin', 'super', 'kid'].includes(row.role) ? { email: e, role: row.role, channelId: row.channel_id } : null;
 }
-export { asStaff, asCreator, sessOk, sessToken };
+/* POSTs carry the parent's session in the JSON body: { staff, body } when it is one, else null */
 async function staffFrom(req, env) {
   const b = await req.json().catch(() => null);
   if (!b) return null;
   const s = await asStaff(env, String(b.email || '').trim().toLowerCase(), String(b.t || ''));
   return s ? { staff: s, body: b } : null;
+}
+async function superFrom(req, env) {
+  const ctx = await staffFrom(req, env);
+  return ctx && ctx.staff.role === 'super' ? ctx : null;
 }
 const DENY403 = () => J({ ok: false, error: 'not authorized' }, 403);
 const SUPER403 = () => J({ ok: false, error: 'super only' }, 403);
@@ -327,10 +343,6 @@ async function guestValidate(req, env) {
   if (!row) return J({ ok: false, error: 'Guest access has expired.' }, 403);
   return J({ ok: true, expires: row.session_expires, role: 'guest', scope: await guestScope(env, tokenHash) });
 }
-async function superFrom(req, env) {
-  const ctx = await staffFrom(req, env);
-  return ctx && ctx.staff.role === 'super' ? ctx : null;
-}
 
 /* ---------- server-owned clip catalog (the admin panel edits it) ---------- */
 
@@ -373,7 +385,7 @@ async function clipsLocate(url, env, viewer) {
   return J({ ok: true, id: clip.id, channel: clip.channel, review: clip.review });
 }
 
-/* the parent's yes or no on a kid's upload; M7's review queue is the real screen for it */
+/* the parent's yes or no on a kid's upload; the dashboard's review queue (monitor.mjs) does the same through publish.mjs */
 async function clipsReview(req, env) {
   const ctx = await staffFrom(req, env);
   if (!ctx) return DENY403();
@@ -459,7 +471,7 @@ async function clipsDelete(req, env, from) {
   return J({ ok: true });
 }
 
-/* ---------- legacy media: clips stored as chunks by the original Worker ---------- */
+/* ---------- legacy media: clips the original hosted version stored as chunks in the database ---------- */
 const CHUNK = 700000;                /* bytes per stored chunk */
 
 /* stitch the requested byte range out of chunk rows (serve <= ~2MB per reply) */
@@ -533,7 +545,7 @@ async function mediaServe(req, env, p, viewer) {
   return new Response(chunkStream(env, id, start, end, size), { status: ranged ? 206 : 200, headers });
 }
 
-/* streams media bytes [from..to] out of D1 one stored chunk at a time */
+/* streams media bytes [from..to] out of media_chunks one stored chunk at a time */
 function chunkStream(env, id, from, to, size) {
   let pos = from;
   return new ReadableStream({

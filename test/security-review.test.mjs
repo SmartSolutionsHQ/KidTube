@@ -213,7 +213,7 @@ test('L4: session signatures are checked in constant time', async t => {
     assert.equal(await sessOk(env, 'nana@example.com', bad), null, bad);
   }
   const source = readFileSync(join(ROOT, 'server/api.js'), 'utf8');
-  const body = source.slice(source.indexOf('async function sessOk'), source.indexOf('const dispName'));
+  const body = source.slice(source.indexOf('async function sessOk'), source.indexOf('export const displayName'));
   assert.doesNotMatch(body, /sig\s*!==/, 'no plain string comparison of the signature');
   assert.match(body, /sameHex\(/);
 });
