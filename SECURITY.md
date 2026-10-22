@@ -119,6 +119,22 @@ approval notices to parents, and new-video notices (title and link) to viewers w
 an email link never approves anyone by itself. Turn email off if that outside processing doesn't suit your
 family.
 
+## The public demo
+
+`DEMO_MODE=1` turns an install into the public demo (`docs/DEMO.md`). It refuses to start on a family's data
+(both the database and the data folder must carry the demo's marker or be empty) and restores an invented
+family every hour. Every change is refused on the server except likes, reactions and each visitor's sandbox.
+
+- A sandbox holds one visitor's customized and made kids in the server's memory, under a random id in an
+  HttpOnly, SameSite=Strict cookie. No address or account is stored with it, nothing reaches the database or
+  the data folder, and other visitors' answers are never affected. Resets and restarts empty every sandbox.
+- Sandbox badges are drawn by the server from the same checked spec as a real badge and served only to that
+  visitor with `private, no-store`. Names and lines keep the family limits and refuse control and direction
+  characters; the pages show them as text.
+- Live sandboxes, the size of each, made kids, changes per minute and new sandboxes per visitor are capped.
+  The per-visitor counters are kept in memory under a per-boot HMAC of the address, never the address itself.
+- Without `DEMO_MODE` none of these routes, cookies or pages exist.
+
 ## What KidTube can't do
 
 - Approved viewers can record or save what they are allowed to watch. Approval is access control, not DRM.

@@ -6,6 +6,10 @@ comments from invented relatives, a time capsule that opens half an hour after e
 Juni and a "Who watched" history. Anyone can look around in ten seconds and nobody can post anything that
 another visitor sees.
 
+Visitors can also try the best part of setting up: customizing a kid's page (name, channel line, colour, badge
+and splash screen) and making up to two kids of their own. Those changes are private to the visitor's browser
+and gone at the next reset (see "Each visitor's sandbox" below).
+
 The clips are made on your server by FFmpeg from moving colour, titles and stickers already in this project.
 There are no real people in them and no footage from anywhere else, so there is nothing to license.
 
@@ -18,15 +22,46 @@ own.
 | | In the demo |
 |---|---|
 | Watch every kid's channel, open the sealed time capsule's countdown, see the parent dashboard | Yes |
+| Customize a kid's name, line, colour, badge and splash; make up to two kids of their own | Yes, privately. Only that visitor sees it, everywhere the app shows kids, until the next reset or "Reset my changes". |
 | Hearts and the five reaction stickers | Yes. They are fixed choices, limited per visitor, and reset every hour. Other visitors see the counts. |
 | Sign up, log in with a password, redeem or make guest codes | No |
-| Upload, comment, delete, rename, approve, seal, change budgets, settings, badges, pictures, people or kids | No: the server answers "Changes are off in the demo" and the screen says so |
+| Upload, comment, delete, rename, approve, seal, change budgets, settings, the family badge, pictures, people, the kids' order or logins | No: the server answers "Changes are off in the demo" and the screen says so |
 | Email of any kind | No: email is locked off |
 | Watching history | Shown as seeded. A visitor's own watching is never recorded, so it never shows to another visitor or spends Juni's tape |
 
 All of this is enforced on the server, not only hidden in the page. Every request that is not a read is refused
 unless it is one of the few above, so a route added later is refused too until someone decides otherwise.
 `DEMO_MODE` is read from the server's environment only; nothing a browser sends can turn it on or off.
+
+## Each visitor's sandbox
+
+The front door offers **Make your own kid's page** (a short page at `/demo/make` built from the setup wizard's
+add-kid step) and **Customize Juni's page** (the parent dashboard's Kids tab, opened on Juni's editor). Both sign
+the visitor in as the demo's parent with one tap. The pill's card offers the same, names the kid on screen, and
+shows **Reset my changes** once there is something to reset. Every place says: "Your changes are only on this
+device and disappear at the next reset."
+
+- **Where changes live.** In the server's memory, under a random sandbox id in a cookie (`kt_sandbox`,
+  HttpOnly, SameSite=Strict, Secure on https, gone at the next reset). Nothing else is stored with it: no
+  address, no account. Nothing is written to the database or the data folder, so the family, the activity log,
+  shared counts and other visitors never see it. The cookie belongs to the browser, not the account, so a
+  visitor who switches to Grandma still sees their own kids.
+- **What it changes.** The visitor's answers from `/api/site`, `/api/channels`, the dashboard's summary and
+  Kids tab: the front door, splash, header, picker, feed and dashboard all follow. A kid the visitor made gets
+  the slug `my-kid-1` or `my-kid-2`; their feed borrows four of the family's clips, each saying where it came from,
+  and uploads stay off. Hearts on a borrowed clip are the family clip's hearts, shared like any heart in the demo.
+- **Badges** are drawn by the server from the checked spec with the same renderer and rules as a real install,
+  and served only to that visitor at `/api/demo/sandbox/badge/<kid>.svg` with `Cache-Control: private, no-store`.
+  They are never written to the brand folder.
+- **Limits.** 2000 live sandboxes (the one used longest ago goes first), 24 KB per sandbox, two made kids, names
+  up to 40 characters and lines up to 80 (no control or direction characters), 30 changes a minute per sandbox
+  and six new sandboxes a minute per visitor (counted the same way as likes: in memory, under a per-boot HMAC of
+  the address). At full use that is under 50 MB of memory.
+- **Resets.** Every reset empties every sandbox: the hourly one and `npm run demo:reset` alike (the script
+  touches `demo-last-reset.json` in the data folder, and the server drops its sandboxes when it sees that).
+  A restart empties them too.
+- Logins, upload review and the order of the kids stay as the family set them; the Kids tab hides those
+  controls in the demo, and the server refuses them.
 
 ## What it needs
 
@@ -147,7 +182,9 @@ time capsule always opens 30 minutes after the reset. A page left open across a 
 ## Good to know
 
 - Everyone who taps "Grandma" is the same Grandma, so a heart one visitor takes back is gone for the next
-  visitor too, until the next reset. That is the one thing visitors share, by design.
+  visitor too, until the next reset. That is the one thing visitors share, by design. A visitor's customized
+  and made kids are never shared.
+- The home-screen app's name is the family's, so customizing a kid does not change it.
 - The kid's daily tape shows the seeded 12 of 30 minutes. Because visitors' watching is not recorded, the server
   never runs it out; the end-of-tape screen is easiest to see on your own install.
 - The demo's accounts live on the reserved `.invalid` domain, so no address in it can receive mail.
