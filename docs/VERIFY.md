@@ -10,6 +10,8 @@ be checked and why.
 - [ ] `npm pack --dry-run` lists no `docs/plan`, `docs/superpowers`, `scripts/dev`, `.github`, `.env`, database or
       `data/` file (CI and `test/package.test.mjs` check this).
 - [ ] `docker build .` succeeds, and the image has no `/app/docs`, `/app/test` or `/app/scripts/dev`.
+- [ ] With no `.env`, `docker compose up -d --wait` turns healthy, the log has a setup code, and the container runs
+      as uid 1000 on a read-only root (CI checks this).
 
 ## Manual, in a browser
 
@@ -75,3 +77,29 @@ kid login `wren`) and Bo (Arcade, Volt), viewer Nana, guest Uncle Theo.
 | 14 Upgrade | Covered by the migration tests (v0 database with clips); not repeated by hand. |
 
 Fixed during this run: the four items above, plus the duplicate play glyph under a theme's pause screen.
+
+### Install paths: Docker and the iPhone home-screen app, 2026-10-22
+
+Run by: the install-test session (Claude), branch `claude/install-test-88e3b0`, cut from `foundation-clean`.
+Setup: macOS on Apple silicon with no Docker beforehand. Installed Colima 0.10.3, Docker CLI 29.9.2 and Compose 5.6.1
+from Homebrew (engine 29.5.2 in an arm64 VM, 2 CPUs, 2 GB). Built-in browser for the wizard; an iOS 27.1 Simulator
+("iPhone Duo") for the phone. Starter copied with `node bin/create-kidtube.mjs` into a folder outside the repository.
+Invented family "The Pellwick Tapes": parent Mara, kids Ivy (Arcade, kid login `ivy`) and Otto (Ember Tape). One
+6-second 720×1280 clip from FFmpeg's test pattern. Everything was removed afterwards and Colima stopped.
+
+| Step | Result |
+|---|---|
+| Docker on a Mac without Docker Desktop | Works, after one extra step: Homebrew's `docker compose` answers "unknown command" until `~/.docker/config.json` names `/opt/homebrew/lib/docker/cli-plugins`. Now in INSTALL.md. Compose fell back to the classic builder (no buildx); it built fine. |
+| 1 Fresh install, no `.env` | Pass: `docker compose up -d` built in 25 s; `docker logs kidtube` printed "Ready for setup", the link and the code. Healthcheck turned healthy. Image 390 MB. |
+| Read-only, non-root | Pass: uid 1000, `ReadonlyRootfs=true`, writes to `/` and `/app` refused, `/tmp` a tmpfs, everything in the `kidtube-data` volume owned by 1000 with mode 700/600. |
+| 2 Wizard | Pass: all seven steps in the browser, two kids, one kid login, email off. |
+| Upload, transcode, poster | Pass inside the container: uploaded through the chunked API as the kid (the browser pane has no file picker); FFmpeg 8.1.2 in the image made H.264/AAC and a JPEG poster in about a second; Approve in Review; it played in the feed. Note: a portrait 720×1280 clip comes out 270×480 (the filter caps height at 480), soft on a phone screen. |
+| Restart and recreate | Pass: after `docker compose restart` and after `down` then `up -d`, the clip, the family and the parent's browser sign-in were all still there, and no new setup code was printed. |
+| Folder the app can't write | **Fixed.** A root-owned bind mount (`KIDTUBE_DATA=/var/tmp/…` in the VM, as on a NAS) printed `sudo chown -R 1000:1000 "/data"`, the path inside the container. It now names the folder on the computer; running exactly that brought the app up. A named volume with `PUID=1001` now prints a `docker compose run … chown` command, which also worked. |
+| `compose.https.yaml` | Without `SITE_URL`: Compose stops with "Set SITE_URL in .env…". With `SITE_URL=https://kidtube.localhost`: Caddy issued a certificate from its own authority, redirected http to https, proxied to the app; sign-in set a `Secure` cookie and a foreign-origin POST got 403. With a domain not pointed here, Let's Encrypt refused and Caddy kept retrying. **Fixed:** with `SITE_URL` only in the shell, the app restarted forever ("Production requires an https:// site address"); the overlay now passes it on. `COMPOSE_FILE` in `.env` checked with `docker compose config`. A real domain and certificate were not tried (none to hand). |
+| 12 Home-screen app (iOS Simulator) | Pass over `http://localhost:3000` (a secure context): manifest with the family name, accent, badge icons and `start_url=/?source=pwa`; the share sheet and Add to Home Screen showed the badge. Opened standalone (`display-mode: standalone`). Worker active and controlling in Safari and in the app; Cache Storage 19 to 21 shell entries, none under `/api/`, `/brand/`, `/uploads/`, `/media/` or media files, after playing a clip. Parent signed in inside the app, kid in Safari: each kept its own sign-in and its own Cache Storage. Read through a diagnostics overlay added to the scratch copy only, since Safari's Web Inspector wasn't reachable. Not covered: a real iPhone, and installing from a LAN `http://` address or a real `https://` domain. |
+| 10 Reduced motion, real setting | Pass: Settings › Accessibility › Motion › Reduce Motion in the Simulator. Safari then matched `prefers-reduced-motion: reduce`; Arcade's splash mounted with `data-kt-reduced`, no running animations, an unchanged frame a few seconds apart and a still PRESS START button; the feed had no running animations. Only Arcade was checked on the device. |
+
+Found and not fixed here (outside the install files; see `docs/plan/install-test-notes.md`): iOS autocorrects the kid
+login "ivy" to "I'm" on Return, and a failed sign-in shows the raw code "creds"; the iPhone steps on `/install` and
+the wizard's last step still say "the Share button"; the home-screen label is cut to "The Pellwick".
